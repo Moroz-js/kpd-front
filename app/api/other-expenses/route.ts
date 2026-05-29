@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
+import { prisma } from "@/lib/db";
 import { createOtherExpense, listOtherExpenses } from "@/lib/services/other-expenses";
+import { prismaErrorMessage } from "@/lib/prisma-errors";
 import { z } from "zod";
 
 function canAccess(user: Awaited<ReturnType<typeof getSessionUser>>) {
@@ -52,12 +54,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Можно назначить только себя ответственным" }, { status: 403 });
   }
 
+  const responsibleExists = await prisma.user.findUnique({
+    where: { id: parsed.data.responsibleUserId },
+    select: { id: true },
+  });
+  if (!responsibleExists) {
+    return NextResponse.json({ error: "Выбранный ответственный не найден в системе" }, { status: 422 });
+  }
+
   try {
     const expense = await createOtherExpense(parsed.data, user.id);
     return NextResponse.json(expense, { status: 201 });
   } catch (e) {
     console.error("[other-expenses] POST failed:", e);
-    const msg = e instanceof Error ? e.message : "Не удалось создать запись";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json(
+      { error: prismaErrorMessage(e, "Не удалось создать запись") },
+      { status: 500 },
+    );
   }
 }

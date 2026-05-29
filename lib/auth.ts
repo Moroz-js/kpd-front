@@ -50,9 +50,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   callbacks: {
     jwt({ token, user }) {
       if (user) {
-        token.role = (user as { role: string }).role;
-        token.fullName = (user as { fullName: string }).fullName;
-        token.executorId = (user as { executorId: string | null }).executorId;
+        const u = user as { id: string; role: string; fullName: string; executorId: string | null; email?: string };
+        token.sub = u.id;
+        token.role = u.role;
+        token.fullName = u.fullName;
+        token.executorId = u.executorId;
+        if (u.email) token.email = u.email;
       }
       return token;
     },
@@ -77,15 +80,39 @@ export type SessionUser = {
   executorId: string | null;
 };
 
+/**
+ * Текущий пользователь из сессии, сверенный с БД.
+ * После db:reset id в JWT может не совпадать с новыми записями — ищем по email.
+ */
 export async function getSessionUser(): Promise<SessionUser | null> {
   const session = await auth();
   if (!session?.user) return null;
+
   const u = session.user as Record<string, unknown>;
+  const email = typeof u.email === "string" ? u.email : null;
+  const sessionId = typeof u.id === "string" ? u.id : null;
+  if (!email && !sessionId) return null;
+
+  const dbUser = await prisma.user.findFirst({
+    where: email ? { email } : { id: sessionId! },
+    select: {
+      id: true,
+      email: true,
+      role: true,
+      fullName: true,
+      isActive: true,
+      executor: { select: { id: true, accessRevokedAt: true } },
+    },
+  });
+
+  if (!dbUser?.isActive) return null;
+  if (dbUser.executor?.accessRevokedAt) return null;
+
   return {
-    id: u.id as string,
-    email: u.email as string,
-    role: u.role as string,
-    fullName: u.fullName as string,
-    executorId: (u.executorId as string | null) ?? null,
+    id: dbUser.id,
+    email: dbUser.email,
+    role: dbUser.role,
+    fullName: dbUser.fullName,
+    executorId: dbUser.executor?.id ?? null,
   };
 }
