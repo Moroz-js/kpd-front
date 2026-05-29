@@ -325,75 +325,83 @@ async function seedExecutors(passwordHash: string) {
 }
 
 async function seedWorksAndPayments() {
-  const executor = await prisma.executor.findFirst({ where: { name: "Смирнов Алексей" } });
-  if (!executor) return;
+  const smirnov = await prisma.executor.findFirst({ where: { name: "Смирнов Алексей" } });
+  if (!smirnov) return;
 
   // Уже есть работы — пропускаем
-  const existing = await prisma.work.count({ where: { executorId: executor.id } });
+  const existing = await prisma.work.count({ where: { executorId: smirnov.id } });
   if (existing > 0) return;
 
-  const project = await prisma.project.findFirst({ where: { status: "active" } });
-  if (!project) return;
-
-  const workType = await prisma.workType.findFirst({ where: { status: "active" } });
-  if (!workType) return;
-
+  const kozlova = await prisma.executor.findFirst({ where: { name: "Козлова Анна" } });
   const bankAccount = await prisma.bankAccount.findFirst({ where: { isDefault: true } });
 
-  // Убедимся что исполнитель в проекте
-  await prisma.projectExecutor.upsert({
-    where: { projectId_executorId: { projectId: project.id, executorId: executor.id } },
-    update: {},
-    create: { projectId: project.id, executorId: executor.id },
-  });
+  // Берём конкретные проекты и виды работ
+  const projectContent = await prisma.project.findFirst({ where: { shortName: "Контент", status: "active" } });
+  const projectSmm    = await prisma.project.findFirst({ where: { shortName: "SMM Q3",  status: "active" } });
+  const project = projectContent ?? await prisma.project.findFirst({ where: { status: "active" } });
+  if (!project) return;
+
+  const wtDesign   = await prisma.workType.findFirst({ where: { name: "Дизайн посадочной" } });
+  const wtLongread = await prisma.workType.findFirst({ where: { name: "Лонгрид" } });
+  if (!wtDesign) return;
+
+  // Привязываем исполнителей к проектам
+  for (const proj of [project, projectSmm].filter(Boolean) as typeof project[]) {
+    await prisma.projectExecutor.upsert({
+      where: { projectId_executorId: { projectId: proj.id, executorId: smirnov.id } },
+      update: {},
+      create: { projectId: proj.id, executorId: smirnov.id },
+    });
+    if (kozlova) {
+      await prisma.projectExecutor.upsert({
+        where: { projectId_executorId: { projectId: proj.id, executorId: kozlova.id } },
+        update: {},
+        create: { projectId: proj.id, executorId: kozlova.id },
+      });
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  СМИРНОВ АЛЕКСЕЙ (дизайн)
+  // ═══════════════════════════════════════════════════════════════════════════
 
   // ── ЯНВАРЬ 2026 — полностью оплачен ──────────────────────────────────────
-  // Две работы → одна выплата paid → работы paid
-  const p1 = await prisma.payment.create({
+  const s_jan = await prisma.payment.create({
     data: {
-      executorId: executor.id,
-      periodYear: 2026,
-      periodMonth: 1,
-      amount: 80_000,
-      paymentStatus: "paid",
+      executorId: smirnov.id, periodYear: 2026, periodMonth: 1,
+      amount: 80_000, paymentStatus: "paid",
       bankAccountId: bankAccount?.id ?? null,
-      plannedPayAt: new Date("2026-01-20"),
-      paidAt: new Date("2026-01-22"),
+      plannedPayAt: new Date("2026-01-20"), paidAt: new Date("2026-01-22"),
     },
   });
   await prisma.work.createMany({
     data: [
       {
-        executorId: executor.id, projectId: project.id, workTypeId: workType.id,
+        executorId: smirnov.id, projectId: project.id, workTypeId: wtDesign.id,
         executionYear: 2026, executionMonth: 1,
         techTask: "Дизайн главной страницы",
         amount: 50_000, workStatus: "paid",
         checkedAt: new Date("2026-01-15"),
-        plannedPayAt: new Date("2026-01-20"),
-        paidAt: new Date("2026-01-22"),
-        paymentId: p1.id,
+        plannedPayAt: new Date("2026-01-20"), paidAt: new Date("2026-01-22"),
+        paymentId: s_jan.id,
       },
       {
-        executorId: executor.id, projectId: project.id, workTypeId: workType.id,
+        executorId: smirnov.id, projectId: project.id, workTypeId: wtDesign.id,
         executionYear: 2026, executionMonth: 1,
         techTask: "Дизайн карточек продуктов",
         amount: 30_000, workStatus: "paid",
         checkedAt: new Date("2026-01-16"),
-        plannedPayAt: new Date("2026-01-20"),
-        paidAt: new Date("2026-01-22"),
-        paymentId: p1.id,
+        plannedPayAt: new Date("2026-01-20"), paidAt: new Date("2026-01-22"),
+        paymentId: s_jan.id,
       },
     ],
   });
 
-  // ── ФЕВРАЛЬ 2026 — выплата запланирована (все работы checked) ─────────────
-  const p2 = await prisma.payment.create({
+  // ── ФЕВРАЛЬ 2026 — выплата запланирована, все работы checked ─────────────
+  const s_feb = await prisma.payment.create({
     data: {
-      executorId: executor.id,
-      periodYear: 2026,
-      periodMonth: 2,
-      amount: 60_000,
-      paymentStatus: "planned",
+      executorId: smirnov.id, periodYear: 2026, periodMonth: 2,
+      amount: 60_000, paymentStatus: "planned",
       bankAccountId: bankAccount?.id ?? null,
       plannedPayAt: new Date("2026-03-05"),
     },
@@ -401,72 +409,67 @@ async function seedWorksAndPayments() {
   await prisma.work.createMany({
     data: [
       {
-        executorId: executor.id, projectId: project.id, workTypeId: workType.id,
+        executorId: smirnov.id, projectId: project.id, workTypeId: wtDesign.id,
         executionYear: 2026, executionMonth: 2,
         techTask: "Редизайн раздела «О компании»",
         amount: 40_000, workStatus: "checked",
         checkedAt: new Date("2026-02-25"),
         plannedPayAt: new Date("2026-03-05"),
-        paymentId: p2.id,
+        paymentId: s_feb.id,
       },
       {
-        executorId: executor.id, projectId: project.id, workTypeId: workType.id,
+        executorId: smirnov.id, projectId: project.id, workTypeId: wtDesign.id,
         executionYear: 2026, executionMonth: 2,
         techTask: "Баннеры для соцсетей (x5 форматов)",
         amount: 20_000, workStatus: "checked",
         checkedAt: new Date("2026-02-26"),
         plannedPayAt: new Date("2026-03-05"),
-        paymentId: p2.id,
+        paymentId: s_feb.id,
       },
     ],
   });
 
-  // ── МАРТ 2026 — хвост: часть checked (с выплатой), часть submitted ────────
-  // Первая партия (checked) → своя выплата planned
-  const p3 = await prisma.payment.create({
+  // ── МАРТ 2026 — checked с выплатой + submitted-хвост ─────────────────────
+  const s_mar = await prisma.payment.create({
     data: {
-      executorId: executor.id,
-      periodYear: 2026,
-      periodMonth: 3,
-      amount: 35_000,
-      paymentStatus: "planned",
+      executorId: smirnov.id, periodYear: 2026, periodMonth: 3,
+      amount: 35_000, paymentStatus: "planned",
       bankAccountId: bankAccount?.id ?? null,
       plannedPayAt: new Date("2026-04-05"),
     },
   });
   await prisma.work.create({
     data: {
-      executorId: executor.id, projectId: project.id, workTypeId: workType.id,
+      executorId: smirnov.id, projectId: project.id, workTypeId: wtDesign.id,
       executionYear: 2026, executionMonth: 3,
       techTask: "Анимация логотипа",
       amount: 35_000, workStatus: "checked",
       checkedAt: new Date("2026-03-20"),
       plannedPayAt: new Date("2026-04-05"),
-      paymentId: p3.id,
+      paymentId: s_mar.id,
     },
   });
-  // Хвост — submitted, paymentId = NULL (не все проверены → выплата не создалась)
+  // submitted-хвост — выплата ещё не создана (работа не проверена)
   await prisma.work.create({
     data: {
-      executorId: executor.id, projectId: project.id, workTypeId: workType.id,
+      executorId: smirnov.id, projectId: project.id, workTypeId: wtDesign.id,
       executionYear: 2026, executionMonth: 3,
       techTask: "Гайдлайн по фирменному стилю (в работе)",
       amount: 25_000, workStatus: "submitted",
-      // paymentId: null — хвост
     },
   });
 
-  // ── АПРЕЛЬ 2026 — чистый хвост: все submitted, выплаты нет ────────────────
+  // ── АПРЕЛЬ 2026 — чистый хвост, submitted ────────────────────────────────
   await prisma.work.createMany({
     data: [
       {
-        executorId: executor.id, projectId: project.id, workTypeId: workType.id,
+        executorId: smirnov.id, projectId: project.id, workTypeId: wtDesign.id,
         executionYear: 2026, executionMonth: 4,
         techTask: "Презентация для инвесторов (слайды 1–20)",
         amount: 45_000, workStatus: "submitted",
       },
       {
-        executorId: executor.id, projectId: project.id, workTypeId: workType.id,
+        executorId: smirnov.id, projectId: project.id, workTypeId: wtDesign.id,
         executionYear: 2026, executionMonth: 4,
         techTask: "Иконки для мобильного приложения",
         amount: 20_000, workStatus: "submitted",
@@ -474,25 +477,34 @@ async function seedWorksAndPayments() {
     ],
   });
 
-  // ── МАЙ 2026 — нужно доработать + checked без выплаты ────────────────────
+  // ── МАЙ 2026 — rework + checked (у checked своя запланированная выплата) ──
+  // rework-работа: выплаты нет (ещё не принята)
   await prisma.work.create({
     data: {
-      executorId: executor.id, projectId: project.id, workTypeId: workType.id,
+      executorId: smirnov.id, projectId: project.id, workTypeId: wtDesign.id,
       executionYear: 2026, executionMonth: 5,
       techTask: "Обложки для YouTube (возврат на доработку)",
       amount: 15_000, workStatus: "rework",
     },
   });
-  // Checked, но paymentId = NULL — хвост: есть другая работа со статусом rework,
-  // поэтому авто-выплата не создавалась
+  // checked-работа — выплата planned (независима от rework-работы)
+  const s_may = await prisma.payment.create({
+    data: {
+      executorId: smirnov.id, periodYear: 2026, periodMonth: 5,
+      amount: 18_000, paymentStatus: "planned",
+      bankAccountId: bankAccount?.id ?? null,
+      plannedPayAt: new Date("2026-06-05"),
+    },
+  });
   await prisma.work.create({
     data: {
-      executorId: executor.id, projectId: project.id, workTypeId: workType.id,
+      executorId: smirnov.id, projectId: project.id, workTypeId: wtDesign.id,
       executionYear: 2026, executionMonth: 5,
       techTask: "Шаблон email-рассылки",
       amount: 18_000, workStatus: "checked",
       checkedAt: new Date("2026-05-10"),
-      // paymentId: null — хвост заблокирован rework-работой
+      plannedPayAt: new Date("2026-06-05"),
+      paymentId: s_may.id,
     },
   });
 
@@ -500,14 +512,14 @@ async function seedWorksAndPayments() {
   await prisma.work.createMany({
     data: [
       {
-        executorId: executor.id, projectId: project.id, workTypeId: workType.id,
+        executorId: smirnov.id, projectId: project.id, workTypeId: wtDesign.id,
         executionYear: 2026, executionMonth: 6,
         techTask: "Дизайн кейса для портфолио",
         volume: 3, rate: 10_000,
         amount: 30_000, workStatus: "submitted",
       },
       {
-        executorId: executor.id, projectId: project.id, workTypeId: workType.id,
+        executorId: smirnov.id, projectId: project.id, workTypeId: wtDesign.id,
         executionYear: 2026, executionMonth: 6,
         techTask: "Адаптив мобильной версии сайта",
         amount: 22_000, workStatus: "submitted",
@@ -516,62 +528,202 @@ async function seedWorksAndPayments() {
     ],
   });
 
-  console.log("[seed] works & payments seeded for Смирнов Алексей");
-  console.log("[seed] тест-кейсы:");
-  console.log("[seed]   Январь 2026  — полностью оплачен (2 работы, 1 выплата paid)");
-  console.log("[seed]   Февраль 2026 — выплата запланирована (2 работы checked, выплата planned)");
-  console.log("[seed]   Март 2026    — смешанный хвост: 1 checked с выплатой + 1 submitted без");
-  console.log("[seed]   Апрель 2026  — чистый хвост: 2 submitted, выплаты нет");
-  console.log("[seed]   Май 2026     — rework блокирует хвост (rework + checked, выплаты нет)");
-  console.log("[seed]   Июнь 2026    — текущий месяц, 2 свежие работы submitted");
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  КОЗЛОВА АННА (копирайтинг) — при наличии
+  // ═══════════════════════════════════════════════════════════════════════════
+  if (kozlova && wtLongread) {
+    const kProj = projectContent ?? project;
+
+    // Январь 2026 — оплачено
+    const k_jan = await prisma.payment.create({
+      data: {
+        executorId: kozlova.id, periodYear: 2026, periodMonth: 1,
+        amount: 45_000, paymentStatus: "paid",
+        bankAccountId: bankAccount?.id ?? null,
+        plannedPayAt: new Date("2026-01-25"), paidAt: new Date("2026-01-27"),
+      },
+    });
+    await prisma.work.create({
+      data: {
+        executorId: kozlova.id, projectId: kProj.id, workTypeId: wtLongread.id,
+        executionYear: 2026, executionMonth: 1,
+        techTask: "Лонгрид «Тренды контент-маркетинга 2026»",
+        volume: 3, rate: 15_000,
+        amount: 45_000, workStatus: "paid",
+        checkedAt: new Date("2026-01-20"),
+        plannedPayAt: new Date("2026-01-25"), paidAt: new Date("2026-01-27"),
+        paymentId: k_jan.id,
+      },
+    });
+
+    // Март 2026 — checked, выплата запланирована
+    const k_mar = await prisma.payment.create({
+      data: {
+        executorId: kozlova.id, periodYear: 2026, periodMonth: 3,
+        amount: 30_000, paymentStatus: "planned",
+        bankAccountId: bankAccount?.id ?? null,
+        plannedPayAt: new Date("2026-04-10"),
+      },
+    });
+    await prisma.work.create({
+      data: {
+        executorId: kozlova.id, projectId: kProj.id, workTypeId: wtLongread.id,
+        executionYear: 2026, executionMonth: 3,
+        techTask: "Сценарий видеоролика для запуска продукта",
+        amount: 30_000, workStatus: "checked",
+        checkedAt: new Date("2026-03-28"),
+        plannedPayAt: new Date("2026-04-10"),
+        paymentId: k_mar.id,
+      },
+    });
+
+    // Апрель 2026 — submitted (хвост)
+    await prisma.work.create({
+      data: {
+        executorId: kozlova.id, projectId: kProj.id, workTypeId: wtLongread.id,
+        executionYear: 2026, executionMonth: 4,
+        techTask: "Лонгрид для блога: кейс клиента",
+        amount: 25_000, workStatus: "submitted",
+      },
+    });
+
+    // Май 2026 — submitted (текущий)
+    await prisma.work.create({
+      data: {
+        executorId: kozlova.id, projectId: kProj.id, workTypeId: wtLongread.id,
+        executionYear: 2026, executionMonth: 5,
+        techTask: "Тексты для лендинга (5 блоков)",
+        amount: 20_000, workStatus: "submitted",
+      },
+    });
+  }
+
+  console.log("[seed] works & payments seeded");
+  console.log("[seed] тест-кейсы (Смирнов):");
+  console.log("[seed]   Январь 2026  — 2 работы paid, выплата paid");
+  console.log("[seed]   Февраль 2026 — 2 работы checked, выплата planned");
+  console.log("[seed]   Март 2026    — 1 checked с выплатой + 1 submitted (хвост)");
+  console.log("[seed]   Апрель 2026  — 2 submitted без выплаты");
+  console.log("[seed]   Май 2026     — rework (без выплаты) + checked (своя выплата planned)");
+  console.log("[seed]   Июнь 2026    — 2 submitted без выплаты");
+  console.log("[seed] тест-кейсы (Козлова):");
+  console.log("[seed]   Январь 2026  — 1 paid");
+  console.log("[seed]   Март 2026    — 1 checked, выплата planned");
+  console.log("[seed]   Апрель–Май   — submitted хвост");
 }
 
 async function seedOtherExpenses() {
   const existing = await prisma.otherExpense.count();
   if (existing > 0) return;
 
-  const project = await prisma.project.findFirst({ where: { status: "active" } });
-  const executor = await prisma.executor.findFirst({ where: { status: "active" } });
-  const workType = await prisma.workType.findFirst({ where: { status: "active" } });
-  const responsible = await prisma.user.findFirst({ where: { role: "responsible", isActive: true } });
-  const bankAccount = await prisma.bankAccount.findFirst();
-  const adminUser = await prisma.user.findFirst({ where: { role: "admin" } });
+  // Используем конкретных исполнителей и виды работ
+  const projectContent = await prisma.project.findFirst({ where: { shortName: "Контент", status: "active" } })
+    ?? await prisma.project.findFirst({ where: { status: "active" } });
+  const projectSmm = await prisma.project.findFirst({ where: { shortName: "SMM Q3", status: "active" } })
+    ?? projectContent;
 
-  if (!project || !executor || !workType || !responsible || !adminUser) return;
+  const midjourney = await prisma.executor.findFirst({ where: { name: "MIDJOURNEY" } });
+  const rogaIKopyta = await prisma.executor.findFirst({ where: { name: "Рога и Копыта ООО" } });
+  const kozlova = await prisma.executor.findFirst({ where: { name: "Козлова Анна" } });
 
-  await prisma.otherExpense.createMany({
-    data: [
-      {
-        projectId: project.id, executorId: executor.id, workTypeId: workType.id,
-        responsibleUserId: responsible.id, createdById: adminUser.id,
-        executionYear: 2026, executionMonth: 3,
-        description: "Закупка рекламы в Telegram-каналах",
-        amount: 50_000, workStatus: "paid", paymentStatus: "paid",
-        paymentAmount: 50_000, paidAt: new Date("2026-03-20"),
-        plannedPayAt: new Date("2026-03-20"),
-        bankAccountId: bankAccount?.id ?? null,
-        preferredPayMethod: "Бизнес-картой РФ",
-      },
-      {
-        projectId: project.id, executorId: executor.id, workTypeId: workType.id,
-        responsibleUserId: responsible.id, createdById: responsible.id,
-        executionYear: 2026, executionMonth: 4,
-        description: "Оплата сервиса аналитики",
-        amount: 15_000, workStatus: "checked", paymentStatus: "planned",
-        paymentAmount: 15_000, plannedPayAt: new Date("2026-05-05"),
-        preferredPayMethod: "4DEV",
-      },
-      {
-        projectId: project.id, executorId: executor.id, workTypeId: workType.id,
-        responsibleUserId: responsible.id, createdById: responsible.id,
-        executionYear: 2026, executionMonth: 5,
-        description: "Фотосъёмка для проекта",
-        amount: 30_000, workStatus: "submitted",
-      },
-    ],
-  });
+  const wtSmm   = await prisma.workType.findFirst({ where: { name: "SMM-ведение" } });
+  const wtIt    = await prisma.workType.findFirst({ where: { name: "Поддержка сайта" } });
+  const wtVideo = await prisma.workType.findFirst({ where: { name: "Монтаж видео" } });
 
-  console.log("[seed] other expenses seeded");
+  const responsible = await prisma.user.findFirst({ where: { email: "manager.ivanov@kpd.local" } });
+  const petrov      = await prisma.user.findFirst({ where: { email: "manager.petrov@kpd.local" } });
+  const adminUser   = await prisma.user.findFirst({ where: { role: "admin" } });
+  const bankAccount = await prisma.bankAccount.findFirst({ where: { isDefault: true } });
+
+  if (!projectContent || !adminUser || !responsible) return;
+
+  const fallbackExec = midjourney
+    ?? await prisma.executor.findFirst({ where: { status: "active" } });
+  const fallbackWt = wtSmm
+    ?? await prisma.workType.findFirst({ where: { status: "active" } });
+
+  if (!fallbackExec || !fallbackWt) return;
+
+  const rows = [
+    // Март — оплачено (Midjourney, генерация изображений)
+    midjourney && wtSmm && projectContent ? {
+      projectId: projectContent.id,
+      executorId: midjourney.id,
+      workTypeId: wtSmm.id,
+      responsibleUserId: responsible.id,
+      createdById: adminUser.id,
+      executionYear: 2026, executionMonth: 3,
+      description: "Подписка Midjourney — март 2026",
+      amount: 3_000, workStatus: "paid", paymentStatus: "paid",
+      paymentAmount: 3_000,
+      plannedPayAt: new Date("2026-03-01"), paidAt: new Date("2026-03-01"),
+      bankAccountId: bankAccount?.id ?? null,
+      preferredPayMethod: "4DEV",
+    } : null,
+
+    // Март — оплачено (Рога и Копыта, поддержка сайта)
+    rogaIKopyta && wtIt && projectContent ? {
+      projectId: projectContent.id,
+      executorId: rogaIKopyta.id,
+      workTypeId: wtIt.id,
+      responsibleUserId: (petrov ?? responsible).id,
+      createdById: adminUser.id,
+      executionYear: 2026, executionMonth: 3,
+      description: "Разработка и поддержка сайта — март",
+      amount: 120_000, workStatus: "paid", paymentStatus: "paid",
+      paymentAmount: 120_000,
+      plannedPayAt: new Date("2026-03-31"), paidAt: new Date("2026-04-02"),
+      bankAccountId: bankAccount?.id ?? null,
+      preferredPayMethod: "Юрлицо в РФ",
+    } : null,
+
+    // Апрель — проверено, выплата запланирована (Midjourney)
+    midjourney && wtSmm && projectContent ? {
+      projectId: projectContent.id,
+      executorId: midjourney.id,
+      workTypeId: wtSmm.id,
+      responsibleUserId: responsible.id,
+      createdById: responsible.id,
+      executionYear: 2026, executionMonth: 4,
+      description: "Подписка Midjourney — апрель 2026",
+      amount: 3_000, workStatus: "checked", paymentStatus: "planned",
+      paymentAmount: 3_000,
+      plannedPayAt: new Date("2026-05-01"),
+      preferredPayMethod: "4DEV",
+    } : null,
+
+    // Апрель — checked, выплата planned (Рога и Копыта)
+    rogaIKopyta && wtIt && projectContent ? {
+      projectId: projectContent.id,
+      executorId: rogaIKopyta.id,
+      workTypeId: wtIt.id,
+      responsibleUserId: (petrov ?? responsible).id,
+      createdById: (petrov ?? adminUser).id,
+      executionYear: 2026, executionMonth: 4,
+      description: "Поддержка сайта — апрель",
+      amount: 120_000, workStatus: "checked", paymentStatus: "planned",
+      paymentAmount: 120_000,
+      plannedPayAt: new Date("2026-05-05"),
+    } : null,
+
+    // Май — submitted (Козлова, видеосъёмка)
+    kozlova && wtVideo && projectSmm ? {
+      projectId: projectSmm.id,
+      executorId: kozlova.id,
+      workTypeId: wtVideo.id,
+      responsibleUserId: responsible.id,
+      createdById: responsible.id,
+      executionYear: 2026, executionMonth: 5,
+      description: "Фотосъёмка мероприятия для соцсетей",
+      amount: 30_000, workStatus: "submitted", paymentStatus: "planned",
+    } : null,
+  ].filter((r): r is NonNullable<typeof r> => r !== null);
+
+  for (const row of rows) {
+    await prisma.otherExpense.create({ data: row });
+  }
+
+  console.log(`[seed] other expenses seeded: ${rows.length} строк`);
 }
 
 async function seedCharges() {
