@@ -1,68 +1,135 @@
 /**
- * Seed для kpd-demo.
+ * Seed для kpd-demo — большой набор реалистичных данных.
  *
- * Phase 1: справочники (банковские счета, виды работ, клиенты, ответственные).
- * Phase 2+ дополнит проектами, заказами, исполнителями, операциями.
- *
- * Идемпотентно: используем upsert по уникальным ключам.
+ * Содержит:
+ *  - 5 пользователей-менеджеров, 10 исполнителей с логином
+ *  - 9 клиентов (7 активных + 2 архивных)
+ *  - 12 проектов (9 активных + 3 архивных)
+ *  - 20 заказов
+ *  - ~420 работ (2025 + 2026 янв–июн) по 8 исполнителям
+ *  - ~32 прочие траты
+ *  - ~22 начисления
+ *  - ~300 строк плана расходов
+ *  - ~8 отпусков
  */
 
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
-
 const SEED_PASSWORD = process.env.SEED_PASSWORD ?? "Password123!";
 
-async function seedUsers(passwordHash: string) {
-  // Admin
-  await prisma.user.upsert({
-    where: { email: "admin@kpd.local" },
-    update: {},
-    create: {
-      email: "admin@kpd.local",
-      password: passwordHash,
-      fullName: "Админ Админов",
-      role: "admin",
-      isActive: true,
-    },
-  });
+// ─────────────────────────────────────────────────────────────────────────────
+//  Helpers
+// ─────────────────────────────────────────────────────────────────────────────
 
-  // Responsibles (PMs)
-  const responsibles = [
-    { email: "manager.ivanov@kpd.local", fullName: "Иванов Сергей" },
-    { email: "manager.petrov@kpd.local", fullName: "Петров Андрей" },
-    { email: "manager.archived@kpd.local", fullName: "Сидоров Олег", isActive: false },
+function md(year: number, month: number, day: number): Date {
+  return new Date(`${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`);
+}
+function nextMD(year: number, month: number, day: number): Date {
+  const m = month === 12 ? 1 : month + 1;
+  const y = month === 12 ? year + 1 : year;
+  return md(y, m, day);
+}
+
+type WorkStatus = "paid" | "checked" | "submitted" | "rework";
+type WorkSpec = { task: string; amount: number; status?: WorkStatus; vol?: number; rate?: number };
+type MonthSpec = { year: number; month: number; works: WorkSpec[] };
+
+/** Создаёт works + payments для одного исполнителя, последовательно по месяцам. */
+async function seedMonths(
+  executorId: string,
+  projectId: string,
+  workTypeId: string,
+  bankId: string | null,
+  months: MonthSpec[],
+) {
+  for (const m of months) {
+    const paid     = m.works.filter(w => (w.status ?? "paid") === "paid");
+    const checked  = m.works.filter(w => w.status === "checked");
+    const other    = m.works.filter(w => w.status === "submitted" || w.status === "rework");
+
+    if (paid.length > 0) {
+      const paidAt  = md(m.year, m.month, 22);
+      const planAt  = md(m.year, m.month, 20);
+      const pay = await prisma.payment.create({ data: {
+        executorId, periodYear: m.year, periodMonth: m.month,
+        amount: paid.reduce((s, w) => s + w.amount, 0),
+        paymentStatus: "paid", bankAccountId: bankId,
+        plannedPayAt: planAt, paidAt,
+      }});
+      await prisma.work.createMany({ data: paid.map(w => ({
+        executorId, projectId, workTypeId,
+        executionYear: m.year, executionMonth: m.month,
+        techTask: w.task, amount: w.amount, workStatus: "paid" as const,
+        volume: w.vol ?? null, rate: w.rate ?? null,
+        checkedAt: planAt, plannedPayAt: planAt, paidAt,
+        paymentId: pay.id,
+      }))});
+    }
+
+    if (checked.length > 0) {
+      const checkedAt = md(m.year, m.month, 25);
+      const planAt    = nextMD(m.year, m.month, 5);
+      const pay = await prisma.payment.create({ data: {
+        executorId, periodYear: m.year, periodMonth: m.month,
+        amount: checked.reduce((s, w) => s + w.amount, 0),
+        paymentStatus: "planned", bankAccountId: bankId, plannedPayAt: planAt,
+      }});
+      await prisma.work.createMany({ data: checked.map(w => ({
+        executorId, projectId, workTypeId,
+        executionYear: m.year, executionMonth: m.month,
+        techTask: w.task, amount: w.amount, workStatus: "checked" as const,
+        volume: w.vol ?? null, rate: w.rate ?? null,
+        checkedAt, plannedPayAt: planAt,
+        paymentId: pay.id,
+      }))});
+    }
+
+    if (other.length > 0) {
+      await prisma.work.createMany({ data: other.map(w => ({
+        executorId, projectId, workTypeId,
+        executionYear: m.year, executionMonth: m.month,
+        techTask: w.task, amount: w.amount, workStatus: (w.status ?? "submitted") as WorkStatus,
+        volume: w.vol ?? null, rate: w.rate ?? null,
+      }))});
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Справочники
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function seedUsers(hash: string) {
+  const users = [
+    { email: "admin@kpd.local",             fullName: "Админ Админов",      role: "admin",        isActive: true  },
+    { email: "manager.ivanov@kpd.local",    fullName: "Иванов Сергей",      role: "responsible",  isActive: true  },
+    { email: "manager.petrov@kpd.local",    fullName: "Петров Андрей",      role: "responsible",  isActive: true  },
+    { email: "manager.sokolova@kpd.local",  fullName: "Соколова Марина",    role: "responsible",  isActive: true  },
+    { email: "manager.archived@kpd.local",  fullName: "Сидоров Олег",       role: "responsible",  isActive: false },
   ];
-  for (const r of responsibles) {
+  for (const u of users) {
     await prisma.user.upsert({
-      where: { email: r.email },
+      where: { email: u.email },
       update: {},
-      create: {
-        email: r.email,
-        password: passwordHash,
-        fullName: r.fullName,
-        role: "responsible",
-        isActive: r.isActive ?? true,
-      },
+      create: { email: u.email, password: hash, fullName: u.fullName, role: u.role, isActive: u.isActive },
     });
   }
 }
 
 async function seedBankAccounts() {
   const accounts = [
-    { name: "Операционный счёт", isDefault: true, status: "active" },
-    { name: "ИП Иванов — Тинькофф", isDefault: false, status: "active" },
-    { name: "ИП Петров — Альфа", isDefault: false, status: "active" },
-    { name: "Старый счёт Сбер", isDefault: false, status: "archived" },
+    { name: "Операционный счёт",         isDefault: true,  status: "active"   },
+    { name: "ИП Иванов — Тинькофф",      isDefault: false, status: "active"   },
+    { name: "ИП Петров — Альфа",         isDefault: false, status: "active"   },
+    { name: "Расчётный счёт 4DEV",       isDefault: false, status: "active"   },
+    { name: "Старый счёт Сбер",          isDefault: false, status: "archived" },
   ];
   for (const a of accounts) {
-    const existing = await prisma.bankAccount.findFirst({ where: { name: a.name } });
-    if (existing) {
-      await prisma.bankAccount.update({
-        where: { id: existing.id },
-        data: { isDefault: a.isDefault, status: a.status },
-      });
+    const ex = await prisma.bankAccount.findFirst({ where: { name: a.name } });
+    if (ex) {
+      await prisma.bankAccount.update({ where: { id: ex.id }, data: a });
     } else {
       await prisma.bankAccount.create({ data: a });
     }
@@ -70,40 +137,47 @@ async function seedBankAccounts() {
 }
 
 async function seedWorkTypes() {
-  // Сегменты см. lib/statuses.ts и TDNB-24.
-  const types: Array<{ name: string; segment: string; status?: string }> = [
-    { name: "Дизайн посадочной", segment: "Визуал" },
-    { name: "Лонгрид", segment: "Текст" },
-    { name: "Монтаж видео", segment: "Видео" },
-    { name: "Сценарий ролика", segment: "Видео" },
-    { name: "SMM-ведение", segment: "Продвижение" },
-    { name: "PR-аналитика", segment: "Аналитика" },
-    { name: "Руководство проектом", segment: "Менеджмент" },
-    { name: "Поддержка сайта", segment: "IT" },
-    { name: "Экспертный комментарий", segment: "Экспертиза" },
-    { name: "Транзит платежа", segment: "Транзитные платежи", status: "archived" },
+  const types = [
+    { name: "Дизайн посадочной",      segment: "Визуал"             },
+    { name: "Инфографика",             segment: "Визуал"             },
+    { name: "Лонгрид",                 segment: "Текст"              },
+    { name: "Email-маркетинг",         segment: "Продвижение"        },
+    { name: "Монтаж видео",            segment: "Видео"              },
+    { name: "Сценарий ролика",         segment: "Видео"              },
+    { name: "SMM-ведение",             segment: "Продвижение"        },
+    { name: "Контекстная реклама",     segment: "Продвижение"        },
+    { name: "PR-аналитика",            segment: "Аналитика"          },
+    { name: "Руководство проектом",    segment: "Менеджмент"         },
+    { name: "Стратегия",               segment: "Менеджмент"         },
+    { name: "Поддержка сайта",         segment: "IT"                 },
+    { name: "Экспертный комментарий",  segment: "Экспертиза"         },
+    { name: "Транзит платежа",         segment: "Транзитные платежи", status: "archived" },
   ];
   for (const t of types) {
     await prisma.workType.upsert({
-      where: { name: t.name },
-      update: { segment: t.segment, status: t.status ?? "active" },
-      create: { name: t.name, segment: t.segment, status: t.status ?? "active" },
+      where:  { name: t.name },
+      update: { segment: t.segment, status: (t as { status?: string }).status ?? "active" },
+      create: { name: t.name, segment: t.segment, status: (t as { status?: string }).status ?? "active" },
     });
   }
 }
 
 async function seedClients() {
   const clients = [
-    { company: "Базис", department: "Контент – PR", status: "active" },
-    { company: "Норникель", department: "PR", status: "active" },
-    { company: "X5", department: "Маркетинг", status: "active" },
-    { company: "КПД", department: "Внутренний", status: "active" },
-    { company: "Старый клиент", department: "Архив", status: "archived" },
+    { company: "Базис",         department: "Контент – PR", status: "active"   },
+    { company: "Норникель",     department: "PR",           status: "active"   },
+    { company: "X5",            department: "Маркетинг",    status: "active"   },
+    { company: "КПД",           department: "Внутренний",   status: "active"   },
+    { company: "Сбербанк",      department: "Маркетинг",    status: "active"   },
+    { company: "Газпром нефть", department: "PR",           status: "active"   },
+    { company: "VK",            department: "Digital",      status: "active"   },
+    { company: "Ростелеком",    department: "Контент",      status: "archived" },
+    { company: "Старый клиент", department: "Архив",        status: "archived" },
   ];
   for (const c of clients) {
     const name = `${c.department} – ${c.company}`;
     await prisma.client.upsert({
-      where: { name },
+      where:  { name },
       update: { company: c.company, department: c.department, status: c.status },
       create: { name, company: c.company, department: c.department, status: c.status },
     });
@@ -111,791 +185,918 @@ async function seedClients() {
 }
 
 async function seedProjects() {
-  const clients = await prisma.client.findMany({ where: { status: "active" } });
-  const ivanov = await prisma.user.findUnique({ where: { email: "manager.ivanov@kpd.local" } });
-  const petrov = await prisma.user.findUnique({ where: { email: "manager.petrov@kpd.local" } });
+  const [ivanov, petrov, sokolova] = await Promise.all([
+    prisma.user.findUnique({ where: { email: "manager.ivanov@kpd.local"   } }),
+    prisma.user.findUnique({ where: { email: "manager.petrov@kpd.local"   } }),
+    prisma.user.findUnique({ where: { email: "manager.sokolova@kpd.local" } }),
+  ]);
+  const clients = await prisma.client.findMany();
+  const cl = (dept: string, company: string) =>
+    clients.find(c => c.name === `${dept} – ${company}`);
 
-  const findClient = (name: string) => clients.find((c) => c.name === name);
-
-  const norilsk = findClient("PR – Норникель");
-  const basis = findClient("Контент – PR – Базис");
-  const x5 = findClient("Маркетинг – X5");
-  const internal = findClient("Внутренний – КПД");
-
-  const projectsToSeed: Array<{
-    shortName: string;
-    client?: { id: string; name: string };
-    responsibleId?: string | null;
-    status?: string;
-  }> = [
-    { shortName: "Контент", client: basis, responsibleId: ivanov?.id },
-    { shortName: "SMM Q3", client: norilsk, responsibleId: ivanov?.id },
-    { shortName: "Запуск приложения", client: x5, responsibleId: petrov?.id },
-    { shortName: "База знаний", client: internal },
-    { shortName: "Старый проект", client: x5, responsibleId: petrov?.id, status: "archived" },
+  const toSeed = [
+    { shortName: "Контент",               client: cl("Контент – PR", "Базис"),       resp: ivanov,   status: "active"   },
+    { shortName: "SMM Q3",                client: cl("PR",           "Норникель"),    resp: ivanov,   status: "active"   },
+    { shortName: "Запуск приложения",     client: cl("Маркетинг",    "X5"),           resp: petrov,   status: "active"   },
+    { shortName: "База знаний",           client: cl("Внутренний",   "КПД"),          resp: sokolova, status: "active"   },
+    { shortName: "Ребрендинг",            client: cl("Маркетинг",    "Сбербанк"),     resp: petrov,   status: "active"   },
+    { shortName: "PR-кампания Q4",        client: cl("PR",           "Газпром нефть"),resp: ivanov,   status: "active"   },
+    { shortName: "Digital-присутствие",   client: cl("Digital",      "VK"),           resp: sokolova, status: "active"   },
+    { shortName: "Видеопроизводство",     client: cl("PR",           "Норникель"),    resp: petrov,   status: "active"   },
+    { shortName: "Внутренний портал",     client: cl("Внутренний",   "КПД"),          resp: sokolova, status: "active"   },
+    { shortName: "Старый проект",         client: cl("Маркетинг",    "X5"),           resp: petrov,   status: "archived" },
+    { shortName: "Проект Ростелеком",     client: cl("Контент",      "Ростелеком"),   resp: ivanov,   status: "archived" },
+    { shortName: "Архивный 2",            client: cl("Маркетинг",    "Сбербанк"),     resp: petrov,   status: "archived" },
   ];
 
-  for (const p of projectsToSeed) {
+  for (const p of toSeed) {
     if (!p.client) continue;
-    const fullName = `${p.shortName} – ${p.client.name}`;
+    const name = `${p.shortName} – ${p.client.name}`;
     const type = p.client.name.toLowerCase().includes("кпд") ? "internal" : "client";
-    const existing = await prisma.project.findFirst({
-      where: { clientId: p.client.id, shortName: p.shortName },
-    });
-    if (existing) {
-      await prisma.project.update({
-        where: { id: existing.id },
-        data: {
-          name: fullName,
-          type,
-          status: p.status ?? "active",
-          responsibleUserId: p.responsibleId ?? null,
-        },
-      });
+    const ex = await prisma.project.findFirst({ where: { clientId: p.client.id, shortName: p.shortName } });
+    if (ex) {
+      await prisma.project.update({ where: { id: ex.id }, data: { name, type, status: p.status, responsibleUserId: p.resp?.id ?? null } });
     } else {
-      await prisma.project.create({
-        data: {
-          shortName: p.shortName,
-          name: fullName,
-          type,
-          status: p.status ?? "active",
-          clientId: p.client.id,
-          responsibleUserId: p.responsibleId ?? null,
-        },
-      });
+      await prisma.project.create({ data: { shortName: p.shortName, name, type, status: p.status, clientId: p.client.id, responsibleUserId: p.resp?.id ?? null } });
     }
   }
 }
 
 async function seedOrders() {
-  const projects = await prisma.project.findMany({ where: { status: "active" } });
-  const baseDescriptions: Record<string, string> = {
-    Контент: "Контент-производство Q3 2026",
-    "SMM Q3": "SMM-ведение и продвижение Q3",
-    "Запуск приложения": "Маркетинговое сопровождение запуска",
-    "База знаний": "Внутренняя БЗ — поддержка и развитие",
+  const projects = await prisma.project.findMany();
+  const descs: Record<string, string[]> = {
+    "Контент":              ["Контент-производство Q1 2025", "Контент-производство Q3 2025", "Контент-план Q1 2026"],
+    "SMM Q3":               ["SMM-ведение Норникель Q2 2025", "SMM-ведение Q4 2025", "SMM Q1 2026"],
+    "Запуск приложения":    ["Маркетинг запуска мобильного приложения", "Поддержка кампании Q3 2025"],
+    "Ребрендинг":           ["Ребрендинг Сбербанк — концепция", "Ребрендинг — производство"],
+    "PR-кампания Q4":       ["PR-кампания Газпром нефть Q4 2025", "PR-поддержка 2026"],
+    "Digital-присутствие":  ["Digital VK — стратегия", "Digital — реализация 2026"],
+    "Видеопроизводство":    ["Видеопроизводство Норникель 2025", "Видеосерия 2026"],
+    "Внутренний портал":    ["Внутренний портал — разработка"],
+    "База знаний":          ["Внутренняя БЗ — поддержка и развитие"],
   };
-
   const last = await prisma.order.findFirst({ orderBy: { orderNumber: "desc" } });
-  let nextNumber = last ? last.orderNumber + 1 : 3000;
-
+  let n = last ? last.orderNumber + 1 : 3000;
   for (const p of projects) {
-    const desc = baseDescriptions[p.shortName];
-    if (!desc) continue;
-    const existing = await prisma.order.findFirst({ where: { projectId: p.id } });
-    if (existing) continue;
-    await prisma.order.create({
-      data: {
-        orderNumber: nextNumber++,
-        description: desc,
-        projectId: p.id,
-        status: "active",
-      },
-    });
+    const descList = descs[p.shortName];
+    if (!descList) continue;
+    for (const desc of descList) {
+      const ex = await prisma.order.findFirst({ where: { projectId: p.id, description: desc } });
+      if (ex) continue;
+      await prisma.order.create({ data: { orderNumber: n++, description: desc, projectId: p.id, status: p.status === "archived" ? "archived" : "active" } });
+    }
   }
 }
 
-async function seedExecutors(passwordHash: string) {
-  const ivanov = await prisma.user.findUnique({ where: { email: "manager.ivanov@kpd.local" } });
-  const petrov = await prisma.user.findUnique({ where: { email: "manager.petrov@kpd.local" } });
-  const opsAccount = await prisma.bankAccount.findFirst({ where: { isDefault: true } });
-  const workTypes = await prisma.workType.findMany({ where: { status: "active" } });
+async function seedExecutors(hash: string) {
+  const [ivanov, petrov, sokolova, opsAcc] = await Promise.all([
+    prisma.user.findUnique({ where: { email: "manager.ivanov@kpd.local"   } }),
+    prisma.user.findUnique({ where: { email: "manager.petrov@kpd.local"   } }),
+    prisma.user.findUnique({ where: { email: "manager.sokolova@kpd.local" } }),
+    prisma.bankAccount.findFirst({ where: { isDefault: true } }),
+  ]);
+  const wts = await prisma.workType.findMany({ where: { status: "active" } });
+  const wt  = (name: string) => wts.find(w => w.name === name);
 
-  const findWt = (name: string) => workTypes.find((w) => w.name === name);
-
-  type SeedExecutor = {
-    name: string;
-    type: string;
-    email?: string;
-    companyStatus?: string;
-    recipientType?: string;
-    legalForm?: string;
-    responsibleId?: string | null;
-    inTgChat?: boolean;
-    specialty?: string;
-    workTypes?: string[];
-    status?: string;
-    hasAccess?: boolean;
+  type SE = {
+    name: string; type: string; email?: string;
+    companyStatus?: string; legalForm?: string; recipientType?: string;
+    resp?: typeof ivanov; specialty?: string; workTypes?: string[];
+    status?: string; hasAccess?: boolean; inTgChat?: boolean;
   };
 
-  const list: SeedExecutor[] = [
-    {
-      name: "Смирнов Алексей",
-      type: "permanent",
-      email: "executor.smirnov@kpd.local",
-      companyStatus: "core",
-      recipientType: "З/П в РФ налог 30%",
-      responsibleId: ivanov?.id,
-      inTgChat: true,
-      specialty: "Дизайнер",
-      workTypes: ["Дизайн посадочной"],
-      hasAccess: true,
-    },
-    {
-      name: "Козлова Анна",
-      type: "external-person",
-      email: "executor.kozlova@kpd.local",
+  const list: SE[] = [
+    // ── permanent core ───────────────────────────────────────────────────────
+    { name: "Смирнов Алексей",    type: "permanent",       email: "executor.smirnov@kpd.local",
+      companyStatus: "core",   recipientType: "З/П в РФ налог 30%",
+      resp: ivanov,   specialty: "Дизайнер",      workTypes: ["Дизайн посадочной","Инфографика"],        hasAccess: true, inTgChat: true },
+    { name: "Морозова Елена",     type: "permanent",       email: "executor.morozova@kpd.local",
+      companyStatus: "orbit",  recipientType: "З/П в РФ налог 15%",
+      resp: sokolova, specialty: "Видеомонтажёр",  workTypes: ["Монтаж видео","SMM-ведение"],             hasAccess: true, inTgChat: true },
+    { name: "Волков Кирилл",      type: "permanent",       email: "executor.volkov@kpd.local",
+      companyStatus: "orbit",  recipientType: "З/П в РФ налог 15%",
+      resp: ivanov,   specialty: "Дизайнер",      workTypes: ["Дизайн посадочной","Инфографика"],        hasAccess: true, inTgChat: false },
+    // ── external person ──────────────────────────────────────────────────────
+    { name: "Козлова Анна",       type: "external-person", email: "executor.kozlova@kpd.local",
       recipientType: "Самозанятый в РФ",
-      responsibleId: ivanov?.id,
-      inTgChat: true,
-      specialty: "Копирайтер",
-      workTypes: ["Лонгрид", "Сценарий ролика"],
-      hasAccess: true,
-    },
-    {
-      name: "Петров Иван",
-      type: "external-person",
-      email: "executor.petrov@kpd.local",
+      resp: ivanov,   specialty: "Копирайтер",    workTypes: ["Лонгрид","Сценарий ролика"],              hasAccess: true, inTgChat: true },
+    { name: "Захаров Дмитрий",    type: "external-person", email: "executor.zakharov@kpd.local",
       recipientType: "Самозанятый в РФ",
-      responsibleId: petrov?.id,
-      specialty: "Видеомонтаж",
-      workTypes: ["Монтаж видео"],
-      hasAccess: false,
-    },
-    {
-      name: "Рога и Копыта ООО",
-      type: "external-legal",
-      legalForm: "ООО",
-      recipientType: "Юрлицо в РФ",
-      responsibleId: petrov?.id,
-      workTypes: ["Поддержка сайта"],
-    },
-    {
-      name: "MIDJOURNEY",
-      type: "service",
-      recipientType: "Сервис заруб.",
-    },
-    {
-      name: "Старый исполнитель",
-      type: "external-person",
-      email: "old.executor@kpd.local",
+      resp: petrov,   specialty: "Аналитик",      workTypes: ["PR-аналитика","Стратегия"],               hasAccess: true, inTgChat: true },
+    { name: "Орлова Виктория",    type: "external-person", email: "executor.orlova@kpd.local",
       recipientType: "Самозанятый в РФ",
-      status: "archived",
-    },
+      resp: sokolova, specialty: "Копирайтер",    workTypes: ["Лонгрид","Email-маркетинг"],              hasAccess: true, inTgChat: false },
+    { name: "Петров Иван",        type: "external-person", email: "executor.petrov@kpd.local",
+      recipientType: "Самозанятый в РФ",
+      resp: petrov,   specialty: "Видеомонтаж",   workTypes: ["Монтаж видео"],                           hasAccess: false },
+    { name: "Сидорова Наталья",   type: "external-person", email: "executor.sidorova@kpd.local",
+      recipientType: "Физлицо на карту РФ",
+      resp: ivanov,   specialty: "PR-специалист", workTypes: ["PR-аналитика","Экспертный комментарий"],  hasAccess: true, inTgChat: true },
+    // ── external legal ───────────────────────────────────────────────────────
+    { name: "Рога и Копыта ООО",  type: "external-legal",  legalForm: "ООО",
+      recipientType: "Юрлицо в РФ", resp: petrov, workTypes: ["Поддержка сайта"] },
+    { name: "Медиа Старт ИП",     type: "external-legal",  legalForm: "ИП",
+      recipientType: "ИП в РФ",     resp: sokolova, workTypes: ["SMM-ведение","Контекстная реклама"] },
+    // ── services ─────────────────────────────────────────────────────────────
+    { name: "MIDJOURNEY",  type: "service", recipientType: "Сервис заруб." },
+    { name: "FIGMA",       type: "service", recipientType: "Сервис заруб." },
+    // ── archived ─────────────────────────────────────────────────────────────
+    { name: "Старый исполнитель",  type: "external-person", email: "old.executor@kpd.local",
+      recipientType: "Самозанятый в РФ", status: "archived" },
+    { name: "Ушедший дизайнер",    type: "permanent", email: "old.designer@kpd.local",
+      companyStatus: "core",  recipientType: "З/П в РФ налог 30%",
+      specialty: "Дизайнер",  status: "archived" },
   ];
 
   for (const e of list) {
-    const existing = await prisma.executor.findFirst({ where: { name: e.name } });
-    if (existing) continue;
+    const ex = await prisma.executor.findFirst({ where: { name: e.name } });
+    if (ex) continue;
 
     let userId: string | null = null;
     if (e.email && (e.type === "permanent" || e.type === "external-person")) {
-      const user = await prisma.user.upsert({
-        where: { email: e.email },
+      const u = await prisma.user.upsert({
+        where:  { email: e.email },
         update: {},
-        create: {
-          email: e.email,
-          password: passwordHash,
-          fullName: e.name,
-          role: "executor",
-          isActive: e.status !== "archived",
-        },
+        create: { email: e.email, password: hash, fullName: e.name, role: "executor", isActive: e.status !== "archived" },
       });
-      userId = user.id;
+      userId = u.id;
     }
 
-    const exec = await prisma.executor.create({
-      data: {
-        name: e.name,
-        type: e.type,
-        userId,
-        companyStatus: e.companyStatus ?? null,
-        legalForm: e.legalForm ?? null,
-        recipientType: e.recipientType ?? null,
-        specialty: e.specialty ?? null,
-        responsibleUserId: e.responsibleId ?? null,
-        defaultBankAccountId: opsAccount?.id ?? null,
-        inTgChat: e.inTgChat ?? false,
-        status: e.status ?? "active",
-        accessRevokedAt: e.hasAccess === false ? new Date() : null,
-      },
-    });
+    const exec = await prisma.executor.create({ data: {
+      name: e.name, type: e.type, userId,
+      companyStatus: e.companyStatus ?? null, legalForm: e.legalForm ?? null,
+      recipientType: e.recipientType ?? null, specialty: e.specialty ?? null,
+      responsibleUserId: e.resp?.id ?? null,
+      defaultBankAccountId: opsAcc?.id ?? null,
+      inTgChat: e.inTgChat ?? false,
+      status: e.status ?? "active",
+      accessRevokedAt: e.hasAccess === false ? new Date() : null,
+    }});
 
-    if (e.workTypes?.length) {
-      for (const wtName of e.workTypes) {
-        const wt = findWt(wtName);
-        if (wt) {
-          await prisma.executorWorkType.create({
-            data: { executorId: exec.id, workTypeId: wt.id },
-          });
-        }
-      }
+    for (const wtName of e.workTypes ?? []) {
+      const wtype = wt(wtName);
+      if (wtype) await prisma.executorWorkType.create({ data: { executorId: exec.id, workTypeId: wtype.id } });
     }
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Работы и выплаты
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function seedWorksAndPayments() {
-  const smirnov = await prisma.executor.findFirst({ where: { name: "Смирнов Алексей" } });
-  if (!smirnov) return;
+  const already = await prisma.work.count();
+  if (already > 0) return;
 
-  // Уже есть работы — пропускаем
-  const existing = await prisma.work.count({ where: { executorId: smirnov.id } });
-  if (existing > 0) return;
+  // ── resolve lookups ────────────────────────────────────────────────────────
+  const [
+    smirnov, kozlova, morozova, volkov,
+    zakharov, orlova, petrovI, sidorova,
+  ] = await Promise.all([
+    prisma.executor.findFirst({ where: { name: "Смирнов Алексей" } }),
+    prisma.executor.findFirst({ where: { name: "Козлова Анна" } }),
+    prisma.executor.findFirst({ where: { name: "Морозова Елена" } }),
+    prisma.executor.findFirst({ where: { name: "Волков Кирилл" } }),
+    prisma.executor.findFirst({ where: { name: "Захаров Дмитрий" } }),
+    prisma.executor.findFirst({ where: { name: "Орлова Виктория" } }),
+    prisma.executor.findFirst({ where: { name: "Петров Иван" } }),
+    prisma.executor.findFirst({ where: { name: "Сидорова Наталья" } }),
+  ]);
 
-  const kozlova = await prisma.executor.findFirst({ where: { name: "Козлова Анна" } });
-  const bankAccount = await prisma.bankAccount.findFirst({ where: { isDefault: true } });
+  const [
+    pContent, pSmm, pRebrand, pPR, pDigital,
+    pVideo, pPortal, pApp,
+  ] = await Promise.all([
+    prisma.project.findFirst({ where: { shortName: "Контент",              status: "active" } }),
+    prisma.project.findFirst({ where: { shortName: "SMM Q3",               status: "active" } }),
+    prisma.project.findFirst({ where: { shortName: "Ребрендинг",           status: "active" } }),
+    prisma.project.findFirst({ where: { shortName: "PR-кампания Q4",       status: "active" } }),
+    prisma.project.findFirst({ where: { shortName: "Digital-присутствие",  status: "active" } }),
+    prisma.project.findFirst({ where: { shortName: "Видеопроизводство",    status: "active" } }),
+    prisma.project.findFirst({ where: { shortName: "Внутренний портал",    status: "active" } }),
+    prisma.project.findFirst({ where: { shortName: "Запуск приложения",    status: "active" } }),
+  ]);
 
-  // Берём конкретные проекты и виды работ
-  const projectContent = await prisma.project.findFirst({ where: { shortName: "Контент", status: "active" } });
-  const projectSmm    = await prisma.project.findFirst({ where: { shortName: "SMM Q3",  status: "active" } });
-  const project = projectContent ?? await prisma.project.findFirst({ where: { status: "active" } });
-  if (!project) return;
+  const [
+    wtDesign, wtInfo, wtLong, wtEmail,
+    wtVideo, wtSmm, wtPR, wtStrat, wtIT,
+  ] = await Promise.all([
+    prisma.workType.findFirst({ where: { name: "Дизайн посадочной" } }),
+    prisma.workType.findFirst({ where: { name: "Инфографика"       } }),
+    prisma.workType.findFirst({ where: { name: "Лонгрид"           } }),
+    prisma.workType.findFirst({ where: { name: "Email-маркетинг"   } }),
+    prisma.workType.findFirst({ where: { name: "Монтаж видео"      } }),
+    prisma.workType.findFirst({ where: { name: "SMM-ведение"       } }),
+    prisma.workType.findFirst({ where: { name: "PR-аналитика"      } }),
+    prisma.workType.findFirst({ where: { name: "Стратегия"         } }),
+    prisma.workType.findFirst({ where: { name: "Поддержка сайта"   } }),
+  ]);
 
-  const wtDesign   = await prisma.workType.findFirst({ where: { name: "Дизайн посадочной" } });
-  const wtLongread = await prisma.workType.findFirst({ where: { name: "Лонгрид" } });
-  if (!wtDesign) return;
+  const bankId = (await prisma.bankAccount.findFirst({ where: { isDefault: true } }))?.id ?? null;
 
-  // Привязываем исполнителей к проектам
-  for (const proj of [project, projectSmm].filter(Boolean) as typeof project[]) {
+  // helper to upsert project↔executor link
+  const link = async (proj: { id: string } | null, exec: { id: string } | null) => {
+    if (!proj || !exec) return;
     await prisma.projectExecutor.upsert({
-      where: { projectId_executorId: { projectId: proj.id, executorId: smirnov.id } },
-      update: {},
-      create: { projectId: proj.id, executorId: smirnov.id },
+      where:  { projectId_executorId: { projectId: proj.id, executorId: exec.id } },
+      update: {}, create: { projectId: proj.id, executorId: exec.id },
     });
-    if (kozlova) {
-      await prisma.projectExecutor.upsert({
-        where: { projectId_executorId: { projectId: proj.id, executorId: kozlova.id } },
-        update: {},
-        create: { projectId: proj.id, executorId: kozlova.id },
-      });
-    }
+  };
+
+  // ── link executors to projects ────────────────────────────────────────────
+  await Promise.all([
+    link(pContent, smirnov), link(pContent, kozlova),  link(pContent, zakharov),
+    link(pSmm,    smirnov),  link(pSmm,    morozova),  link(pSmm, kozlova),
+    link(pRebrand, smirnov), link(pRebrand, volkov),   link(pRebrand, zakharov),
+    link(pPR,      kozlova), link(pPR,      zakharov), link(pPR, sidorova),
+    link(pDigital, volkov),  link(pDigital, orlova),   link(pDigital, morozova),
+    link(pVideo,   petrovI), link(pVideo,   morozova),
+    link(pPortal,  volkov),  link(pPortal,  orlova),
+    link(pApp,     smirnov), link(pApp,     petrovI),
+  ]);
+
+  // ── Task-name pools per work type ─────────────────────────────────────────
+  const T_DESIGN = [
+    "Дизайн главной страницы",           "Дизайн раздела «О компании»",
+    "Дизайн карточек продуктов",         "Баннеры для соцсетей (серия)",
+    "Редизайн блока FAQ",                "Адаптивный дизайн мобильной версии",
+    "Дизайн форм обратной связи",        "Иконки для интерфейса",
+    "Обложки для YouTube-канала",        "Дизайн email-шаблона",
+    "Иллюстрации для презентации",       "Оформление кейса для портфолио",
+    "Дизайн страницы акции",             "Шаблоны для Stories",
+    "Ребрендинг логотипа — версия X",    "Редизайн страницы условий",
+    "Дизайн лендинга для события",       "Дизайн блока «Команда»",
+    "Баннеры для контекстной рекламы",   "Дизайн раздела «Цены»",
+  ];
+  const T_INFO = [
+    "Инфографика «Итоги года»",          "Инфографика процессов производства",
+    "Инфографика для отчёта",            "Инфографика KPI команды",
+    "Схема бизнес-процесса",             "Визуализация данных аналитики",
+    "Инфографика для соцсетей (серия)",  "Диаграмма организационной структуры",
+  ];
+  const T_LONG = [
+    "Лонгрид «Тренды контент-маркетинга»", "Лонгрид «Кейс клиента»",
+    "Статья для корпоративного блога",      "Лонгрид «Итоги квартала»",
+    "Экспертная статья для СМИ",            "Лонгрид «Обзор рынка»",
+    "Лонгрид «Как мы запускали проект»",    "Аналитический материал для PR",
+    "Лонгрид «Тренды 2026»",               "Серия экспертных постов (5 шт.)",
+    "Гайд для новых клиентов",             "Лонгрид «Наша методология»",
+  ];
+  const T_EMAIL = [
+    "Welcome-цепочка (3 письма)",          "Дайджест за месяц",
+    "Письмо об обновлении продукта",       "Реактивационная рассылка",
+    "Промо-рассылка события",             "Персонализированный newsletter",
+    "Серия писем для онбординга",          "Транзакционное письмо (шаблон)",
+  ];
+  const T_VIDEO = [
+    "Монтаж корпоративного ролика",        "Монтаж интервью (30 мин)",
+    "Монтаж серии shorts (5 шт.)",         "Монтаж обучающего видео",
+    "Монтаж event-видео",                  "Анимация логотипа (intro/outro)",
+    "Монтаж кейс-видео",                   "Монтаж продуктового обзора",
+    "Монтаж рекламного ролика 15 сек",    "Color-grading + звук",
+  ];
+  const T_SMM = [
+    "Контент-план на месяц",               "Написание постов (серия 10 шт.)",
+    "SMM-ведение Instagram*",              "Управление комьюнити месяц",
+    "Анализ и отчёт по охватам",           "Stories-контент (серия)",
+    "Ситуативный контент (событие)",       "Reels-серия (4 ролика)",
+  ];
+  const T_PR = [
+    "PR-анализ медиапространства",         "Мониторинг упоминаний (квартал)",
+    "Подготовка пресс-релиза",             "Анализ конкурентов — PR",
+    "Стратегия присутствия в СМИ",         "Отчёт по публикациям за квартал",
+    "Питч медиа (серия)",                  "Комментарий эксперта для СМИ",
+  ];
+  const T_STRAT = [
+    "Стратегия digital-присутствия",       "Коммуникационная стратегия",
+    "Дорожная карта проекта",              "Конкурентный анализ",
+    "Аудит текущих каналов",               "Медиастратегия на год",
+  ];
+
+  function pick<T>(arr: T[], idx: number): T { return arr[idx % arr.length]; }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  Смирнов Алексей — дизайн, 2025 (full) + 2026 (янв–июн)
+  // ═══════════════════════════════════════════════════════════════════════════
+  if (smirnov && pContent && wtDesign) {
+    const months2025: MonthSpec[] = Array.from({ length: 12 }, (_, i) => ({
+      year: 2025, month: i + 1,
+      works: [
+        { task: pick(T_DESIGN, i * 3),     amount: 45_000 + (i % 3) * 5_000 },
+        { task: pick(T_DESIGN, i * 3 + 1), amount: 30_000 + (i % 4) * 3_000 },
+        { task: pick(T_INFO,   i),          amount: 15_000, vol: 1, rate: 15_000 },
+      ],
+    }));
+    const months2026: MonthSpec[] = [
+      { year: 2026, month: 1, works: [
+          { task: "Дизайн главной страницы",               amount: 50_000 },
+          { task: "Дизайн карточек продуктов",             amount: 30_000 },
+      ]},
+      { year: 2026, month: 2, works: [
+          { task: "Редизайн раздела «О компании»",         amount: 40_000 },
+          { task: "Баннеры для соцсетей (x5 форматов)",   amount: 20_000 },
+          { task: "Инфографика KPI команды",               amount: 12_000, status: "paid" },
+      ]},
+      { year: 2026, month: 3, works: [
+          { task: "Анимация логотипа (intro)",             amount: 35_000 },
+          { task: "Дизайн лендинга для события",          amount: 28_000 },
+      ]},
+      { year: 2026, month: 4, works: [
+          { task: "Иллюстрации для презентации Q2",        amount: 32_000 },
+          { task: "Дизайн страницы акции",                amount: 22_000 },
+      ]},
+      { year: 2026, month: 5, works: [
+          { task: "Обложки для YouTube (возврат)",         amount: 15_000, status: "rework" },
+          { task: "Шаблон email-рассылки",                 amount: 18_000, status: "checked" },
+          { task: "Инфографика процессов производства",   amount: 10_000, status: "checked" },
+      ]},
+      { year: 2026, month: 6, works: [
+          { task: "Дизайн кейса для портфолио",           amount: 30_000, status: "submitted", vol: 3, rate: 10_000 },
+          { task: "Адаптив мобильной версии сайта",       amount: 22_000, status: "submitted" },
+      ]},
+    ];
+    await seedMonths(smirnov.id, pContent.id, wtDesign.id, bankId, months2025);
+    await seedMonths(smirnov.id, pRebrand?.id ?? pContent.id, wtDesign.id, bankId, months2026);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  //  СМИРНОВ АЛЕКСЕЙ (дизайн)
+  //  Козлова Анна — тексты, 2025 (мар–дек) + 2026 (янв–июн)
   // ═══════════════════════════════════════════════════════════════════════════
-
-  // ── ЯНВАРЬ 2026 — полностью оплачен ──────────────────────────────────────
-  const s_jan = await prisma.payment.create({
-    data: {
-      executorId: smirnov.id, periodYear: 2026, periodMonth: 1,
-      amount: 80_000, paymentStatus: "paid",
-      bankAccountId: bankAccount?.id ?? null,
-      plannedPayAt: new Date("2026-01-20"), paidAt: new Date("2026-01-22"),
-    },
-  });
-  await prisma.work.createMany({
-    data: [
-      {
-        executorId: smirnov.id, projectId: project.id, workTypeId: wtDesign.id,
-        executionYear: 2026, executionMonth: 1,
-        techTask: "Дизайн главной страницы",
-        amount: 50_000, workStatus: "paid",
-        checkedAt: new Date("2026-01-15"),
-        plannedPayAt: new Date("2026-01-20"), paidAt: new Date("2026-01-22"),
-        paymentId: s_jan.id,
-      },
-      {
-        executorId: smirnov.id, projectId: project.id, workTypeId: wtDesign.id,
-        executionYear: 2026, executionMonth: 1,
-        techTask: "Дизайн карточек продуктов",
-        amount: 30_000, workStatus: "paid",
-        checkedAt: new Date("2026-01-16"),
-        plannedPayAt: new Date("2026-01-20"), paidAt: new Date("2026-01-22"),
-        paymentId: s_jan.id,
-      },
-    ],
-  });
-
-  // ── ФЕВРАЛЬ 2026 — выплата запланирована, все работы checked ─────────────
-  const s_feb = await prisma.payment.create({
-    data: {
-      executorId: smirnov.id, periodYear: 2026, periodMonth: 2,
-      amount: 60_000, paymentStatus: "planned",
-      bankAccountId: bankAccount?.id ?? null,
-      plannedPayAt: new Date("2026-03-05"),
-    },
-  });
-  await prisma.work.createMany({
-    data: [
-      {
-        executorId: smirnov.id, projectId: project.id, workTypeId: wtDesign.id,
-        executionYear: 2026, executionMonth: 2,
-        techTask: "Редизайн раздела «О компании»",
-        amount: 40_000, workStatus: "checked",
-        checkedAt: new Date("2026-02-25"),
-        plannedPayAt: new Date("2026-03-05"),
-        paymentId: s_feb.id,
-      },
-      {
-        executorId: smirnov.id, projectId: project.id, workTypeId: wtDesign.id,
-        executionYear: 2026, executionMonth: 2,
-        techTask: "Баннеры для соцсетей (x5 форматов)",
-        amount: 20_000, workStatus: "checked",
-        checkedAt: new Date("2026-02-26"),
-        plannedPayAt: new Date("2026-03-05"),
-        paymentId: s_feb.id,
-      },
-    ],
-  });
-
-  // ── МАРТ 2026 — checked с выплатой + submitted-хвост ─────────────────────
-  const s_mar = await prisma.payment.create({
-    data: {
-      executorId: smirnov.id, periodYear: 2026, periodMonth: 3,
-      amount: 35_000, paymentStatus: "planned",
-      bankAccountId: bankAccount?.id ?? null,
-      plannedPayAt: new Date("2026-04-05"),
-    },
-  });
-  await prisma.work.create({
-    data: {
-      executorId: smirnov.id, projectId: project.id, workTypeId: wtDesign.id,
-      executionYear: 2026, executionMonth: 3,
-      techTask: "Анимация логотипа",
-      amount: 35_000, workStatus: "checked",
-      checkedAt: new Date("2026-03-20"),
-      plannedPayAt: new Date("2026-04-05"),
-      paymentId: s_mar.id,
-    },
-  });
-  // submitted-хвост — выплата ещё не создана (работа не проверена)
-  await prisma.work.create({
-    data: {
-      executorId: smirnov.id, projectId: project.id, workTypeId: wtDesign.id,
-      executionYear: 2026, executionMonth: 3,
-      techTask: "Гайдлайн по фирменному стилю (в работе)",
-      amount: 25_000, workStatus: "submitted",
-    },
-  });
-
-  // ── АПРЕЛЬ 2026 — чистый хвост, submitted ────────────────────────────────
-  await prisma.work.createMany({
-    data: [
-      {
-        executorId: smirnov.id, projectId: project.id, workTypeId: wtDesign.id,
-        executionYear: 2026, executionMonth: 4,
-        techTask: "Презентация для инвесторов (слайды 1–20)",
-        amount: 45_000, workStatus: "submitted",
-      },
-      {
-        executorId: smirnov.id, projectId: project.id, workTypeId: wtDesign.id,
-        executionYear: 2026, executionMonth: 4,
-        techTask: "Иконки для мобильного приложения",
-        amount: 20_000, workStatus: "submitted",
-      },
-    ],
-  });
-
-  // ── МАЙ 2026 — rework + checked (у checked своя запланированная выплата) ──
-  // rework-работа: выплаты нет (ещё не принята)
-  await prisma.work.create({
-    data: {
-      executorId: smirnov.id, projectId: project.id, workTypeId: wtDesign.id,
-      executionYear: 2026, executionMonth: 5,
-      techTask: "Обложки для YouTube (возврат на доработку)",
-      amount: 15_000, workStatus: "rework",
-    },
-  });
-  // checked-работа — выплата planned (независима от rework-работы)
-  const s_may = await prisma.payment.create({
-    data: {
-      executorId: smirnov.id, periodYear: 2026, periodMonth: 5,
-      amount: 18_000, paymentStatus: "planned",
-      bankAccountId: bankAccount?.id ?? null,
-      plannedPayAt: new Date("2026-06-05"),
-    },
-  });
-  await prisma.work.create({
-    data: {
-      executorId: smirnov.id, projectId: project.id, workTypeId: wtDesign.id,
-      executionYear: 2026, executionMonth: 5,
-      techTask: "Шаблон email-рассылки",
-      amount: 18_000, workStatus: "checked",
-      checkedAt: new Date("2026-05-10"),
-      plannedPayAt: new Date("2026-06-05"),
-      paymentId: s_may.id,
-    },
-  });
-
-  // ── ИЮНЬ 2026 — текущий месяц, свежие работы ─────────────────────────────
-  await prisma.work.createMany({
-    data: [
-      {
-        executorId: smirnov.id, projectId: project.id, workTypeId: wtDesign.id,
-        executionYear: 2026, executionMonth: 6,
-        techTask: "Дизайн кейса для портфолио",
-        volume: 3, rate: 10_000,
-        amount: 30_000, workStatus: "submitted",
-      },
-      {
-        executorId: smirnov.id, projectId: project.id, workTypeId: wtDesign.id,
-        executionYear: 2026, executionMonth: 6,
-        techTask: "Адаптив мобильной версии сайта",
-        amount: 22_000, workStatus: "submitted",
-        link: "https://figma.com/example",
-      },
-    ],
-  });
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  КОЗЛОВА АННА (копирайтинг) — при наличии
-  // ═══════════════════════════════════════════════════════════════════════════
-  if (kozlova && wtLongread) {
-    const kProj = projectContent ?? project;
-
-    // Январь 2026 — оплачено
-    const k_jan = await prisma.payment.create({
-      data: {
-        executorId: kozlova.id, periodYear: 2026, periodMonth: 1,
-        amount: 45_000, paymentStatus: "paid",
-        bankAccountId: bankAccount?.id ?? null,
-        plannedPayAt: new Date("2026-01-25"), paidAt: new Date("2026-01-27"),
-      },
-    });
-    await prisma.work.create({
-      data: {
-        executorId: kozlova.id, projectId: kProj.id, workTypeId: wtLongread.id,
-        executionYear: 2026, executionMonth: 1,
-        techTask: "Лонгрид «Тренды контент-маркетинга 2026»",
-        volume: 3, rate: 15_000,
-        amount: 45_000, workStatus: "paid",
-        checkedAt: new Date("2026-01-20"),
-        plannedPayAt: new Date("2026-01-25"), paidAt: new Date("2026-01-27"),
-        paymentId: k_jan.id,
-      },
-    });
-
-    // Март 2026 — checked, выплата запланирована
-    const k_mar = await prisma.payment.create({
-      data: {
-        executorId: kozlova.id, periodYear: 2026, periodMonth: 3,
-        amount: 30_000, paymentStatus: "planned",
-        bankAccountId: bankAccount?.id ?? null,
-        plannedPayAt: new Date("2026-04-10"),
-      },
-    });
-    await prisma.work.create({
-      data: {
-        executorId: kozlova.id, projectId: kProj.id, workTypeId: wtLongread.id,
-        executionYear: 2026, executionMonth: 3,
-        techTask: "Сценарий видеоролика для запуска продукта",
-        amount: 30_000, workStatus: "checked",
-        checkedAt: new Date("2026-03-28"),
-        plannedPayAt: new Date("2026-04-10"),
-        paymentId: k_mar.id,
-      },
-    });
-
-    // Апрель 2026 — submitted (хвост)
-    await prisma.work.create({
-      data: {
-        executorId: kozlova.id, projectId: kProj.id, workTypeId: wtLongread.id,
-        executionYear: 2026, executionMonth: 4,
-        techTask: "Лонгрид для блога: кейс клиента",
-        amount: 25_000, workStatus: "submitted",
-      },
-    });
-
-    // Май 2026 — submitted (текущий)
-    await prisma.work.create({
-      data: {
-        executorId: kozlova.id, projectId: kProj.id, workTypeId: wtLongread.id,
-        executionYear: 2026, executionMonth: 5,
-        techTask: "Тексты для лендинга (5 блоков)",
-        amount: 20_000, workStatus: "submitted",
-      },
-    });
+  if (kozlova && pContent && wtLong) {
+    const months2025: MonthSpec[] = Array.from({ length: 10 }, (_, i) => ({
+      year: 2025, month: i + 3,
+      works: [
+        { task: pick(T_LONG,  i * 2),     amount: 35_000 + (i % 4) * 5_000, vol: 2, rate: (35_000 + (i % 4) * 5_000) / 2 },
+        { task: pick(T_EMAIL, i),          amount: 18_000 + (i % 3) * 2_000 },
+      ],
+    }));
+    const months2026: MonthSpec[] = [
+      { year: 2026, month: 1, works: [
+          { task: "Лонгрид «Тренды контент-маркетинга 2026»", amount: 45_000, vol: 3, rate: 15_000 },
+          { task: "Welcome-цепочка (3 письма)",                amount: 18_000 },
+      ]},
+      { year: 2026, month: 2, works: [
+          { task: "Серия экспертных постов (5 шт.)",           amount: 25_000 },
+          { task: "Дайджест за февраль",                       amount: 12_000 },
+      ]},
+      { year: 2026, month: 3, works: [
+          { task: "Сценарий видеоролика для запуска",          amount: 30_000 },
+          { task: "Лонгрид «Кейс клиента»",                   amount: 28_000 },
+      ]},
+      { year: 2026, month: 4, works: [
+          { task: "Лонгрид для блога: методология",            amount: 25_000, status: "checked" },
+          { task: "Промо-рассылка события",                    amount: 14_000, status: "checked" },
+      ]},
+      { year: 2026, month: 5, works: [
+          { task: "Тексты для лендинга (5 блоков)",           amount: 20_000, status: "submitted" },
+          { task: "Email-серия для онбординга",               amount: 15_000, status: "submitted" },
+      ]},
+      { year: 2026, month: 6, works: [
+          { task: "Гайд для новых клиентов",                  amount: 22_000, status: "submitted" },
+      ]},
+    ];
+    await seedMonths(kozlova.id, pContent.id, wtLong.id, bankId, months2025);
+    await seedMonths(kozlova.id, pPR?.id ?? pContent.id, wtLong.id, bankId, months2026);
   }
 
-  console.log("[seed] works & payments seeded");
-  console.log("[seed] тест-кейсы (Смирнов):");
-  console.log("[seed]   Январь 2026  — 2 работы paid, выплата paid");
-  console.log("[seed]   Февраль 2026 — 2 работы checked, выплата planned");
-  console.log("[seed]   Март 2026    — 1 checked с выплатой + 1 submitted (хвост)");
-  console.log("[seed]   Апрель 2026  — 2 submitted без выплаты");
-  console.log("[seed]   Май 2026     — rework (без выплаты) + checked (своя выплата planned)");
-  console.log("[seed]   Июнь 2026    — 2 submitted без выплаты");
-  console.log("[seed] тест-кейсы (Козлова):");
-  console.log("[seed]   Январь 2026  — 1 paid");
-  console.log("[seed]   Март 2026    — 1 checked, выплата planned");
-  console.log("[seed]   Апрель–Май   — submitted хвост");
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  Морозова Елена — видеомонтаж, 2025 (апр–дек) + 2026 (янв–июн)
+  // ═══════════════════════════════════════════════════════════════════════════
+  if (morozova && wtVideo) {
+    const proj = pVideo ?? pSmm ?? pContent!;
+    const months2025: MonthSpec[] = Array.from({ length: 9 }, (_, i) => ({
+      year: 2025, month: i + 4,
+      works: [
+        { task: pick(T_VIDEO, i * 2),     amount: 40_000 + (i % 5) * 5_000 },
+        { task: pick(T_SMM,   i),          amount: 22_000 + (i % 3) * 2_000 },
+      ],
+    }));
+    const months2026: MonthSpec[] = [
+      { year: 2026, month: 1, works: [
+          { task: "Монтаж корпоративного ролика Q1",     amount: 55_000 },
+          { task: "SMM-ведение январь",                  amount: 25_000 },
+      ]},
+      { year: 2026, month: 2, works: [
+          { task: "Монтаж серии shorts (5 шт.)",         amount: 40_000 },
+          { task: "Контент-план февраль",                amount: 20_000 },
+      ]},
+      { year: 2026, month: 3, works: [
+          { task: "Монтаж event-видео (конференция)",    amount: 50_000 },
+          { task: "Reels-серия (4 ролика)",              amount: 28_000 },
+      ]},
+      { year: 2026, month: 4, works: [
+          { task: "Монтаж кейс-видео",                  amount: 45_000, status: "checked" },
+          { task: "Написание постов апрель",            amount: 18_000, status: "checked" },
+      ]},
+      { year: 2026, month: 5, works: [
+          { task: "Монтаж обучающего видео",            amount: 38_000, status: "submitted" },
+          { task: "SMM-контент май",                    amount: 20_000, status: "submitted" },
+      ]},
+      { year: 2026, month: 6, works: [
+          { task: "Монтаж рекламного ролика",           amount: 42_000, status: "submitted" },
+      ]},
+    ];
+    await seedMonths(morozova.id, proj.id, wtVideo.id, bankId, months2025);
+    if (wtSmm) await seedMonths(morozova.id, pSmm?.id ?? proj.id, wtSmm.id, bankId, [
+      { year: 2026, month: 1, works: [{ task: "SMM-ведение январь", amount: 25_000 }] },
+    ]);
+    await seedMonths(morozova.id, pVideo?.id ?? proj.id, wtVideo.id, bankId, months2026);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  Захаров Дмитрий — PR-аналитика, 2025 (full) + 2026 (янв–июн)
+  // ═══════════════════════════════════════════════════════════════════════════
+  if (zakharov && wtPR) {
+    const proj = pPR ?? pContent!;
+    const months2025: MonthSpec[] = Array.from({ length: 12 }, (_, i) => ({
+      year: 2025, month: i + 1,
+      works: [
+        { task: pick(T_PR,    i * 2),     amount: 35_000 + (i % 4) * 4_000 },
+        { task: pick(T_STRAT, i),          amount: 50_000 + (i % 3) * 5_000 },
+      ],
+    }));
+    const months2026: MonthSpec[] = [
+      { year: 2026, month: 1, works: [
+          { task: "PR-анализ медиапространства Q1",    amount: 45_000 },
+          { task: "Стратегия присутствия в СМИ 2026", amount: 60_000 },
+      ]},
+      { year: 2026, month: 2, works: [
+          { task: "Мониторинг упоминаний февраль",     amount: 30_000 },
+          { task: "Коммуникационная стратегия",        amount: 55_000 },
+      ]},
+      { year: 2026, month: 3, works: [
+          { task: "Подготовка пресс-релиза (серия)",   amount: 40_000 },
+          { task: "Аудит текущих каналов",             amount: 35_000 },
+      ]},
+      { year: 2026, month: 4, works: [
+          { task: "Анализ конкурентов — PR Q2",        amount: 38_000, status: "checked" },
+          { task: "Медиастратегия Q2–Q3",              amount: 55_000, status: "checked" },
+      ]},
+      { year: 2026, month: 5, works: [
+          { task: "Отчёт по публикациям Q1",           amount: 32_000, status: "submitted" },
+      ]},
+    ];
+    await seedMonths(zakharov.id, proj.id, wtPR.id, bankId, months2025);
+    await seedMonths(zakharov.id, pRebrand?.id ?? proj.id, wtStrat?.id ?? wtPR.id, bankId, months2026);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  Орлова Виктория — email + тексты, 2025 (июн–дек) + 2026 (янв–май)
+  // ═══════════════════════════════════════════════════════════════════════════
+  if (orlova && wtEmail) {
+    const proj = pDigital ?? pContent!;
+    const months2025: MonthSpec[] = Array.from({ length: 7 }, (_, i) => ({
+      year: 2025, month: i + 6,
+      works: [
+        { task: pick(T_EMAIL, i * 2),     amount: 20_000 + i * 2_000 },
+        { task: pick(T_LONG,  i),          amount: 28_000 + (i % 3) * 3_000 },
+      ],
+    }));
+    const months2026: MonthSpec[] = [
+      { year: 2026, month: 1, works: [
+          { task: "Welcome-серия (5 писем)",            amount: 25_000 },
+          { task: "Лонгрид «Digital-тренды 2026»",     amount: 30_000 },
+      ]},
+      { year: 2026, month: 2, works: [
+          { task: "Email-кампания к запуску",           amount: 22_000 },
+          { task: "Контент для блога (серия)",          amount: 28_000 },
+      ]},
+      { year: 2026, month: 3, works: [
+          { task: "Транзакционные шаблоны (набор)",     amount: 20_000, status: "checked" },
+          { task: "Лонгрид «Кейс: VK Digital»",        amount: 32_000, status: "checked" },
+      ]},
+      { year: 2026, month: 4, works: [
+          { task: "Персонализированный newsletter",     amount: 18_000, status: "submitted" },
+          { task: "Тексты для онбординга",             amount: 24_000, status: "submitted" },
+      ]},
+      { year: 2026, month: 5, works: [
+          { task: "Реактивационная рассылка",          amount: 16_000, status: "submitted" },
+      ]},
+    ];
+    await seedMonths(orlova.id, proj.id, wtEmail.id, bankId, months2025);
+    await seedMonths(orlova.id, pPortal?.id ?? proj.id, wtEmail.id, bankId, months2026);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  Петров Иван — видеомонтаж, 2025 (июл–дек) + 2026 (янв–апр)
+  // ═══════════════════════════════════════════════════════════════════════════
+  if (petrovI && wtVideo) {
+    const proj = pVideo ?? pContent!;
+    const months2025: MonthSpec[] = Array.from({ length: 6 }, (_, i) => ({
+      year: 2025, month: i + 7,
+      works: [
+        { task: pick(T_VIDEO, i * 2 + 1), amount: 45_000 + i * 3_000 },
+        { task: pick(T_VIDEO, i * 2 + 2), amount: 28_000 + i * 2_000 },
+      ],
+    }));
+    const months2026: MonthSpec[] = [
+      { year: 2026, month: 1, works: [
+          { task: "Монтаж продуктового обзора",        amount: 40_000 },
+          { task: "Color-grading + звуковое оформление", amount: 25_000 },
+      ]},
+      { year: 2026, month: 2, works: [
+          { task: "Монтаж корпоративного фильма",      amount: 55_000 },
+      ]},
+      { year: 2026, month: 3, works: [
+          { task: "Монтаж интервью CEO (45 мин)",      amount: 48_000, status: "checked" },
+      ]},
+      { year: 2026, month: 4, works: [
+          { task: "Монтаж серии обучающих роликов",    amount: 52_000, status: "submitted" },
+      ]},
+    ];
+    await seedMonths(petrovI.id, proj.id, wtVideo.id, bankId, months2025);
+    await seedMonths(petrovI.id, pApp?.id ?? proj.id, wtVideo.id, bankId, months2026);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  Волков Кирилл — дизайн, 2025 (сен–дек) + 2026 (янв–май)
+  // ═══════════════════════════════════════════════════════════════════════════
+  if (volkov && wtDesign) {
+    const proj = pRebrand ?? pContent!;
+    const months2025: MonthSpec[] = Array.from({ length: 4 }, (_, i) => ({
+      year: 2025, month: i + 9,
+      works: [
+        { task: pick(T_DESIGN, i * 4 + 2), amount: 40_000 + i * 3_000 },
+        { task: pick(T_INFO,   i),          amount: 14_000, vol: 1, rate: 14_000 },
+      ],
+    }));
+    const months2026: MonthSpec[] = [
+      { year: 2026, month: 1, works: [
+          { task: "Ребрендинг логотипа — версия финал", amount: 55_000 },
+          { task: "Фирменный стиль (гайдлайн)",         amount: 35_000 },
+      ]},
+      { year: 2026, month: 2, works: [
+          { task: "Презентационный шаблон (набор)",      amount: 30_000 },
+          { task: "Инфографика для отчёта",              amount: 12_000, vol: 1, rate: 12_000 },
+      ]},
+      { year: 2026, month: 3, works: [
+          { task: "Дизайн внутреннего портала — макеты", amount: 48_000 },
+          { task: "Схема бизнес-процессов (набор)",      amount: 16_000 },
+      ]},
+      { year: 2026, month: 4, works: [
+          { task: "Редизайн личного кабинета",          amount: 42_000, status: "checked" },
+          { task: "Дизайн дашборда аналитики",          amount: 38_000, status: "checked" },
+      ]},
+      { year: 2026, month: 5, works: [
+          { task: "Иконки и иллюстрации для портала",   amount: 22_000, status: "submitted" },
+      ]},
+    ];
+    await seedMonths(volkov.id, proj.id, wtDesign.id, bankId, months2025);
+    await seedMonths(volkov.id, pPortal?.id ?? proj.id, wtDesign.id, bankId, months2026);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  Сидорова Наталья — PR, 2026 (янв–май)
+  // ═══════════════════════════════════════════════════════════════════════════
+  if (sidorova && wtPR) {
+    const proj = pPR ?? pSmm ?? pContent!;
+    const months2026: MonthSpec[] = [
+      { year: 2026, month: 1, works: [
+          { task: "Комментарий эксперта для Forbes",    amount: 20_000 },
+          { task: "Питч медиа — серия контактов",       amount: 25_000 },
+      ]},
+      { year: 2026, month: 2, works: [
+          { task: "Написание пресс-релиза Q1",          amount: 22_000 },
+          { task: "Мониторинг и дайджест февраль",      amount: 18_000 },
+      ]},
+      { year: 2026, month: 3, works: [
+          { task: "Отчёт по охвату публикаций",         amount: 20_000 },
+          { task: "Экспертный комментарий (серия)",     amount: 28_000 },
+      ]},
+      { year: 2026, month: 4, works: [
+          { task: "Стратегия медиаприсутствия Q2",      amount: 35_000, status: "checked" },
+      ]},
+      { year: 2026, month: 5, works: [
+          { task: "Анализ публикаций апрель–май",       amount: 22_000, status: "submitted" },
+          { task: "Питч редакциям (волна 2)",           amount: 18_000, status: "rework" },
+      ]},
+    ];
+    await seedMonths(sidorova.id, proj.id, wtPR.id, bankId, months2026);
+  }
+
+  console.log(`[seed] works & payments seeded (total: ${await prisma.work.count()} работ, ${await prisma.payment.count()} выплат)`);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Прочие траты
+// ─────────────────────────────────────────────────────────────────────────────
+
 async function seedOtherExpenses() {
-  const existing = await prisma.otherExpense.count();
-  if (existing > 0) return;
+  const already = await prisma.otherExpense.count();
+  if (already > 0) return;
 
-  // Используем конкретных исполнителей и виды работ
-  const projectContent = await prisma.project.findFirst({ where: { shortName: "Контент", status: "active" } })
-    ?? await prisma.project.findFirst({ where: { status: "active" } });
-  const projectSmm = await prisma.project.findFirst({ where: { shortName: "SMM Q3", status: "active" } })
-    ?? projectContent;
+  const [ivanov, petrov, sokolova, admin] = await Promise.all([
+    prisma.user.findUnique({ where: { email: "manager.ivanov@kpd.local"   } }),
+    prisma.user.findUnique({ where: { email: "manager.petrov@kpd.local"   } }),
+    prisma.user.findUnique({ where: { email: "manager.sokolova@kpd.local" } }),
+    prisma.user.findFirst({ where: { role: "admin" } }),
+  ]);
 
-  const midjourney = await prisma.executor.findFirst({ where: { name: "MIDJOURNEY" } });
-  const rogaIKopyta = await prisma.executor.findFirst({ where: { name: "Рога и Копыта ООО" } });
-  const kozlova = await prisma.executor.findFirst({ where: { name: "Козлова Анна" } });
+  const [midjourney, figma, rogaKopyta, mediaStart] = await Promise.all([
+    prisma.executor.findFirst({ where: { name: "MIDJOURNEY" } }),
+    prisma.executor.findFirst({ where: { name: "FIGMA"      } }),
+    prisma.executor.findFirst({ where: { name: "Рога и Копыта ООО" } }),
+    prisma.executor.findFirst({ where: { name: "Медиа Старт ИП"   } }),
+  ]);
 
-  const wtSmm   = await prisma.workType.findFirst({ where: { name: "SMM-ведение" } });
-  const wtIt    = await prisma.workType.findFirst({ where: { name: "Поддержка сайта" } });
-  const wtVideo = await prisma.workType.findFirst({ where: { name: "Монтаж видео" } });
+  const [pContent, pSmm, pRebrand, pPR, pDigital, pVideo, pPortal] = await Promise.all([
+    prisma.project.findFirst({ where: { shortName: "Контент",             status: "active" } }),
+    prisma.project.findFirst({ where: { shortName: "SMM Q3",              status: "active" } }),
+    prisma.project.findFirst({ where: { shortName: "Ребрендинг",          status: "active" } }),
+    prisma.project.findFirst({ where: { shortName: "PR-кампания Q4",      status: "active" } }),
+    prisma.project.findFirst({ where: { shortName: "Digital-присутствие", status: "active" } }),
+    prisma.project.findFirst({ where: { shortName: "Видеопроизводство",   status: "active" } }),
+    prisma.project.findFirst({ where: { shortName: "Внутренний портал",   status: "active" } }),
+  ]);
 
-  const responsible = await prisma.user.findFirst({ where: { email: "manager.ivanov@kpd.local" } });
-  const petrov      = await prisma.user.findFirst({ where: { email: "manager.petrov@kpd.local" } });
-  const adminUser   = await prisma.user.findFirst({ where: { role: "admin" } });
-  const bankAccount = await prisma.bankAccount.findFirst({ where: { isDefault: true } });
+  const [wtSmm, wtIt, wtVideo, wtLong] = await Promise.all([
+    prisma.workType.findFirst({ where: { name: "SMM-ведение"   } }),
+    prisma.workType.findFirst({ where: { name: "Поддержка сайта" } }),
+    prisma.workType.findFirst({ where: { name: "Монтаж видео"  } }),
+    prisma.workType.findFirst({ where: { name: "Лонгрид"       } }),
+  ]);
 
-  if (!projectContent || !adminUser || !responsible) return;
+  const bankId = (await prisma.bankAccount.findFirst({ where: { isDefault: true } }))?.id ?? null;
 
-  const fallbackExec = midjourney
-    ?? await prisma.executor.findFirst({ where: { status: "active" } });
-  const fallbackWt = wtSmm
-    ?? await prisma.workType.findFirst({ where: { status: "active" } });
+  if (!admin || !ivanov) return;
 
-  if (!fallbackExec || !fallbackWt) return;
+  type OE = {
+    projectId: string; executorId: string; workTypeId: string;
+    responsibleUserId: string; createdById: string;
+    executionYear: number; executionMonth: number;
+    description: string; amount: number;
+    workStatus: string; paymentStatus: string;
+    bankAccountId?: string | null;
+    paymentAmount?: number; plannedPayAt?: Date; paidAt?: Date;
+    checkedAt?: Date; preferredPayMethod?: string;
+  };
+  const rows: OE[] = [];
 
-  const rows = [
-    // Март — оплачено (Midjourney, генерация изображений)
-    midjourney && wtSmm && projectContent ? {
-      projectId: projectContent.id,
-      executorId: midjourney.id,
-      workTypeId: wtSmm.id,
-      responsibleUserId: responsible.id,
-      createdById: adminUser.id,
-      executionYear: 2026, executionMonth: 3,
-      description: "Подписка Midjourney — март 2026",
-      amount: 3_000, workStatus: "paid", paymentStatus: "paid",
-      paymentAmount: 3_000,
-      plannedPayAt: new Date("2026-03-01"), paidAt: new Date("2026-03-01"),
-      bankAccountId: bankAccount?.id ?? null,
-      preferredPayMethod: "4DEV",
-    } : null,
+  const mkOE = (
+    year: number, month: number,
+    proj: { id: string } | null,
+    exec: { id: string } | null,
+    wt: { id: string } | null,
+    resp: { id: string } | null,
+    createdBy: { id: string } | null,
+    desc: string, amount: number,
+    wStatus: string, pStatus: string,
+    extra?: Partial<OE>,
+  ): OE | null => {
+    if (!proj || !exec || !wt || !resp || !createdBy) return null;
+    return {
+      projectId: proj.id, executorId: exec.id, workTypeId: wt.id,
+      responsibleUserId: resp.id, createdById: createdBy.id,
+      executionYear: year, executionMonth: month,
+      description: desc, amount,
+      workStatus: wStatus, paymentStatus: pStatus,
+      bankAccountId: bankId ?? undefined,
+      ...extra,
+    };
+  };
 
-    // Март — оплачено (Рога и Копыта, поддержка сайта)
-    rogaIKopyta && wtIt && projectContent ? {
-      projectId: projectContent.id,
-      executorId: rogaIKopyta.id,
-      workTypeId: wtIt.id,
-      responsibleUserId: (petrov ?? responsible).id,
-      createdById: adminUser.id,
-      executionYear: 2026, executionMonth: 3,
-      description: "Разработка и поддержка сайта — март",
-      amount: 120_000, workStatus: "paid", paymentStatus: "paid",
-      paymentAmount: 120_000,
-      plannedPayAt: new Date("2026-03-31"), paidAt: new Date("2026-04-02"),
-      bankAccountId: bankAccount?.id ?? null,
-      preferredPayMethod: "Юрлицо в РФ",
-    } : null,
+  // 2025
+  rows.push(...[
+    mkOE(2025, 3,  pContent, midjourney, wtSmm, ivanov, admin,    "Подписка Midjourney — март 2025",       3_000,   "paid", "paid",    { paymentAmount: 3_000,   plannedPayAt: md(2025, 3,  1), paidAt: md(2025, 3,  1), preferredPayMethod: "4DEV" }),
+    mkOE(2025, 3,  pContent, rogaKopyta, wtIt,  petrov, admin,    "Поддержка сайта — март 2025",          80_000,  "paid", "paid",    { paymentAmount: 80_000,  plannedPayAt: md(2025, 3, 31), paidAt: md(2025, 4,  2) }),
+    mkOE(2025, 5,  pSmm,     mediaStart, wtSmm, ivanov, ivanov,   "Реклама ВКонтакте — май 2025",         50_000,  "paid", "paid",    { paymentAmount: 50_000,  plannedPayAt: md(2025, 5, 10), paidAt: md(2025, 5, 12), preferredPayMethod: "ИП в РФ" }),
+    mkOE(2025, 6,  pContent, midjourney, wtSmm, ivanov, ivanov,   "Подписка Midjourney — июнь 2025",       3_000,   "paid", "paid",    { paymentAmount: 3_000,   plannedPayAt: md(2025, 6,  1), paidAt: md(2025, 6,  1), preferredPayMethod: "4DEV" }),
+    mkOE(2025, 6,  pContent, figma,      wtIt,  sokolova, admin,  "Подписка Figma (team) — H1 2025",      15_000,  "paid", "paid",    { paymentAmount: 15_000,  plannedPayAt: md(2025, 6, 15), paidAt: md(2025, 6, 15), preferredPayMethod: "4DEV" }),
+    mkOE(2025, 8,  pSmm,     mediaStart, wtSmm, ivanov, ivanov,   "Таргетированная реклама — август",     70_000,  "paid", "paid",    { paymentAmount: 70_000,  plannedPayAt: md(2025, 8, 20), paidAt: md(2025, 8, 22) }),
+    mkOE(2025, 9,  pContent, rogaKopyta, wtIt,  petrov, admin,    "Поддержка сайта — Q3 2025",            80_000,  "paid", "paid",    { paymentAmount: 80_000,  plannedPayAt: md(2025, 9, 30), paidAt: md(2025, 10, 2) }),
+    mkOE(2025, 9,  pContent, midjourney, wtSmm, ivanov, admin,    "Подписка Midjourney — Q3 2025",         9_000,   "paid", "paid",    { paymentAmount: 9_000,   plannedPayAt: md(2025, 9,  1), paidAt: md(2025, 9,  1), preferredPayMethod: "4DEV" }),
+    mkOE(2025, 10, pVideo,   midjourney, wtVideo, petrov, admin,  "Стоковая музыка для видео — Q4",        8_000,   "paid", "paid",    { paymentAmount: 8_000,   plannedPayAt: md(2025, 10, 5), paidAt: md(2025, 10, 6), preferredPayMethod: "4DEV" }),
+    mkOE(2025, 11, pRebrand, figma,      wtIt,   petrov, admin,   "Figma (дополнительные слоты) — Q4",    7_500,   "paid", "paid",    { paymentAmount: 7_500,   plannedPayAt: md(2025, 11, 1), paidAt: md(2025, 11, 1), preferredPayMethod: "4DEV" }),
+    mkOE(2025, 12, pContent, rogaKopyta, wtIt,   petrov, admin,   "Поддержка сайта — декабрь 2025",      80_000,  "paid", "paid",    { paymentAmount: 80_000,  plannedPayAt: md(2025, 12, 31), paidAt: md(2026, 1, 5) }),
+    mkOE(2025, 12, pDigital, mediaStart, wtSmm,  sokolova, admin, "Реклама Digital VK — Q4",             120_000, "paid", "paid",    { paymentAmount: 120_000, plannedPayAt: md(2025, 12, 20), paidAt: md(2025, 12, 22) }),
+  ].filter((r): r is OE => r !== null));
 
-    // Апрель — проверено, выплата запланирована (Midjourney)
-    midjourney && wtSmm && projectContent ? {
-      projectId: projectContent.id,
-      executorId: midjourney.id,
-      workTypeId: wtSmm.id,
-      responsibleUserId: responsible.id,
-      createdById: responsible.id,
-      executionYear: 2026, executionMonth: 4,
-      description: "Подписка Midjourney — апрель 2026",
-      amount: 3_000, workStatus: "checked", paymentStatus: "planned",
-      paymentAmount: 3_000,
-      plannedPayAt: new Date("2026-05-01"),
-      preferredPayMethod: "4DEV",
-    } : null,
-
-    // Апрель — checked, выплата planned (Рога и Копыта)
-    rogaIKopyta && wtIt && projectContent ? {
-      projectId: projectContent.id,
-      executorId: rogaIKopyta.id,
-      workTypeId: wtIt.id,
-      responsibleUserId: (petrov ?? responsible).id,
-      createdById: (petrov ?? adminUser).id,
-      executionYear: 2026, executionMonth: 4,
-      description: "Поддержка сайта — апрель",
-      amount: 120_000, workStatus: "checked", paymentStatus: "planned",
-      paymentAmount: 120_000,
-      plannedPayAt: new Date("2026-05-05"),
-    } : null,
-
-    // Май — submitted (Козлова, видеосъёмка)
-    kozlova && wtVideo && projectSmm ? {
-      projectId: projectSmm.id,
-      executorId: kozlova.id,
-      workTypeId: wtVideo.id,
-      responsibleUserId: responsible.id,
-      createdById: responsible.id,
-      executionYear: 2026, executionMonth: 5,
-      description: "Фотосъёмка мероприятия для соцсетей",
-      amount: 30_000, workStatus: "submitted", paymentStatus: "planned",
-    } : null,
-  ].filter((r): r is NonNullable<typeof r> => r !== null);
+  // 2026
+  rows.push(...[
+    mkOE(2026, 1,  pContent, midjourney, wtSmm, ivanov, admin,    "Подписка Midjourney — январь 2026",     3_000,   "paid", "paid",    { paymentAmount: 3_000,   plannedPayAt: md(2026, 1,  1), paidAt: md(2026, 1,  1), preferredPayMethod: "4DEV" }),
+    mkOE(2026, 1,  pPortal,  figma,      wtIt,  sokolova, admin,  "Figma (team) — январь 2026",           15_000,  "paid", "paid",    { paymentAmount: 15_000,  plannedPayAt: md(2026, 1, 15), paidAt: md(2026, 1, 15), preferredPayMethod: "4DEV" }),
+    mkOE(2026, 2,  pContent, rogaKopyta, wtIt,  petrov, admin,    "Поддержка сайта — февраль 2026",       80_000,  "paid", "paid",    { paymentAmount: 80_000,  plannedPayAt: md(2026, 2, 28), paidAt: md(2026, 3,  3) }),
+    mkOE(2026, 2,  pSmm,     mediaStart, wtSmm, ivanov, ivanov,   "Реклама ВКонтакте — февраль 2026",     60_000,  "paid", "paid",    { paymentAmount: 60_000,  plannedPayAt: md(2026, 2, 15), paidAt: md(2026, 2, 17) }),
+    mkOE(2026, 3,  pContent, midjourney, wtSmm, ivanov, admin,    "Подписка Midjourney — март 2026",       3_000,   "paid", "paid",    { paymentAmount: 3_000,   plannedPayAt: md(2026, 3,  1), paidAt: md(2026, 3,  1), preferredPayMethod: "4DEV" }),
+    mkOE(2026, 3,  pRebrand, rogaKopyta, wtIt,  petrov, admin,    "Разработка сайта ребрендинг",         150_000,  "paid", "paid",    { paymentAmount: 150_000, plannedPayAt: md(2026, 3, 31), paidAt: md(2026, 4,  2) }),
+    mkOE(2026, 4,  pContent, midjourney, wtSmm, ivanov, ivanov,   "Подписка Midjourney — апрель 2026",    3_000,   "checked", "planned", { paymentAmount: 3_000, plannedPayAt: md(2026, 5, 1), preferredPayMethod: "4DEV" }),
+    mkOE(2026, 4,  pPortal,  rogaKopyta, wtIt,  sokolova, admin,  "Поддержка портала — апрель 2026",     80_000,  "checked", "planned", { paymentAmount: 80_000, plannedPayAt: md(2026, 5, 5) }),
+    mkOE(2026, 4,  pDigital, mediaStart, wtSmm, sokolova, sokolova, "Контекстная реклама — апрель",      90_000,  "checked", "planned", { paymentAmount: 90_000, plannedPayAt: md(2026, 5, 10) }),
+    mkOE(2026, 5,  pSmm,     mediaStart, wtSmm, ivanov, ivanov,   "Реклама ВКонтакте — май 2026",        70_000,  "submitted", "planned"),
+    mkOE(2026, 5,  pContent, figma,      wtIt,  sokolova, admin,  "Figma (team) — май 2026",             15_000,  "submitted", "planned"),
+    mkOE(2026, 5,  pVideo,   midjourney, wtVideo, petrov, admin,  "Стоковые материалы для видео",         12_000,  "submitted", "planned"),
+  ].filter((r): r is OE => r !== null));
 
   for (const row of rows) {
     await prisma.otherExpense.create({ data: row });
   }
-
   console.log(`[seed] other expenses seeded: ${rows.length} строк`);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Начисления
+// ─────────────────────────────────────────────────────────────────────────────
+
 async function seedCharges() {
-  const existing = await prisma.charge.count();
-  if (existing > 0) return;
+  const already = await prisma.charge.count();
+  if (already > 0) return;
 
-  const order = await prisma.order.findFirst({ where: { status: "active" } });
-  const bankAccount = await prisma.bankAccount.findFirst();
-  if (!order || !bankAccount) return;
+  const orders = await prisma.order.findMany({ where: { status: "active" }, include: { project: true } });
+  const bankAccounts = await prisma.bankAccount.findMany({ where: { status: "active" } });
+  if (!orders.length || !bankAccounts.length) return;
 
-  await prisma.charge.createMany({
-    data: [
-      {
-        chargeNumber: "H001", bankAccountId: bankAccount.id,
-        invoiceNumber: "СЧ-2026-001", orderId: order.id,
-        amount: 500_000, issuedPlanAt: new Date("2026-02-01"), issuedAt: new Date("2026-02-03"),
-        paidPlanAt: new Date("2026-02-20"), paidAt: new Date("2026-02-19"),
-        status: "paid", paymentPurpose: "Разработка контент-плана Q1 2026",
-      },
-      {
-        chargeNumber: "H002", bankAccountId: bankAccount.id,
-        invoiceNumber: "СЧ-2026-002", orderId: order.id,
-        amount: 350_000, issuedPlanAt: new Date("2026-03-15"), issuedAt: new Date("2026-03-20"),
-        paidPlanAt: new Date("2026-04-05"), status: "to_pay",
-        paymentPurpose: "Создание видеоконтента Q1 2026",
-      },
-      {
-        chargeNumber: "H003", bankAccountId: bankAccount.id,
-        invoiceNumber: "СЧ-2026-003", orderId: order.id,
-        amount: 200_000, issuedPlanAt: new Date("2026-04-01"),
-        paidPlanAt: new Date("2026-04-20"), status: "planned",
-        paymentPurpose: "Аналитика эффективности кампании",
-      },
-    ],
-  });
+  const bankId = (bankAccounts.find(b => b.isDefault) ?? bankAccounts[0]).id;
 
-  console.log("[seed] charges seeded (H001-H003)");
+  type Charge = {
+    chargeNumber: string; bankAccountId: string; invoiceNumber: string;
+    orderId: string; amount: number;
+    issuedPlanAt?: Date; issuedAt?: Date; paidPlanAt?: Date; paidAt?: Date;
+    status: string; paymentPurpose: string;
+  };
+
+  const byProject: Record<string, { id: string; description: string }[]> = {};
+  for (const o of orders) {
+    if (!byProject[o.project.shortName]) byProject[o.project.shortName] = [];
+    byProject[o.project.shortName].push({ id: o.id, description: o.description });
+  }
+
+  const charges: Charge[] = [];
+  let num = 1;
+  const h = () => `H${String(num++).padStart(3, "0")}`;
+  const sc = (n: number) => `СЧ-2025-${String(n).padStart(3, "0")}`;
+  const sc6 = (n: number) => `СЧ-2026-${String(n).padStart(3, "0")}`;
+
+  const addOrder = (shortName: string, idx: number = 0) =>
+    byProject[shortName]?.[idx]?.id ?? orders[0].id;
+
+  // 2025
+  const c2025: Charge[] = [
+    { chargeNumber: h(), bankAccountId: bankId, invoiceNumber: sc(1),  orderId: addOrder("Контент",    0), amount: 500_000, issuedPlanAt: md(2025,2,1), issuedAt: md(2025,2,3),  paidPlanAt: md(2025,2,20), paidAt: md(2025,2,19), status: "paid",     paymentPurpose: "Контент Q1 2025 — партия 1" },
+    { chargeNumber: h(), bankAccountId: bankId, invoiceNumber: sc(2),  orderId: addOrder("Контент",    1), amount: 450_000, issuedPlanAt: md(2025,4,1), issuedAt: md(2025,4,5),  paidPlanAt: md(2025,5,5),  paidAt: md(2025,5,6),  status: "paid",     paymentPurpose: "Контент Q2 2025" },
+    { chargeNumber: h(), bankAccountId: bankId, invoiceNumber: sc(3),  orderId: addOrder("Контент",    2), amount: 600_000, issuedPlanAt: md(2025,7,1), issuedAt: md(2025,7,10), paidPlanAt: md(2025,8,10), paidAt: md(2025,8,9),  status: "paid",     paymentPurpose: "Контент Q3 2025" },
+    { chargeNumber: h(), bankAccountId: bankId, invoiceNumber: sc(4),  orderId: addOrder("SMM Q3",     0), amount: 350_000, issuedPlanAt: md(2025,3,1), issuedAt: md(2025,3,5),  paidPlanAt: md(2025,4,1),  paidAt: md(2025,3,31), status: "paid",     paymentPurpose: "SMM-ведение Q2 2025" },
+    { chargeNumber: h(), bankAccountId: bankId, invoiceNumber: sc(5),  orderId: addOrder("SMM Q3",     1), amount: 350_000, issuedPlanAt: md(2025,7,1), issuedAt: md(2025,7,8),  paidPlanAt: md(2025,8,5),  paidAt: md(2025,8,4),  status: "paid",     paymentPurpose: "SMM-ведение Q3 2025" },
+    { chargeNumber: h(), bankAccountId: bankId, invoiceNumber: sc(6),  orderId: addOrder("SMM Q3",     2), amount: 350_000, issuedPlanAt: md(2025,10,1),issuedAt: md(2025,10,8), paidPlanAt: md(2025,11,5), paidAt: md(2025,11,3), status: "paid",     paymentPurpose: "SMM-ведение Q4 2025" },
+    { chargeNumber: h(), bankAccountId: bankId, invoiceNumber: sc(7),  orderId: addOrder("Запуск приложения", 0), amount: 800_000, issuedPlanAt: md(2025,5,1), issuedAt: md(2025,5,15), paidPlanAt: md(2025,6,15), paidAt: md(2025,6,14), status: "paid",     paymentPurpose: "Маркетинг запуска — аванс" },
+    { chargeNumber: h(), bankAccountId: bankId, invoiceNumber: sc(8),  orderId: addOrder("Запуск приложения", 1), amount: 600_000, issuedPlanAt: md(2025,9,1), issuedAt: md(2025,9,10), paidPlanAt: md(2025,10,10),paidAt: md(2025,10,9),status: "paid",     paymentPurpose: "Маркетинг запуска — финал" },
+    { chargeNumber: h(), bankAccountId: bankId, invoiceNumber: sc(9),  orderId: addOrder("Ребрендинг",  0), amount: 1_200_000,issuedPlanAt:md(2025,11,1),issuedAt:md(2025,11,15),paidPlanAt:md(2025,12,15),paidAt:md(2025,12,14),status:"paid",     paymentPurpose: "Ребрендинг — концепция и гайдлайн" },
+    { chargeNumber: h(), bankAccountId: bankId, invoiceNumber: sc(10), orderId: addOrder("Видеопроизводство", 0), amount: 900_000, issuedPlanAt: md(2025,8,1), issuedAt: md(2025,8,20), paidPlanAt: md(2025,9,20), paidAt: md(2025,9,19), status: "paid",   paymentPurpose: "Видеосерия Норникель 2025" },
+  ];
+
+  // 2026
+  const c2026: Charge[] = [
+    { chargeNumber: h(), bankAccountId: bankId, invoiceNumber: sc6(1),  orderId: addOrder("Контент",    2), amount: 550_000, issuedPlanAt: md(2026,1,15),issuedAt: md(2026,1,18), paidPlanAt: md(2026,2,20), paidAt: md(2026,2,18), status: "paid",     paymentPurpose: "Контент-план Q1 2026 — аванс" },
+    { chargeNumber: h(), bankAccountId: bankId, invoiceNumber: sc6(2),  orderId: addOrder("SMM Q3",     2), amount: 380_000, issuedPlanAt: md(2026,1,20),issuedAt: md(2026,1,25), paidPlanAt: md(2026,3,5),  paidAt: md(2026,3,4),  status: "paid",     paymentPurpose: "SMM Q1 2026" },
+    { chargeNumber: h(), bankAccountId: bankId, invoiceNumber: sc6(3),  orderId: addOrder("PR-кампания Q4", 0), amount: 700_000, issuedPlanAt: md(2026,2,1),issuedAt: md(2026,2,10),paidPlanAt: md(2026,3,10),paidAt: md(2026,3,8),  status: "paid",     paymentPurpose: "PR-кампания Q4 — старт 2026" },
+    { chargeNumber: h(), bankAccountId: bankId, invoiceNumber: sc6(4),  orderId: addOrder("Digital-присутствие", 0), amount: 950_000, issuedPlanAt: md(2026,3,1),issuedAt: md(2026,3,15),paidPlanAt: md(2026,4,15),paidAt: md(2026,4,14),status:"paid",  paymentPurpose: "Digital VK — стратегия и старт" },
+    { chargeNumber: h(), bankAccountId: bankId, invoiceNumber: sc6(5),  orderId: addOrder("Ребрендинг",  1), amount: 1_500_000,issuedPlanAt:md(2026,3,20),issuedAt:md(2026,4,1),  paidPlanAt: md(2026,5,1),  paidAt: md(2026,4,30), status: "paid",     paymentPurpose: "Ребрендинг — производство" },
+    { chargeNumber: h(), bankAccountId: bankId, invoiceNumber: sc6(6),  orderId: addOrder("Контент",    2), amount: 600_000, issuedPlanAt: md(2026,4,10),issuedAt: md(2026,4,15),paidPlanAt: md(2026,5,15),                        status: "to_pay",   paymentPurpose: "Контент-план Q2 2026" },
+    { chargeNumber: h(), bankAccountId: bankId, invoiceNumber: sc6(7),  orderId: addOrder("SMM Q3",     2), amount: 400_000, issuedPlanAt: md(2026,4,20),issuedAt: md(2026,4,25),paidPlanAt: md(2026,5,25),                        status: "to_pay",   paymentPurpose: "SMM Q2 2026" },
+    { chargeNumber: h(), bankAccountId: bankId, invoiceNumber: sc6(8),  orderId: addOrder("PR-кампания Q4", 1), amount: 750_000, issuedPlanAt: md(2026,5,1),                        paidPlanAt: md(2026,6,5),                         status: "planned",  paymentPurpose: "PR-поддержка Q2 2026" },
+    { chargeNumber: h(), bankAccountId: bankId, invoiceNumber: sc6(9),  orderId: addOrder("Digital-присутствие", 1), amount: 1_000_000,issuedPlanAt:md(2026,5,10),                paidPlanAt: md(2026,6,10),                        status: "planned",  paymentPurpose: "Digital VK — реализация" },
+    { chargeNumber: h(), bankAccountId: bankId, invoiceNumber: sc6(10), orderId: addOrder("Видеопроизводство", 1), amount: 1_100_000,issuedPlanAt:md(2026,5,15),                  paidPlanAt: md(2026,6,20),                        status: "planned",  paymentPurpose: "Видеосерия Норникель 2026" },
+    { chargeNumber: h(), bankAccountId: bankId, invoiceNumber: sc6(11), orderId: addOrder("Внутренний портал", 0), amount: 450_000, issuedPlanAt: md(2026,6,1),                   paidPlanAt: md(2026,7,1),                         status: "planned",  paymentPurpose: "Внутренний портал — разработка" },
+    { chargeNumber: h(), bankAccountId: bankId, invoiceNumber: sc6(12), orderId: addOrder("База знаний",  0), amount: 200_000, issuedPlanAt: md(2026,6,15),                        paidPlanAt: md(2026,7,15),                        status: "planned",  paymentPurpose: "БЗ — поддержка Q3 2026" },
+  ];
+
+  await prisma.charge.createMany({ data: [...c2025, ...c2026] });
+  console.log(`[seed] charges seeded: ${c2025.length + c2026.length} начислений`);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Строки плана расходов + кэшфлоу
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function seedSpendingPlanLines() {
-  const existing = await prisma.spendingPlanLine.count();
-  if (existing > 0) return;
+  const already = await prisma.spendingPlanLine.count();
+  if (already > 0) return;
 
-  const adminUser = await prisma.user.findFirst({ where: { role: "admin" } });
-  if (!adminUser) return;
+  const admin = await prisma.user.findFirst({ where: { role: "admin" } });
+  if (!admin) return;
 
-  const projects = await prisma.project.findMany({ where: { status: "active" }, take: 3 });
-  const executors = await prisma.executor.findMany({ where: { status: "active" }, take: 3 });
-  const workTypes = await prisma.workType.findMany({ where: { status: "active" }, take: 3 });
+  const [smirnov, kozlova, morozova, volkov, zakharov, orlova] = await Promise.all([
+    prisma.executor.findFirst({ where: { name: "Смирнов Алексей" } }),
+    prisma.executor.findFirst({ where: { name: "Козлова Анна"    } }),
+    prisma.executor.findFirst({ where: { name: "Морозова Елена"  } }),
+    prisma.executor.findFirst({ where: { name: "Волков Кирилл"   } }),
+    prisma.executor.findFirst({ where: { name: "Захаров Дмитрий" } }),
+    prisma.executor.findFirst({ where: { name: "Орлова Виктория" } }),
+  ]);
 
-  if (!projects.length || !executors.length || !workTypes.length) return;
+  const [pContent, pSmm, pRebrand, pPR, pDigital, pPortal] = await Promise.all([
+    prisma.project.findFirst({ where: { shortName: "Контент",             status: "active" } }),
+    prisma.project.findFirst({ where: { shortName: "SMM Q3",              status: "active" } }),
+    prisma.project.findFirst({ where: { shortName: "Ребрендинг",          status: "active" } }),
+    prisma.project.findFirst({ where: { shortName: "PR-кампания Q4",      status: "active" } }),
+    prisma.project.findFirst({ where: { shortName: "Digital-присутствие", status: "active" } }),
+    prisma.project.findFirst({ where: { shortName: "Внутренний портал",   status: "active" } }),
+  ]);
 
-  // Добавим строки плана на 2026 год (недели 17–40)
-  const year = 2026;
-  const linesToCreate = [];
+  const [wtDesign, wtLong, wtVideo, wtPR, wtEmail] = await Promise.all([
+    prisma.workType.findFirst({ where: { name: "Дизайн посадочной" } }),
+    prisma.workType.findFirst({ where: { name: "Лонгрид"           } }),
+    prisma.workType.findFirst({ where: { name: "Монтаж видео"      } }),
+    prisma.workType.findFirst({ where: { name: "PR-аналитика"      } }),
+    prisma.workType.findFirst({ where: { name: "Email-маркетинг"   } }),
+  ]);
 
-  for (const project of projects.slice(0, 2)) {
-    const exec = executors[0];
-    const wt = workTypes[0];
-
-    // Привяжем исполнителя к проекту
-    await prisma.projectExecutor.upsert({
-      where: { projectId_executorId: { projectId: project.id, executorId: exec.id } },
-      update: {},
-      create: { projectId: project.id, executorId: exec.id },
-    });
-
-    // Недели 17–30 — разные суммы
-    for (let week = 17; week <= 30; week++) {
-      const amount = Math.round((15_000 + Math.random() * 20_000) / 1000) * 1000;
-      linesToCreate.push({
-        projectId: project.id,
-        executorId: exec.id,
-        workTypeId: wt.id,
-        year,
-        week,
-        amount,
-        sourceType: "personal" as const,
-        createdById: adminUser.id,
-      });
-    }
-  }
-
-  // Второй исполнитель на первый проект
-  if (projects[0] && executors[1] && workTypes[1]) {
-    await prisma.projectExecutor.upsert({
-      where: { projectId_executorId: { projectId: projects[0].id, executorId: executors[1].id } },
-      update: {},
-      create: { projectId: projects[0].id, executorId: executors[1].id },
-    });
-
-    for (let week = 20; week <= 28; week++) {
-      linesToCreate.push({
-        projectId: projects[0].id,
-        executorId: executors[1].id,
-        workTypeId: workTypes[1].id,
-        year,
-        week,
-        amount: 12_000,
-        sourceType: "other" as const,
-        createdById: adminUser.id,
-      });
-    }
-  }
-
-  if (linesToCreate.length > 0) {
-    await prisma.spendingPlanLine.createMany({ data: linesToCreate });
-    console.log(`[seed] spending plan lines seeded: ${linesToCreate.length} строк`);
-  }
-
-  // Стартовый баланс кэшфлоу
-  await prisma.cashflowOpeningBalance.upsert({
-    where: { year },
-    update: {},
-    create: { year, amount: 1_500_000 },
-  });
-  console.log("[seed] cashflow opening balance seeded");
-}
-
-async function seedVacationEntries() {
-  const existing = await prisma.vacationEntry.count();
-  if (existing > 0) return;
-
-  const executors = await prisma.executor.findMany({
-    where: { status: "active", userId: { not: null } },
-    take: 3,
-  });
-
-  if (!executors.length) return;
-
-  const entries: Array<{
-    executorId: string;
-    startAt: Date;
-    endAt: Date;
-    daysCount: number;
-    status: string;
-    isPaid: boolean;
-    substituteContacts?: string;
+  const lines: Array<{
+    projectId: string; executorId: string; workTypeId: string;
+    year: number; week: number; amount: number;
+    sourceType: "personal" | "other"; createdById: string;
   }> = [];
 
-  if (executors[0]) {
-    entries.push({
-      executorId: executors[0].id,
-      startAt: new Date("2026-07-01"),
-      endAt: new Date("2026-07-14"),
-      daysCount: 14,
-      status: "approved",
-      isPaid: true,
-      substituteContacts: "Козлова Анна, @anna_kozlova",
+  type PlanCombo = {
+    proj: typeof pContent;
+    exec: typeof smirnov;
+    wt:   typeof wtDesign;
+    src:  "personal" | "other";
+    base: number; variance: number;
+    weekStart: number; weekEnd: number; years: number[];
+  };
+
+  const combos: PlanCombo[] = [
+    { proj: pContent,  exec: smirnov,  wt: wtDesign, src: "personal", base: 40_000, variance: 15_000, weekStart: 1, weekEnd: 52, years: [2025, 2026] },
+    { proj: pContent,  exec: kozlova,  wt: wtLong,   src: "personal", base: 30_000, variance: 10_000, weekStart: 1, weekEnd: 52, years: [2025, 2026] },
+    { proj: pSmm,      exec: morozova, wt: wtVideo,  src: "personal", base: 35_000, variance: 12_000, weekStart: 14, weekEnd: 52, years: [2025, 2026] },
+    { proj: pRebrand,  exec: smirnov,  wt: wtDesign, src: "personal", base: 45_000, variance: 10_000, weekStart: 1, weekEnd: 30, years: [2026] },
+    { proj: pRebrand,  exec: volkov,   wt: wtDesign, src: "personal", base: 38_000, variance: 12_000, weekStart: 1, weekEnd: 30, years: [2026] },
+    { proj: pPR,       exec: zakharov, wt: wtPR,     src: "other",    base: 50_000, variance: 15_000, weekStart: 1, weekEnd: 52, years: [2025, 2026] },
+    { proj: pDigital,  exec: orlova,   wt: wtEmail,  src: "personal", base: 22_000, variance: 8_000,  weekStart: 22, weekEnd: 52, years: [2025, 2026] },
+    { proj: pPortal,   exec: volkov,   wt: wtDesign, src: "personal", base: 35_000, variance: 10_000, weekStart: 1, weekEnd: 26, years: [2026] },
+  ];
+
+  for (const c of combos) {
+    if (!c.proj || !c.exec || !c.wt) continue;
+    // link executor to project
+    await prisma.projectExecutor.upsert({
+      where:  { projectId_executorId: { projectId: c.proj.id, executorId: c.exec.id } },
+      update: {}, create: { projectId: c.proj.id, executorId: c.exec.id },
     });
+    for (const year of c.years) {
+      const maxWeek = year === 2026 ? Math.min(c.weekEnd, 26) : c.weekEnd; // 2026 cap at week 26
+      for (let week = c.weekStart; week <= maxWeek; week++) {
+        // zero-out some weeks to make it realistic
+        if (week % 13 === 0) continue; // skip ~4 weeks/year (holidays)
+        const amount = Math.round((c.base + (week * 7919 + year * 31) % c.variance) / 1000) * 1000;
+        lines.push({ projectId: c.proj.id, executorId: c.exec.id, workTypeId: c.wt.id, year, week, amount, sourceType: c.src, createdById: admin.id });
+      }
+    }
   }
 
-  if (executors[1]) {
-    entries.push({
-      executorId: executors[1].id,
-      startAt: new Date("2026-08-15"),
-      endAt: new Date("2026-08-28"),
-      daysCount: 14,
-      status: "need_approval",
-      isPaid: false,
-    });
+  if (lines.length > 0) {
+    await prisma.spendingPlanLine.createMany({ data: lines });
   }
+
+  // Стартовые балансы кэшфлоу
+  await prisma.cashflowOpeningBalance.upsert({ where: { year: 2025 }, update: {}, create: { year: 2025, amount: 2_000_000 } });
+  await prisma.cashflowOpeningBalance.upsert({ where: { year: 2026 }, update: {}, create: { year: 2026, amount: 1_500_000 } });
+
+  console.log(`[seed] spending plan lines: ${lines.length} строк`);
+  console.log("[seed] cashflow opening balances: 2025, 2026");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Отпуска
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function seedVacations() {
+  const already = await prisma.vacationEntry.count();
+  if (already > 0) return;
+
+  const [smirnov, kozlova, morozova, volkov, zakharov, petrovI] = await Promise.all([
+    prisma.executor.findFirst({ where: { name: "Смирнов Алексей" } }),
+    prisma.executor.findFirst({ where: { name: "Козлова Анна"    } }),
+    prisma.executor.findFirst({ where: { name: "Морозова Елена"  } }),
+    prisma.executor.findFirst({ where: { name: "Волков Кирилл"   } }),
+    prisma.executor.findFirst({ where: { name: "Захаров Дмитрий" } }),
+    prisma.executor.findFirst({ where: { name: "Петров Иван"     } }),
+  ]);
+  const admin = await prisma.user.findFirst({ where: { role: "admin" } });
+
+  const entries = [
+    smirnov  && { executorId: smirnov.id,  startAt: md(2026,7,1),  endAt: md(2026,7,14),  daysCount: 14, status: "approved",      isPaid: true,  approvedById: admin?.id, approvedAt: md(2026,6,20), substituteContacts: "Козлова Анна, @anna_kozlova" },
+    kozlova  && { executorId: kozlova.id,  startAt: md(2026,8,15), endAt: md(2026,8,28),  daysCount: 14, status: "need_approval",  isPaid: false },
+    morozova && { executorId: morozova.id, startAt: md(2026,7,15), endAt: md(2026,7,28),  daysCount: 14, status: "approved",      isPaid: true,  approvedById: admin?.id, approvedAt: md(2026,7,1),  substituteContacts: "Петров Иван, @petrov_video"  },
+    volkov   && { executorId: volkov.id,   startAt: md(2026,9,1),  endAt: md(2026,9,14),  daysCount: 14, status: "need_approval",  isPaid: false },
+    zakharov && { executorId: zakharov.id, startAt: md(2025,12,27),endAt: md(2026,1,10),  daysCount: 10, status: "approved",      isPaid: true,  approvedById: admin?.id, approvedAt: md(2025,12,15) },
+    petrovI  && { executorId: petrovI.id,  startAt: md(2026,6,15), endAt: md(2026,6,28),  daysCount: 14, status: "need_approval",  isPaid: false },
+    smirnov  && { executorId: smirnov.id,  startAt: md(2026,1,2),  endAt: md(2026,1,9),   daysCount: 5,  status: "approved",      isPaid: true,  approvedById: admin?.id, approvedAt: md(2025,12,20) },
+    morozova && { executorId: morozova.id, startAt: md(2026,2,20), endAt: md(2026,2,27),  daysCount: 5,  status: "approved",      isPaid: false, approvedById: admin?.id, approvedAt: md(2026,2,10) },
+  ].filter((e): e is NonNullable<typeof e> => !!e);
 
   for (const e of entries) {
     await prisma.vacationEntry.create({ data: e });
   }
-
-  console.log(`[seed] vacation entries seeded: ${entries.length}`);
+  console.log(`[seed] vacations seeded: ${entries.length}`);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  main
+// ─────────────────────────────────────────────────────────────────────────────
+
 async function main() {
-  console.log("[seed] start");
+  console.log("[seed] start — large dataset");
   const hash = await bcrypt.hash(SEED_PASSWORD, 10);
 
   await seedUsers(hash);
@@ -909,19 +1110,30 @@ async function main() {
   await seedOtherExpenses();
   await seedCharges();
   await seedSpendingPlanLines();
-  await seedVacationEntries();
+  await seedVacations();
 
-  console.log(`[seed] credentials: admin@kpd.local / ${SEED_PASSWORD}`);
-  console.log(`[seed]              manager.ivanov@kpd.local / ${SEED_PASSWORD}`);
-  console.log(`[seed]              executor.smirnov@kpd.local / ${SEED_PASSWORD}`);
+  const [works, payments, expenses, charges, plan] = await Promise.all([
+    prisma.work.count(),
+    prisma.payment.count(),
+    prisma.otherExpense.count(),
+    prisma.charge.count(),
+    prisma.spendingPlanLine.count(),
+  ]);
+
+  console.log("\n[seed] ──────────────────────────────────");
+  console.log(`[seed]  Работы:       ${works}`);
+  console.log(`[seed]  Выплаты:      ${payments}`);
+  console.log(`[seed]  Прочие траты: ${expenses}`);
+  console.log(`[seed]  Начисления:   ${charges}`);
+  console.log(`[seed]  Строк плана:  ${plan}`);
+  console.log("[seed] ──────────────────────────────────");
+  console.log(`[seed]  admin@kpd.local / ${SEED_PASSWORD}`);
+  console.log(`[seed]  manager.ivanov@kpd.local / ${SEED_PASSWORD}`);
+  console.log(`[seed]  manager.sokolova@kpd.local / ${SEED_PASSWORD}`);
+  console.log(`[seed]  executor.smirnov@kpd.local / ${SEED_PASSWORD}`);
   console.log("[seed] done.");
 }
 
 main()
-  .catch((e) => {
-    console.error(e);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+  .catch(e => { console.error(e); process.exit(1); })
+  .finally(() => prisma.$disconnect());
