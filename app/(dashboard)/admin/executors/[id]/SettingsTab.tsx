@@ -63,9 +63,7 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
     setTogglingAccess(true);
     try {
       const r = await fetch(`/api/executors/${executorId}/access`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ revoke: hasAccess }),
+        method: hasAccess ? "DELETE" : "POST",
       });
       if (!r.ok) throw new Error();
       toast.success(hasAccess ? "Доступ отозван" : "Доступ выдан");
