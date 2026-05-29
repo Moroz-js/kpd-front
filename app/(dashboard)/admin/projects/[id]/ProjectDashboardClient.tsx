@@ -323,11 +323,6 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {canManagePlan && (
-            <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>
-              <Plus className="h-3.5 w-3.5 mr-1" /> Строка плана
-            </Button>
-          )}
           <Select value={String(year)} onValueChange={v => v && setYear(parseInt(v))}>
             <SelectTrigger className="w-28 h-8 text-sm"><SelectValue /></SelectTrigger>
             <SelectContent>{YEARS.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}</SelectContent>
@@ -478,9 +473,13 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                 ))}
                 <td className={cn(tdCls, "bg-neutral-50 font-semibold")}>{fmt(rowTotal(summary.expensePlan ?? []))}</td>
               </tr>
-              {planLines.length === 0 && (
-                <tr>
-                  <td className={cn(stickyLbl, "font-normal text-neutral-400")} colSpan={weeks.length + 2}>Нет строк плана</td>
+              {planLines.length === 0 && !canManagePlan && (
+                <tr className="border-b border-neutral-100">
+                  <td className={cn(stickyLbl, "font-normal text-neutral-400")}>Нет строк плана</td>
+                  {weeks.map((_, i) => (
+                    <td key={i} className={tdCls}>—</td>
+                  ))}
+                  <td className={cn(tdCls, "bg-neutral-50")}>—</td>
                 </tr>
               )}
               {planLines.map(pl => {
@@ -515,6 +514,32 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                   </tr>
                 );
               })}
+              {canManagePlan && (
+                <tr className="border-b border-neutral-100 hover:bg-neutral-50/50">
+                  <td className={cn(stickyLbl, "font-normal py-1.5")}>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 -ml-2 text-xs font-normal text-neutral-600 hover:text-neutral-900"
+                      onClick={() => setAddOpen(true)}
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-0.5 shrink-0" />
+                      строка плана
+                    </Button>
+                  </td>
+                  {weeks.map((_, i) => (
+                    <td
+                      key={i}
+                      className={cn(
+                        tdCls,
+                        weeks[i]?.week === currentISOWeek && year === currentYear ? "bg-blue-50/50" : ""
+                      )}
+                    />
+                  ))}
+                  <td className={cn(tdCls, "bg-neutral-50")} />
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
