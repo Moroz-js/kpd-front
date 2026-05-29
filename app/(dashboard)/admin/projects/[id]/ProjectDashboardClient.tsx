@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
-import { ChevronLeft, Plus, Pencil, Check, TrendingUp, CreditCard, AlertTriangle } from "lucide-react";
+import { ChevronLeft, Plus, Pencil, Check, TrendingUp, CreditCard, AlertTriangle, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { buttonVariants, Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import { WORK_STATUSES, CHARGE_STATUSES } from "@/lib/statuses";
@@ -265,6 +266,27 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
   const [addOpen, setAddOpen] = useState(false);
+  const [confirmRow, setConfirmRow] = useState<PlanLineRow | null>(null);
+  const [deletingRowId, setDeletingRowId] = useState<string | null>(null);
+
+  async function deletePlanRow(pl: PlanLineRow) {
+    const ids = pl.lineIds.filter((id): id is string => id !== null);
+    if (ids.length === 0) { setConfirmRow(null); return; }
+    setDeletingRowId(pl.id);
+    setConfirmRow(null);
+    await Promise.all(
+      ids.map(id =>
+        fetch(`/api/projects/${projectId}/spending-plan`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id }),
+        })
+      )
+    );
+    setDeletingRowId(null);
+    mutate();
+    toast.success("Строка плана удалена");
+  }
 
   const { data, mutate } = useSWR<DashboardData>(
     `/api/projects/${projectId}/dashboard?year=${year}`,
@@ -484,12 +506,27 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
               )}
               {planLines.map(pl => {
                 const weekAmounts = pl.weeks.map(v => (v ? parseFloat(v) : 0));
+                const isDeleting = deletingRowId === pl.id;
                 return (
-                  <tr key={pl.id} className="hover:bg-neutral-50 border-b border-neutral-100">
+                  <tr key={pl.id} className={cn("group hover:bg-neutral-50 border-b border-neutral-100", isDeleting && "opacity-40 pointer-events-none")}>
                     <td className={cn(stickyLbl, "font-normal")}>
-                      <div className="flex flex-col leading-tight">
-                        <span>{pl.executorName}</span>
-                        <span className="text-neutral-400 text-[11px]">{pl.workTypeName}</span>
+                      <div className="flex items-center gap-1 min-w-0">
+                        <div className="flex flex-col leading-tight min-w-0 flex-1">
+                          <span className="truncate">{pl.executorName}</span>
+                          <span className="text-neutral-400 text-[11px] truncate">{pl.workTypeName}</span>
+                        </div>
+                        {canManagePlan && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-neutral-400 hover:text-red-500 hover:bg-red-50"
+                            onClick={() => setConfirmRow(pl)}
+                            disabled={isDeleting}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                       </div>
                     </td>
                     {pl.weeks.map((v, i) => (
@@ -650,6 +687,33 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
           onCreated={() => mutate()}
         />
       )}
+
+      <AlertDialog open={!!confirmRow} onOpenChange={open => { if (!open) setConfirmRow(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить строку плана?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmRow && (
+                <>
+                  <span className="font-medium">{confirmRow.executorName}</span>
+                  {" / "}{confirmRow.workTypeName}
+                  <br />
+                  Будут удалены все {confirmRow.lineIds.filter(Boolean).length} записей по неделям для этой строки. Действие необратимо.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+              onClick={() => confirmRow && deletePlanRow(confirmRow)}
+            >
+              Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
