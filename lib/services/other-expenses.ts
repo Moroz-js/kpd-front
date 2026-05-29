@@ -41,12 +41,21 @@ export async function listOtherExpenses() {
   });
 }
 
+const otherExpenseInclude = {
+  project: { select: { id: true, name: true, shortName: true } },
+  executor: { select: { id: true, name: true } },
+  workType: { select: { id: true, name: true, segment: true } },
+  responsibleUser: { select: { id: true, fullName: true } },
+  bankAccount: { select: { id: true, name: true } },
+} as const;
+
 // ─── Create ───────────────────────────────────────────────────────────────────
 
 export async function createOtherExpense(
   input: CreateOtherExpenseInput,
   userId: string
 ) {
+  const paidAt = input.paidAt ? new Date(input.paidAt) : null;
   const expense = await prisma.otherExpense.create({
     data: {
       projectId: input.projectId,
@@ -58,15 +67,17 @@ export async function createOtherExpense(
       executionMonth: input.executionMonth,
       description: input.description,
       amount: input.amount,
-      paymentAmount: input.paymentAmount ?? null,
+      paymentAmount: input.paymentAmount ?? (paidAt ? input.amount : null),
       preferredPayMethod: input.preferredPayMethod ?? null,
       plannedPayAt: input.plannedPayAt ? new Date(input.plannedPayAt) : null,
-      paidAt: input.paidAt ? new Date(input.paidAt) : null,
+      paidAt,
+      checkedAt: paidAt ? new Date() : null,
       comment: input.comment ?? null,
-      workStatus: "submitted",
-      paymentStatus: input.paidAt ? "paid" : "planned",
+      workStatus: paidAt ? "paid" : "submitted",
+      paymentStatus: paidAt ? "paid" : "planned",
       createdById: userId,
     },
+    include: otherExpenseInclude,
   });
 
   await logActivity({
@@ -116,13 +127,7 @@ export async function updateOtherExpense(
 
   const updated = await prisma.otherExpense.update({
     where: { id },
-    include: {
-      project: { select: { id: true, name: true, shortName: true } },
-      executor: { select: { id: true, name: true } },
-      workType: { select: { id: true, name: true, segment: true } },
-      responsibleUser: { select: { id: true, fullName: true } },
-      bankAccount: { select: { id: true, name: true } },
-    },
+    include: otherExpenseInclude,
     data: {
       ...(patch.projectId !== undefined && { projectId: patch.projectId }),
       ...(patch.executorId !== undefined && { executorId: patch.executorId }),

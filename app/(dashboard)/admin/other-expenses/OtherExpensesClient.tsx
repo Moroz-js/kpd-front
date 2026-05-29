@@ -82,6 +82,19 @@ type Props = {
 
 // ─── Утилиты ──────────────────────────────────────────────────────────────────
 
+async function readApiJson<T>(r: Response): Promise<T> {
+  const text = await r.text();
+  if (!text.trim()) {
+    if (!r.ok) throw new Error(`Ошибка сервера (${r.status})`);
+    return {} as T;
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(r.ok ? "Некорректный ответ сервера" : `Ошибка сервера (${r.status})`);
+  }
+}
+
 function payWeek(plannedPayAt: string | null, paidAt: string | null): string {
   const d = paidAt ?? plannedPayAt;
   if (!d) return "—";
@@ -170,7 +183,7 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
     setRows(prev => prev.map(r => r.id === row.id ? { ...r, workStatus: "checked", checkedAt: new Date().toISOString() } : r));
     try {
       const res = await fetch(`/api/other-expenses/${row.id}/check`, { method: "POST" });
-      if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
+      if (!res.ok) { const d = await readApiJson<{ error?: string }>(res); throw new Error(d.error ?? "Ошибка"); }
       toast.success("Работа проверена");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Ошибка");
@@ -306,7 +319,7 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
           projects={projects} executors={executors} workTypes={workTypes}
           responsibles={responsibles} bankAccounts={bankAccounts}
           onClose={() => setCreateOpen(false)}
-          onSaved={(row) => { setCreateOpen(false); setRows(prev => [row, ...prev]); toast.success("Создано"); }}
+          onSaved={() => { setCreateOpen(false); silentLoad(); toast.success("Создано"); }}
         />
       )}
 
@@ -317,11 +330,7 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
           responsibles={responsibles} bankAccounts={bankAccounts}
           initial={editTarget}
           onClose={() => setEditTarget(null)}
-          onSaved={(updated) => {
-            setEditTarget(null);
-            setRows(prev => prev.map(r => r.id === updated.id ? { ...r, ...updated } : r));
-            toast.success("Сохранено");
-          }}
+          onSaved={() => { setEditTarget(null); silentLoad(); toast.success("Сохранено"); }}
         />
       )}
 
@@ -368,7 +377,7 @@ function OtherExpenseFormDialog({
   projects: Ref[]; executors: Ref[]; workTypes: Ref[]; responsibles: UserRef[]; bankAccounts: Ref[];
   initial?: OtherExpense;
   onClose: () => void;
-  onSaved: (row: OtherExpense) => void;
+  onSaved: () => void;
 }) {
   const now = new Date();
   const [projectId, setProjectId] = useState(initial?.projectId ?? "");
@@ -416,9 +425,12 @@ function OtherExpenseFormDialog({
           comment: comment || null,
         }),
       });
-      if (!r.ok) { const d = await r.json(); throw new Error(d.error ?? "Ошибка"); }
-      const saved = await r.json();
-      onSaved(saved);
+      if (!r.ok) {
+        const d = await readApiJson<{ error?: string }>(r);
+        throw new Error(d.error ?? "Ошибка");
+      }
+      await readApiJson(r);
+      onSaved();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Ошибка");
     } finally {

@@ -53,8 +53,14 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const updated = await updateOtherExpense(id, parsed.data, user.id);
-  return NextResponse.json(updated);
+  try {
+    const updated = await updateOtherExpense(id, parsed.data, user.id);
+    return NextResponse.json(updated);
+  } catch (e) {
+    console.error("[other-expenses] PATCH failed:", e);
+    const msg = e instanceof Error ? e.message : "Не удалось сохранить";
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }
 
 export async function DELETE(_req: NextRequest, { params }: Ctx) {

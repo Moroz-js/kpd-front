@@ -36,16 +36,28 @@ export async function GET(_req: NextRequest) {
 export async function POST(req: NextRequest) {
   const user = await getSessionUser();
   if (!user || !canAccess(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!user.id) return NextResponse.json({ error: "Сессия недействительна" }, { status: 401 });
 
   const body = await req.json().catch(() => null);
   const parsed = createSchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: "Validation", details: parsed.error.flatten() }, { status: 422 });
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "Проверьте обязательные поля", details: parsed.error.flatten() },
+      { status: 422 },
+    );
+  }
 
   // Responsible может указать только себя как ответственного
   if (!isAdmin(user) && parsed.data.responsibleUserId !== user.id) {
-    return NextResponse.json({ error: "Responsible can only assign themselves" }, { status: 403 });
+    return NextResponse.json({ error: "Можно назначить только себя ответственным" }, { status: 403 });
   }
 
-  const expense = await createOtherExpense(parsed.data, user.id);
-  return NextResponse.json(expense, { status: 201 });
+  try {
+    const expense = await createOtherExpense(parsed.data, user.id);
+    return NextResponse.json(expense, { status: 201 });
+  } catch (e) {
+    console.error("[other-expenses] POST failed:", e);
+    const msg = e instanceof Error ? e.message : "Не удалось создать запись";
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }
