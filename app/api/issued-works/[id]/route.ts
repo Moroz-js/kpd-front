@@ -1,0 +1,88 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { getSessionUser } from "@/lib/auth";
+import { isAdmin } from "@/lib/permissions";
+import { updateIssuedWork } from "@/lib/services/issuedWorks";
+
+const patchSchema = z.object({
+  projectId: z.string().optional(),
+  workTypeId: z.string().optional(),
+  plannedPayAt: z.string().nullable().optional(),
+  executionMonth: z.number().int().min(1).max(12).optional(),
+  executionYear: z.number().int().optional(),
+  executorId: z.string().optional(),
+  workStatus: z.enum(["submitted", "checked", "paid", "rework"]).optional(),
+});
+
+/** Composite id format: `${sourceType}:${sourceId}` (e.g. "personal:cl123" or "other-expense:cl456"). */
+function parseId(id: string): { sourceType: "personal" | "other-expense"; sourceId: string } | null {
+  const idx = id.indexOf(":");
+  if (idx < 0) return null;
+  const sourceType = id.slice(0, idx);
+  const sourceId = id.slice(idx + 1);
+  if (sourceType !== "personal" && sourceType !== "other-expense") return null;
+  if (!sourceId) return null;
+  return { sourceType, sourceId };
+}
+
+export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const me = await getSessionUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!isAdmin(me)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const { id } = await ctx.params;
+  const parsedId = parseId(id);
+  if (!parsedId) return NextResponse.json({ error: "Bad id" }, { status: 400 });
+
+  const body = await req.json().catch(() => null);
+  const parsed = patchSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "Validation", details: parsed.error.flatten() },
+      { status: 400 }
+    );
+  }
+
+  const patch = parsed.data;
+
+  // Защита от запрещённых полей: для personal allow только {projectId, workTypeId, plannedPayAt, workStatus}.
+  // Для other-expense allow {projectId, workTypeId, executionMonth, executionYear, executorId, workStatus}.
+  if (parsedId.sourceType === "personal") {
+    if (
+      patch.executionMonth !== undefined ||
+      patch.executionYear !== undefined ||
+      patch.executorId !== undefined
+    ) {
+      return NextResponse.json(
+        { error: "Эти поля Личной сметы редактируются только в источнике" },
+        { status: 400 }
+      );
+    }
+  } else if (patch.plannedPayAt !== undefined) {
+    return NextResponse.json(
+      { error: "Дата оплаты план у Прочей траты редактируется только в источнике" },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const updated = await updateIssuedWork(
+      parsedId.sourceType,
+      parsedId.sourceId,
+      {
+        ...patch,
+        plannedPayAt:
+          patch.plannedPayAt === undefined
+            ? undefined
+            : patch.plannedPayAt
+              ? new Date(patch.plannedPayAt)
+              : null,
+      },
+      me.id
+    );
+    return NextResponse.json(updated);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Error";
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}

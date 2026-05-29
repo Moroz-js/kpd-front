@@ -1,0 +1,447 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────── ПОЛЬЗОВАТЕЛИ ───────────────────
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  fullName  String
+  role      String // admin | responsible | executor
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  executor                  Executor?
+  responsibleProjects       Project[]          @relation("ProjectResponsible")
+  responsibleForExecutors   Executor[]         @relation("ExecutorResponsible")
+  otherExpensesCreated      OtherExpense[]     @relation("OtherExpenseCreatedBy")
+  otherExpensesResponsible  OtherExpense[]     @relation("OtherExpenseResponsible")
+  spendingPlanLinesCreated  SpendingPlanLine[] @relation("SpendingPlanLineCreatedBy")
+  vacationApprovals         VacationEntry[]    @relation("VacationApprovedBy")
+  activityLogs              ActivityLog[]
+
+  @@map("users")
+}
+
+// ─────────────────── ИСПОЛНИТЕЛИ ───────────────────
+
+model Executor {
+  id              String    @id @default(cuid())
+  userId          String?   @unique // NULL для юрлиц/сервисов/банков (без логина)
+  user            User?     @relation(fields: [userId], references: [id])
+  name            String // computed по типу: "Фамилия Имя" / "Название ТипЮрлица" / UPPER для сервисов
+  type            String    @default("permanent") // permanent | external-person | external-legal | service | bank
+  companyStatus   String? // Ядро | Орбита (для permanent)
+  legalForm       String? // ООО | ИП | АО | ОАО | ... (для external-legal)
+  recipientType   String? // физлицо | юрлицо | самозанятый | ...
+  specialty       String?
+  contractFile    String? // URL
+  ndaFile         String? // URL
+  inTgChat        Boolean   @default(false)
+  contacts        String?
+  requisites      String?
+  note            String?
+  defaultBankAccountId String?
+  defaultBankAccount   BankAccount? @relation("ExecutorDefaultBankAccount", fields: [defaultBankAccountId], references: [id])
+  responsibleUserId    String?
+  responsibleUser      User? @relation("ExecutorResponsible", fields: [responsibleUserId], references: [id])
+  status          String    @default("active") // active | archived
+  accessRevokedAt DateTime?
+  onboardingSeeded Boolean  @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  projectExecutors  ProjectExecutor[]
+  works             Work[]
+  payments          Payment[]
+  otherExpenses     OtherExpense[]
+  executorWorkTypes ExecutorWorkType[]
+  spendingPlanLines SpendingPlanLine[]
+  vacationEntries   VacationEntry[]
+  tasks             Task[]
+
+  @@index([status])
+  @@index([type])
+  @@map("executors")
+}
+
+// ─────────────────── КЛИЕНТЫ ───────────────────
+
+model Client {
+  id         String   @id @default(cuid())
+  name       String   @unique // computed: "{department} – {company}" (см. TDNB-21)
+  company    String
+  department String
+  status     String   @default("active") // active | archived
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  projects Project[]
+
+  @@map("clients")
+}
+
+// ─────────────────── ПРОЕКТЫ ───────────────────
+
+model Project {
+  id                String   @id @default(cuid())
+  shortName         String // имя проекта без префикса клиента
+  name              String // computed: "{client.name} – {shortName}"
+  type              String // internal | client (computed по client.company)
+  status            String   @default("active") // active | archived
+  responsibleUserId String?
+  responsible       User?    @relation("ProjectResponsible", fields: [responsibleUserId], references: [id])
+  clientId          String?
+  client            Client?  @relation(fields: [clientId], references: [id])
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  projectExecutors  ProjectExecutor[]
+  projectWorkTypes  ProjectWorkType[]
+  works             Work[]
+  otherExpenses     OtherExpense[]
+  orders            Order[]
+  spendingPlanLines SpendingPlanLine[]
+
+  @@unique([clientId, shortName])
+  @@index([responsibleUserId])
+  @@index([clientId])
+  @@map("projects")
+}
+
+model ProjectWorkType {
+  projectId  String
+  workTypeId String
+  project    Project  @relation(fields: [projectId], references: [id])
+  workType   WorkType @relation(fields: [workTypeId], references: [id])
+
+  @@id([projectId, workTypeId])
+  @@map("project_work_types")
+}
+
+model ProjectExecutor {
+  projectId  String
+  executorId String
+  project    Project  @relation(fields: [projectId], references: [id])
+  executor   Executor @relation(fields: [executorId], references: [id])
+
+  @@id([projectId, executorId])
+  @@map("project_executors")
+}
+
+// ─────────────────── БАНКОВСКИЕ СЧЕТА ───────────────────
+
+model BankAccount {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  details   String?
+  isDefault Boolean  @default(false) // единственный active с true (см. TDNB-23)
+  status    String   @default("active") // active | archived
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  payments              Payment[]
+  charges               Charge[]
+  otherExpenses         OtherExpense[]
+  bankOperations        BankOperation[]
+  defaultForExecutors   Executor[]      @relation("ExecutorDefaultBankAccount")
+
+  @@map("bank_accounts")
+}
+
+// ─────────────────── ВИДЫ РАБОТ ───────────────────
+
+model WorkType {
+  id      String  @id @default(cuid())
+  name    String  @unique
+  segment String // Транзитные платежи | Видео | Аналитика | Продвижение | Экспертиза | Сервисы | Менеджмент | Визуал | Текст | IT
+  status  String  @default("active") // active | archived
+
+  works             Work[]
+  otherExpenses     OtherExpense[]
+  executorWorkTypes ExecutorWorkType[]
+  projectWorkTypes  ProjectWorkType[]
+  spendingPlanLines SpendingPlanLine[]
+
+  @@map("work_types")
+}
+
+model ExecutorWorkType {
+  executorId String
+  workTypeId String
+  executor   Executor @relation(fields: [executorId], references: [id])
+  workType   WorkType @relation(fields: [workTypeId], references: [id])
+
+  @@id([executorId, workTypeId])
+  @@map("executor_work_types")
+}
+
+// ─────────────────── РАБОТЫ (Личная смета) ───────────────────
+
+model Work {
+  id              String    @id @default(cuid())
+  projectId       String
+  project         Project   @relation(fields: [projectId], references: [id])
+  executorId      String
+  executor        Executor  @relation(fields: [executorId], references: [id])
+  workTypeId      String
+  workType        WorkType  @relation(fields: [workTypeId], references: [id])
+  executionYear   Int
+  executionMonth  Int
+  techTask        String? // ТЗ — текст
+  report          String? // URL отчёта
+  link            String? // URL произвольная ссылка
+  volume          Float?
+  rate            Float?
+  amount          Float // Сумма к выплате
+  plannedPayAt    DateTime? // Дата оплаты — план (раздельная с Payment)
+  paidAt          DateTime?
+  filledTechTask  String? // URL «Заполненное ТЗ»
+  filledAct       String? // URL «Заполненный акт»
+  workStatus      String    @default("submitted") // submitted | checked | paid | rework
+  checkedAt       DateTime? // Дата проверки
+  comment         String?
+
+  paymentId String?
+  payment   Payment? @relation(fields: [paymentId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([executorId, executionYear, executionMonth])
+  @@index([projectId])
+  @@index([workStatus])
+  @@map("works")
+}
+
+// ─────────────────── ВЫПЛАТЫ ───────────────────
+
+model Payment {
+  id             String       @id @default(cuid())
+  executorId     String
+  executor       Executor     @relation(fields: [executorId], references: [id])
+  periodYear     Int
+  periodMonth    Int
+  amount         Float
+  paymentStatus  String       @default("planned") // planned | paid
+  plannedPayAt   DateTime?
+  paidAt         DateTime?
+  bankAccountId  String?
+  bankAccount    BankAccount? @relation(fields: [bankAccountId], references: [id])
+  comment        String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  works Work[]
+
+  @@index([executorId, periodYear, periodMonth])
+  @@index([paymentStatus])
+  @@map("payments")
+}
+
+// ─────────────────── ПРОЧИЕ ТРАТЫ ───────────────────
+
+model OtherExpense {
+  id                   String       @id @default(cuid())
+  projectId            String
+  project              Project      @relation(fields: [projectId], references: [id])
+  executorId           String
+  executor             Executor     @relation(fields: [executorId], references: [id])
+  workTypeId           String
+  workType             WorkType     @relation(fields: [workTypeId], references: [id])
+  responsibleUserId    String
+  responsibleUser      User         @relation("OtherExpenseResponsible", fields: [responsibleUserId], references: [id])
+  bankAccountId        String?
+  bankAccount          BankAccount? @relation(fields: [bankAccountId], references: [id])
+  executionYear        Int
+  executionMonth       Int
+  description          String
+  amount               Float
+  paymentAmount        Float?
+  plannedPayAt         DateTime?
+  paidAt               DateTime?
+  checkedAt            DateTime?
+  workStatus           String       @default("submitted") // submitted | checked | paid | rework
+  paymentStatus        String       @default("planned") // planned | paid
+  preferredPayMethod   String?
+  comment              String?
+  createdById          String
+  createdBy            User         @relation("OtherExpenseCreatedBy", fields: [createdById], references: [id])
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  @@index([projectId])
+  @@index([executorId])
+  @@index([responsibleUserId])
+  @@index([workStatus])
+  @@index([paymentStatus])
+  @@map("other_expenses")
+}
+
+// ─────────────────── ЗАКАЗЫ ───────────────────
+
+model Order {
+  id             String   @id @default(cuid())
+  orderNumber    Int      @unique // автоинкремент от 3000 (см. TDNB-19)
+  description    String
+  projectId      String
+  project        Project  @relation(fields: [projectId], references: [id])
+  contractNumber String?
+  status         String   @default("active") // active | archived
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  charges Charge[]
+
+  @@map("orders")
+}
+
+// ─────────────────── НАЧИСЛЕНИЯ ───────────────────
+
+model Charge {
+  id              String       @id @default(cuid())
+  chargeNumber    String       @unique // H001, H002, ... (см. TDNB-20)
+  bankAccountId   String
+  bankAccount     BankAccount  @relation(fields: [bankAccountId], references: [id])
+  invoiceNumber   String       @unique // № счёта (см. TDNB-20)
+  orderId         String
+  order           Order        @relation(fields: [orderId], references: [id])
+  amount          Float
+  issuedPlanAt    DateTime?
+  issuedAt        DateTime?
+  paidPlanAt      DateTime?
+  paidAt          DateTime?
+  paymentPurpose  String?
+  status          String       @default("planned") // planned | issued | paid | overdue
+  documents       String? // URL
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([bankAccountId])
+  @@index([orderId])
+  @@index([status])
+  @@map("charges")
+}
+
+// ─────────────────── БАНКОВСКИЕ ОПЕРАЦИИ (заглушка — заполняется через «Робот») ───────────────────
+
+model BankOperation {
+  id            String      @id @default(cuid())
+  bankAccountId String
+  bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id])
+  amount        Float
+  date          DateTime
+  kind          String // incoming | outgoing
+  comment       String?
+  createdAt     DateTime    @default(now())
+
+  @@index([bankAccountId])
+  @@index([date])
+  @@map("bank_operations")
+}
+
+// ─────────────────── ПЛАН РАСХОДОВ ───────────────────
+
+model SpendingPlanLine {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id])
+  executorId  String // обязательно (TDNB-29 §Блок 4)
+  executor    Executor @relation(fields: [executorId], references: [id])
+  workTypeId  String // обязательно (TDNB-29 §Блок 4)
+  workType    WorkType @relation(fields: [workTypeId], references: [id])
+  year        Int
+  week        Int
+  amount      Float
+  sourceType  String? // "personal" | "other"
+  comment     String?
+  createdById String
+  createdBy   User     @relation("SpendingPlanLineCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([projectId, year, week])
+  @@map("spending_plan_lines")
+}
+
+// ─────────────────── ОТПУСКА ───────────────────
+
+model VacationEntry {
+  id                 String    @id @default(cuid())
+  executorId         String
+  executor           Executor  @relation(fields: [executorId], references: [id])
+  startAt            DateTime
+  endAt              DateTime
+  daysCount          Int
+  secondStartAt      DateTime?
+  secondEndAt        DateTime?
+  secondDaysCount    Int?
+  substituteContacts String?
+  status             String    @default("need_approval") // need_approval | approved
+  isPaid             Boolean   @default(false)
+  approvedById       String?
+  approvedBy         User?     @relation("VacationApprovedBy", fields: [approvedById], references: [id])
+  approvedAt         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([executorId])
+  @@index([status])
+  @@map("vacation_entries")
+}
+
+// ─────────────────── ЗАДАЧИ ───────────────────
+
+model Task {
+  id            String    @id @default(cuid())
+  executorId    String
+  executor      Executor  @relation(fields: [executorId], references: [id])
+  title         String
+  status        String    @default("pending") // pending | in_progress | paused | review | done
+  plannedDoneAt DateTime?
+  result        String?
+  comment       String?
+  isOnboarding  Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([executorId, status])
+  @@map("tasks")
+}
+
+// ─────────────────── СТАРТОВЫЙ БАЛАНС КЭШФЛОУ ───────────────────
+
+model CashflowOpeningBalance {
+  year      Int      @id
+  amount    Float
+  updatedAt DateTime @updatedAt
+
+  @@map("cashflow_opening_balances")
+}
+
+// ─────────────────── ИСТОРИЯ ДЕЙСТВИЙ (audit log) ───────────────────
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  action      String // create | update | delete | archive | status_change | ...
+  entityType  String
+  entityId    String
+  entityLabel String?
+  changes     String? // JSON-сериализованный diff: {field: {from, to}}
+  createdAt   DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("activity_logs")
+}

@@ -1,0 +1,266 @@
+"use client";
+
+import * as React from "react";
+import { toast } from "sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { MONTHS, formatDate } from "@/lib/format";
+import { WORK_STATUSES } from "@/lib/statuses";
+import type { IssuedWorkRowDTO } from "./IssuedWorksClient";
+
+export type SmetaType = "personal" | "other-expense";
+
+type ProjectOption = { id: string; name: string; status: string };
+type ExecutorOption = { id: string; name: string; status: string };
+type WorkTypeOption = { id: string; name: string; status: string };
+
+function toDateInputValue(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+export function IssuedWorkEditDialog({
+  row,
+  projects,
+  executors,
+  workTypes,
+  onClose,
+  onSaved,
+}: {
+  row: IssuedWorkRowDTO;
+  projects: ProjectOption[];
+  executors: ExecutorOption[];
+  workTypes: WorkTypeOption[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const isPersonal = row.sourceType === "personal";
+
+  const [projectId, setProjectId] = React.useState(row.projectId);
+  const [workTypeId, setWorkTypeId] = React.useState(row.workTypeId);
+  const [plannedPayAt, setPlannedPayAt] = React.useState(toDateInputValue(row.plannedPayAt));
+  const [executionMonth, setExecutionMonth] = React.useState(String(row.executionMonth));
+  const [executionYear, setExecutionYear] = React.useState(String(row.executionYear));
+  const [executorId, setExecutorId] = React.useState(row.executorId);
+  const [workStatus, setWorkStatus] = React.useState(row.workStatus);
+  const [submitting, setSubmitting] = React.useState(false);
+
+  const activeProjects = projects.filter((p) => p.status === "active" || p.id === row.projectId);
+  const activeExecutors = executors.filter((e) => e.status === "active" || e.id === row.executorId);
+  const activeWorkTypes = workTypes.filter((w) => w.status === "active" || w.id === row.workTypeId);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+
+    const payload: Record<string, unknown> = {
+      projectId,
+      workTypeId,
+      workStatus,
+    };
+    if (isPersonal) {
+      payload.plannedPayAt = plannedPayAt ? new Date(plannedPayAt).toISOString() : null;
+    } else {
+      payload.executionMonth = Number(executionMonth);
+      payload.executionYear = Number(executionYear);
+      payload.executorId = executorId;
+    }
+
+    setSubmitting(true);
+    const res = await fetch(`/api/issued-works/${row.sourceType}:${row.sourceId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    setSubmitting(false);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.error ?? "Не удалось сохранить");
+      return;
+    }
+    toast.success("Изменения сохранены");
+    onSaved();
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            Работа: {row.executorName} · {row.projectName}
+          </DialogTitle>
+        </DialogHeader>
+
+        <form onSubmit={submit} className="space-y-4">
+          <div className="rounded-md bg-neutral-50 border border-neutral-200 px-3 py-2 text-sm space-y-0.5">
+            <div>
+              <span className="text-neutral-500">Тип сметы: </span>
+              <span className="font-medium">
+                {isPersonal ? "Личная смета" : "Прочие траты"}
+              </span>
+            </div>
+            <div>
+              <span className="text-neutral-500">Сумма: </span>
+              <span className="font-medium">{row.amount.toLocaleString("ru-RU")} ₽</span>
+            </div>
+            <div>
+              <span className="text-neutral-500">Дата оплаты: </span>
+              <span className="font-medium">{formatDate(row.paidAt)}</span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="projectId">Проект</Label>
+            <Select value={projectId} onValueChange={(v) => setProjectId(v ?? "")}>
+              <SelectTrigger id="projectId">
+                <SelectValue>
+                  {projectId ? (activeProjects.find((p) => p.id === projectId)?.name ?? projectId) : undefined}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {activeProjects.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                    {p.status === "archived" && " (архив)"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="workTypeId">Вид работ</Label>
+            <Select value={workTypeId} onValueChange={(v) => setWorkTypeId(v ?? "")}>
+              <SelectTrigger id="workTypeId">
+                <SelectValue>
+                  {workTypeId ? (activeWorkTypes.find((w) => w.id === workTypeId)?.name ?? workTypeId) : undefined}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {activeWorkTypes.map((w) => (
+                  <SelectItem key={w.id} value={w.id}>
+                    {w.name}
+                    {w.status === "archived" && " (архив)"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {isPersonal ? (
+            <div className="space-y-2">
+              <Label htmlFor="plannedPayAt">Дата оплаты — план</Label>
+              <Input
+                id="plannedPayAt"
+                type="date"
+                value={plannedPayAt}
+                onChange={(e) => setPlannedPayAt(e.target.value)}
+              />
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="executionMonth">Месяц выполнения</Label>
+                  <Select
+                    value={executionMonth}
+                    onValueChange={(v) => setExecutionMonth(v ?? "")}
+                  >
+                    <SelectTrigger id="executionMonth">
+                      <SelectValue>
+                        {MONTHS.find((m) => m.value === executionMonth)?.label ?? executionMonth}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MONTHS.map((m) => (
+                        <SelectItem key={m.value} value={m.value}>
+                          {m.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="executionYear">Год выполнения</Label>
+                  <Input
+                    id="executionYear"
+                    type="number"
+                    value={executionYear}
+                    onChange={(e) => setExecutionYear(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="executorId">Исполнитель</Label>
+                <Select value={executorId} onValueChange={(v) => setExecutorId(v ?? "")}>
+                  <SelectTrigger id="executorId">
+                    <SelectValue>
+                      {executorId ? (activeExecutors.find((e) => e.id === executorId)?.name ?? executorId) : undefined}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {activeExecutors.map((e) => (
+                      <SelectItem key={e.id} value={e.id}>
+                        {e.name}
+                        {e.status === "archived" && " (архив)"}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
+          )}
+
+          <div className="space-y-2">
+            <Label htmlFor="workStatus">Статус работы</Label>
+          <Select value={workStatus} onValueChange={(v) => setWorkStatus(v ?? "")}>
+            <SelectTrigger id="workStatus">
+              <SelectValue>
+                {WORK_STATUSES[workStatus as keyof typeof WORK_STATUSES]?.label ?? workStatus}
+              </SelectValue>
+            </SelectTrigger>
+              <SelectContent>
+                {Object.entries(WORK_STATUSES).map(([value, { label }]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-neutral-500">
+              Смена на «Проверено» автоматически проставит дату проверки.
+            </p>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>
+              Отмена
+            </Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? "Сохранение..." : "Сохранить"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}

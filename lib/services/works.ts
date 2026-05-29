@@ -1,0 +1,186 @@
+/**
+ * WorkService — CRUD для Work (Личная смета, TDNB-15).
+ */
+import { prisma } from "@/lib/db";
+import { logActivity } from "@/lib/audit/log";
+
+export type CreateWorkInput = {
+  projectId: string;
+  workTypeId: string;
+  executionYear: number;
+  executionMonth: number;
+  techTask: string;
+  report?: string | null;
+  link?: string | null;
+  volume?: number | null;
+  rate?: number | null;
+  amount: number;
+  plannedPayAt?: string | null;
+  filledTechTask?: string | null;
+  filledAct?: string | null;
+  comment?: string | null;
+};
+
+export type UpdateWorkInput = Partial<CreateWorkInput> & {
+  workStatus?: string;
+  paidAt?: string | null;
+};
+
+export async function listWorksForExecutor(executorId: string) {
+  return prisma.work.findMany({
+    where: { executorId },
+    include: {
+      project: { select: { id: true, name: true } },
+      workType: { select: { id: true, name: true } },
+      payment: {
+        select: {
+          id: true,
+          amount: true,
+          paymentStatus: true,
+          plannedPayAt: true,
+          paidAt: true,
+          bankAccountId: true,
+          bankAccount: { select: { id: true, name: true } },
+          comment: true,
+        },
+      },
+    },
+    orderBy: [
+      { createdAt: "asc" },
+    ],
+  });
+}
+
+export async function createWork(
+  executorId: string,
+  input: CreateWorkInput,
+  userId: string
+) {
+  const created = await prisma.work.create({
+    data: {
+      executorId,
+      projectId: input.projectId,
+      workTypeId: input.workTypeId,
+      executionYear: input.executionYear,
+      executionMonth: input.executionMonth,
+      techTask: input.techTask,
+      report: input.report ?? null,
+      link: input.link ?? null,
+      volume: input.volume ?? null,
+      rate: input.rate ?? null,
+      amount: input.amount,
+      plannedPayAt: input.plannedPayAt ? new Date(input.plannedPayAt) : null,
+      filledTechTask: input.filledTechTask ?? null,
+      filledAct: input.filledAct ?? null,
+      workStatus: "submitted",
+      comment: input.comment ?? null,
+    },
+  });
+
+  await logActivity({
+    userId,
+    action: "create",
+    entityType: "Work",
+    entityId: created.id,
+    entityLabel: `Работа ${created.executionMonth}/${created.executionYear}`,
+  });
+
+  return created;
+}
+
+export async function updateWork(
+  workId: string,
+  patch: UpdateWorkInput,
+  userId: string
+) {
+  const updated = await prisma.work.update({
+    where: { id: workId },
+    data: {
+      ...(patch.projectId !== undefined && { projectId: patch.projectId }),
+      ...(patch.workTypeId !== undefined && { workTypeId: patch.workTypeId }),
+      ...(patch.executionYear !== undefined && { executionYear: patch.executionYear }),
+      ...(patch.executionMonth !== undefined && { executionMonth: patch.executionMonth }),
+      ...(patch.techTask !== undefined && { techTask: patch.techTask }),
+      ...(patch.report !== undefined && { report: patch.report }),
+      ...(patch.link !== undefined && { link: patch.link }),
+      ...(patch.volume !== undefined && { volume: patch.volume }),
+      ...(patch.rate !== undefined && { rate: patch.rate }),
+      ...(patch.amount !== undefined && { amount: patch.amount }),
+      ...(patch.plannedPayAt !== undefined && {
+        plannedPayAt: patch.plannedPayAt ? new Date(patch.plannedPayAt) : null,
+      }),
+      ...(patch.filledTechTask !== undefined && { filledTechTask: patch.filledTechTask }),
+      ...(patch.filledAct !== undefined && { filledAct: patch.filledAct }),
+      ...(patch.workStatus !== undefined && { workStatus: patch.workStatus }),
+      ...(patch.comment !== undefined && { comment: patch.comment }),
+    },
+  });
+
+  await logActivity({
+    userId,
+    action: "update",
+    entityType: "Work",
+    entityId: workId,
+    entityLabel: `Работа ${updated.executionMonth}/${updated.executionYear}`,
+  });
+
+  return updated;
+}
+
+/** §1.5 Процедура «Проверки» — workStatus→checked + checkedAt = now(). */
+export async function checkWork(workId: string, userId: string) {
+  const work = await prisma.work.findUniqueOrThrow({ where: { id: workId } });
+
+  const updated = await prisma.work.update({
+    where: { id: workId },
+    data: { workStatus: "checked", checkedAt: new Date() },
+  });
+
+  await logActivity({
+    userId,
+    action: "status_change",
+    entityType: "Work",
+    entityId: workId,
+    entityLabel: `Работа ${work.executionMonth}/${work.executionYear}`,
+    changes: { workStatus: { from: work.workStatus, to: "checked" } },
+  });
+
+  return updated;
+}
+
+/** Удаление с каскадом: пересчитываем Payment.amount, если нет работ — удаляем Payment. */
+export async function deleteWork(workId: string, userId: string) {
+  const work = await prisma.work.findUniqueOrThrow({ where: { id: workId } });
+
+  await prisma.$transaction(async (tx) => {
+    if (work.paymentId) {
+      // Снимаем связь перед удалением
+      await tx.work.update({ where: { id: workId }, data: { paymentId: null } });
+
+      const remaining = await tx.work.findMany({
+        where: { paymentId: work.paymentId },
+        select: { amount: true },
+      });
+
+      if (remaining.length === 0) {
+        await tx.payment.delete({ where: { id: work.paymentId } });
+      } else {
+        const newAmount = remaining.reduce((s, w) => s + w.amount, 0);
+        await tx.payment.update({
+          where: { id: work.paymentId },
+          data: { amount: newAmount },
+        });
+      }
+    }
+
+    await tx.work.delete({ where: { id: workId } });
+  });
+
+  await logActivity({
+    userId,
+    action: "delete",
+    entityType: "Work",
+    entityId: workId,
+    entityLabel: `Работа ${work.executionMonth}/${work.executionYear}`,
+  });
+}

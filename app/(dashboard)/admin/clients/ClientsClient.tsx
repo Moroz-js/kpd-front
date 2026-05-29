@@ -1,0 +1,330 @@
+"use client";
+
+import * as React from "react";
+import useSWR from "swr";
+import { toast } from "sonner";
+import { Plus, Pencil, Archive, ArchiveRestore } from "lucide-react";
+import { PageHeader } from "@/components/ui-custom/PageHeader";
+import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
+import { StatusBadge } from "@/components/ui-custom/StatusBadge";
+import { ConfirmDialog } from "@/components/ui-custom/ConfirmDialog";
+import { ENTITY_STATUSES } from "@/lib/statuses";
+import { formatMoney, formatDate } from "@/lib/format";
+import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { SortableHead } from "@/components/ui-custom/SortableHead";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+
+type Row = {
+  id: string;
+  name: string;
+  company: string;
+  department: string;
+  status: string;
+  projectNames: string[];
+  projectsStatus: "has_active" | "all_archived" | "none";
+  revenue: number;
+  createdAt: string;
+};
+
+const fetcher = (url: string) => fetch(url).then((r) => r.json() as Promise<Row[]>);
+
+type SortField = "name" | "company" | "department" | "createdAt" | "revenue";
+type SortDir = "asc" | "desc";
+
+const PROJECTS_STATUS_LABEL: Record<Row["projectsStatus"], string> = {
+  has_active: "Есть активные проекты",
+  all_archived: "Все проекты архивные",
+  none: "Нет проектов",
+};
+
+const PROJECTS_STATUS_TONE: Record<Row["projectsStatus"], "green" | "slate" | "gray"> = {
+  has_active: "green",
+  all_archived: "slate",
+  none: "gray",
+};
+
+export function ClientsClient() {
+  const { data, isLoading, mutate } = useSWR<Row[]>("/api/clients", fetcher);
+  const [companyFilter, setCompanyFilter] = React.useState<string[]>([]);
+  const [statusFilter, setStatusFilter] = React.useState<string[]>(["active"]);
+  const [sort, setSort] = React.useState<{ field: SortField; dir: SortDir }>({
+    field: "createdAt",
+    dir: "desc",
+  });
+  const [editing, setEditing] = React.useState<Row | "new" | null>(null);
+  const [archiveTarget, setArchiveTarget] = React.useState<Row | null>(null);
+  const [unarchiveTarget, setUnarchiveTarget] = React.useState<Row | null>(null);
+
+  const companyOptions = React.useMemo(() => {
+    const list = data ?? [];
+    return Array.from(new Set(list.map((r) => r.company)))
+      .sort()
+      .map((c) => ({ value: c, label: c }));
+  }, [data]);
+
+  const rows = React.useMemo(() => {
+    let list = data ?? [];
+    if (companyFilter.length) list = list.filter((r) => companyFilter.includes(r.company));
+    if (statusFilter.length) list = list.filter((r) => statusFilter.includes(r.status));
+    list = [...list].sort((a, b) => {
+      const av = a[sort.field];
+      const bv = b[sort.field];
+      const cmp = typeof av === "number" && typeof bv === "number"
+        ? av - bv
+        : String(av).localeCompare(String(bv), "ru");
+      return sort.dir === "asc" ? cmp : -cmp;
+    });
+    return list;
+  }, [data, companyFilter, statusFilter, sort]);
+
+  function handleSort(field: string, dir: SortDir) {
+    setSort({ field: field as SortField, dir });
+  }
+
+  async function handleArchive(row: Row) {
+    const res = await fetch(`/api/clients/${row.id}/archive`, { method: "POST" });
+    if (!res.ok) return toast.error("Не удалось архивировать");
+    toast.success(`Клиент «${row.name}» архивирован`);
+    mutate();
+  }
+  async function handleUnarchive(row: Row) {
+    const res = await fetch(`/api/clients/${row.id}/archive`, { method: "DELETE" });
+    if (!res.ok) return toast.error("Не удалось вернуть из архива");
+    toast.success(`Клиент «${row.name}» снова активен`);
+    mutate();
+  }
+
+  return (
+    <>
+      <PageHeader
+        title="Клиенты"
+        description="Заказчики проектов. Имя формируется из «Департамент – Компания»."
+        actions={
+          <Button onClick={() => setEditing("new")}>
+            <Plus className="h-4 w-4 mr-1" /> Добавить клиента
+          </Button>
+        }
+      />
+
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <MultiSelectFilter
+          label="Компания"
+          options={companyOptions}
+          value={companyFilter}
+          onChange={setCompanyFilter}
+        />
+        <MultiSelectFilter
+          label="Статус"
+          options={Object.entries(ENTITY_STATUSES).map(([value, { label }]) => ({ value, label }))}
+          value={statusFilter}
+          onChange={setStatusFilter}
+        />
+      </div>
+
+      <div className="rounded-md border bg-white">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <SortableHead field="name" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
+                Клиент
+              </SortableHead>
+              <SortableHead field="company" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
+                Компания
+              </SortableHead>
+              <SortableHead field="department" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
+                Департамент
+              </SortableHead>
+              <TableHead>Проекты клиента</TableHead>
+              <TableHead>Статус проектов</TableHead>
+              <SortableHead
+                field="revenue"
+                sortBy={sort.field}
+                sortDir={sort.dir}
+                onSort={handleSort}
+                className="text-right"
+              >
+                Выручка
+              </SortableHead>
+              <SortableHead field="createdAt" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
+                Создан
+              </SortableHead>
+              <TableHead className="w-24" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center text-neutral-500 py-8">
+                  Загрузка...
+                </TableCell>
+              </TableRow>
+            ) : rows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center text-neutral-500 py-8">
+                  Нет клиентов
+                </TableCell>
+              </TableRow>
+            ) : (
+              rows.map((r) => (
+                <TableRow key={r.id} className={r.status === "archived" ? "opacity-60" : ""}>
+                  <TableCell className="font-medium">{r.name}</TableCell>
+                  <TableCell>{r.company}</TableCell>
+                  <TableCell>{r.department}</TableCell>
+                  <TableCell className="text-sm whitespace-pre-line">
+                    {r.projectNames.join("\n") || "—"}
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge
+                      tone={PROJECTS_STATUS_TONE[r.projectsStatus]}
+                      label={PROJECTS_STATUS_LABEL[r.projectsStatus]}
+                    />
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{formatMoney(r.revenue)}</TableCell>
+                  <TableCell className="text-sm">{formatDate(r.createdAt)}</TableCell>
+                  <TableCell className="text-right whitespace-nowrap">
+                    <Button size="sm" variant="ghost" onClick={() => setEditing(r)} title="Редактировать">
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    {r.status === "active" ? (
+                      <Button size="sm" variant="ghost" onClick={() => setArchiveTarget(r)} title="Архивировать">
+                        <Archive className="h-3.5 w-3.5" />
+                      </Button>
+                    ) : (
+                      <Button size="sm" variant="ghost" onClick={() => setUnarchiveTarget(r)} title="Вернуть из архива">
+                        <ArchiveRestore className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {editing && (
+        <ClientEditDialog
+          row={editing === "new" ? null : editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            mutate();
+          }}
+        />
+      )}
+
+      <ConfirmDialog
+        open={!!archiveTarget}
+        onOpenChange={(o) => !o && setArchiveTarget(null)}
+        title="Архивировать клиента?"
+        description={`«${archiveTarget?.name}» исчезнет из выпадающих списков при создании проектов. Существующие проекты клиента останутся активными — их можно архивировать отдельно.`}
+        confirmLabel="Архивировать"
+        destructive
+        onConfirm={async () => {
+          if (archiveTarget) await handleArchive(archiveTarget);
+        }}
+      />
+      <ConfirmDialog
+        open={!!unarchiveTarget}
+        onOpenChange={(o) => !o && setUnarchiveTarget(null)}
+        title="Вернуть клиента из архива?"
+        description={`«${unarchiveTarget?.name}» снова станет доступен при создании проектов.`}
+        confirmLabel="Вернуть"
+        onConfirm={async () => {
+          if (unarchiveTarget) await handleUnarchive(unarchiveTarget);
+        }}
+      />
+    </>
+  );
+}
+
+function ClientEditDialog({
+  row,
+  onClose,
+  onSaved,
+}: {
+  row: Row | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [company, setCompany] = React.useState(row?.company ?? "");
+  const [department, setDepartment] = React.useState(row?.department ?? "");
+  const [submitting, setSubmitting] = React.useState(false);
+
+  React.useEffect(() => {
+    setCompany(row?.company ?? "");
+    setDepartment(row?.department ?? "");
+  }, [row]);
+
+  const preview = department.trim() && company.trim() ? `${department.trim()} – ${company.trim()}` : "";
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!company.trim() || !department.trim()) return toast.error("Заполните Компанию и Департамент");
+    setSubmitting(true);
+    const isNew = !row;
+    const res = await fetch(isNew ? "/api/clients" : `/api/clients/${row.id}`, {
+      method: isNew ? "POST" : "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ company: company.trim(), department: department.trim() }),
+    });
+    setSubmitting(false);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.error ?? "Не удалось сохранить");
+      return;
+    }
+    toast.success(isNew ? "Клиент создан" : "Клиент обновлён");
+    onSaved();
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{row ? "Редактировать клиента" : "Новый клиент"}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="department">Департамент</Label>
+            <Input
+              id="department"
+              value={department}
+              onChange={(e) => setDepartment(e.target.value)}
+              placeholder="Например: Контент – PR"
+              autoFocus
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="company">Компания</Label>
+            <Input
+              id="company"
+              value={company}
+              onChange={(e) => setCompany(e.target.value)}
+              placeholder="Например: Базис"
+              required
+            />
+          </div>
+          {preview && (
+            <div className="rounded-md bg-neutral-50 border border-neutral-200 px-3 py-2 text-sm">
+              <span className="text-neutral-500">Имя клиента: </span>
+              <span className="font-medium">{preview}</span>
+            </div>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>
+              Отмена
+            </Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? "Сохранение..." : "Сохранить"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
