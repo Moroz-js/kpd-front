@@ -34,13 +34,12 @@ export async function PUT(req: NextRequest, { params }: Ctx) {
   const parsed = putSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Validation" }, { status: 422 });
 
-  const { executorIds } = parsed.data;
+  const uniqueExecutorIds = [...new Set(parsed.data.executorIds)];
 
   await prisma.$transaction([
     prisma.projectExecutor.deleteMany({ where: { projectId } }),
     prisma.projectExecutor.createMany({
-      data: executorIds.map((executorId) => ({ projectId, executorId })),
-      skipDuplicates: true,
+      data: uniqueExecutorIds.map((executorId) => ({ projectId, executorId })),
     }),
   ]);
 

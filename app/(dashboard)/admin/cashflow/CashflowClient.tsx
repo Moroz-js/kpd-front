@@ -55,6 +55,8 @@ type CashflowData = {
   projects: ProjectRow[];
 };
 
+type CashflowResponse = CashflowData | { error: string };
+
 type SummaryDef = {
   key: keyof SummaryRows;
   label: string;
@@ -116,8 +118,10 @@ export function CashflowClient() {
   const [openingBalance, setOpeningBalance] = useState<number | null>(null);
   const YEARS = [currentYear - 2, currentYear - 1, currentYear, currentYear + 1];
 
-  const { data, mutate } = useSWR<CashflowData>(`/api/cashflow?year=${year}`, fetcher, {
-    onSuccess: d => setOpeningBalance(d.openingBalance),
+  const { data, mutate } = useSWR<CashflowResponse>(`/api/cashflow?year=${year}`, fetcher, {
+    onSuccess: d => {
+      if (!("error" in d)) setOpeningBalance(d.openingBalance);
+    },
   });
 
   const now = new Date();
@@ -130,12 +134,10 @@ export function CashflowClient() {
     return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
   })();
 
-  const weeksInYear = data?.weeksInYear ?? getISOWeeksInYear(year);
-
   if (!data) return <div className="p-6 text-sm text-neutral-500">Загрузка…</div>;
   if ("error" in data) return <div className="p-6 text-sm text-neutral-500">{data.error}</div>;
 
-  const { weeks, summary, projects } = data;
+  const { weeks, summary, projects, weeksInYear } = data;
 
   // Month groups
   const monthGroups: { label: string; count: number }[] = [];

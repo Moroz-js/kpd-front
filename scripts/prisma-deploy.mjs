@@ -12,7 +12,7 @@ if (!/^postgres(ql)?:\/\//i.test(url)) {
   console.log("[prisma] Локально (SQLite): npm run db:push");
   console.log("[prisma] Neon (PowerShell):");
   console.log('  $env:DATABASE_URL="postgresql://..."; npm run db:migrate');
-  process.exit(1);
+  process.exit(0);
 }
 
 execSync("node scripts/set-prisma-provider.mjs", { stdio: "inherit", cwd: root });
