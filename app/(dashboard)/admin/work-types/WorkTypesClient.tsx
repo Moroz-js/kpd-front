@@ -27,6 +27,7 @@ type Row = {
   projectTypes: string[];
   estimateSources: string[];
   issuedWorkCount: number;
+  isUnused: boolean;
 };
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json() as Promise<Row[]>);
@@ -46,6 +47,7 @@ export function WorkTypesClient() {
   const [projectTypeFilter, setProjectTypeFilter] = React.useState<string[]>([]);
   const [sourceFilter, setSourceFilter] = React.useState<string[]>([]);
   const [statusFilter, setStatusFilter] = React.useState<string[]>(["active"]);
+  const [usageFilter, setUsageFilter] = React.useState<string[]>([]);
   const [sort, setSort] = React.useState<{ field: SortField; dir: SortDir }>({
     field: "name",
     dir: "asc",
@@ -65,7 +67,12 @@ export function WorkTypesClient() {
     if (sourceFilter.length) {
       list = list.filter((r) => r.estimateSources.some((s) => sourceFilter.includes(s)));
     }
+    if (usageFilter.length) {
+      list = list.filter((r) => usageFilter.includes(r.isUnused ? "unused" : "used"));
+    }
     list = [...list].sort((a, b) => {
+      // Unused always at bottom
+      if (a.isUnused !== b.isUnused) return a.isUnused ? 1 : -1;
       const av = a[sort.field];
       const bv = b[sort.field];
       const cmp = typeof av === "number" && typeof bv === "number"
@@ -74,7 +81,7 @@ export function WorkTypesClient() {
       return sort.dir === "asc" ? cmp : -cmp;
     });
     return list;
-  }, [data, segmentFilter, statusFilter, projectTypeFilter, sourceFilter, sort]);
+  }, [data, segmentFilter, statusFilter, projectTypeFilter, sourceFilter, usageFilter, sort]);
 
   function handleSort(field: string, dir: SortDir) {
     setSort({ field: field as SortField, dir });
@@ -97,7 +104,6 @@ export function WorkTypesClient() {
     <>
       <PageHeader
         title="Виды работ"
-        description="Категории работ. Используются в Личных сметах, Прочих тратах и при настройке исполнителей."
         actions={
           <Button onClick={() => setEditing("new")}>
             <Plus className="h-4 w-4 mr-1" /> Добавить вид работ
@@ -130,6 +136,15 @@ export function WorkTypesClient() {
           value={statusFilter}
           onChange={setStatusFilter}
         />
+        <MultiSelectFilter
+          label="Использование"
+          options={[
+            { value: "used", label: "Использовался" },
+            { value: "unused", label: "Не использовался" },
+          ]}
+          value={usageFilter}
+          onChange={setUsageFilter}
+        />
       </div>
 
       <div className="rounded-md border bg-white">
@@ -152,8 +167,6 @@ export function WorkTypesClient() {
               >
                 Кол-во проектов
               </SortableHead>
-              <TableHead>Типы проектов</TableHead>
-              <TableHead>Типы смет</TableHead>
               <SortableHead
                 field="issuedWorkCount"
                 sortBy={sort.field}
@@ -172,31 +185,28 @@ export function WorkTypesClient() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-neutral-500 py-8">
+                <TableCell colSpan={7} className="text-center text-neutral-500 py-8">
                   Загрузка...
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-neutral-500 py-8">
+                <TableCell colSpan={7} className="text-center text-neutral-500 py-8">
                   Нет видов работ
                 </TableCell>
               </TableRow>
             ) : (
               rows.map((r) => (
                 <TableRow key={r.id}>
-                  <TableCell className="font-medium">{r.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <span className={r.isUnused ? "text-neutral-400" : ""}>{r.name}</span>
+                    {r.isUnused && <span className="ml-1.5 text-[10px] text-neutral-400 font-normal">(не используется)</span>}
+                  </TableCell>
                   <TableCell>{r.segment}</TableCell>
-                  <TableCell className="text-sm whitespace-pre-line">
-                    {r.projectNames.join("\n") || "—"}
+                  <TableCell className="max-w-64 truncate" title={r.projectNames.join(", ")}>
+                    {r.projectNames.join(", ") || "—"}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{r.projectCount}</TableCell>
-                  <TableCell className="text-sm">
-                    {r.projectTypes.map((t) => PROJECT_TYPES[t as keyof typeof PROJECT_TYPES] ?? t).join(", ") || "—"}
-                  </TableCell>
-                  <TableCell className="text-sm">
-                    {r.estimateSources.map((s) => SOURCE_LABEL[s] ?? s).join(", ") || "—"}
-                  </TableCell>
                   <TableCell className="text-right tabular-nums">{r.issuedWorkCount}</TableCell>
                   <TableCell>
                     <StatusBadge dict={ENTITY_STATUSES} value={r.status} />

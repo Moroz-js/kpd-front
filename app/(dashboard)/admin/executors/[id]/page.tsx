@@ -3,8 +3,15 @@ import { getSessionUser } from "@/lib/auth";
 import { canViewExecutorEstimate } from "@/lib/permissions";
 import { ExecutorEstimateClient } from "./ExecutorEstimateClient";
 
-export default async function Page({ params }: { params: Promise<{ id: string }> }) {
+export default async function Page({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ tab?: string }>;
+}) {
   const { id } = await params;
+  const { tab } = await searchParams;
   const user = await getSessionUser();
   if (!user) redirect("/login");
 
@@ -17,6 +24,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
       viewerRole={user.role}
       viewerExecutorId={user.executorId}
       backHref="/admin/executors"
+      initialTab={tab}
     />
   );
 }

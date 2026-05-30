@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import useSWR from "swr";
-import { toast } from "sonner";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner" ;
 import { Plus, Pencil, Archive, ArchiveRestore, Check, X, KeyRound, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
@@ -62,7 +63,7 @@ type Row = {
 export type ExecutorRow = Row;
 
 type BankAccountOption = { id: string; name: string; status: string };
-type WorkTypeOption = { id: string; name: string; status: string };
+type WorkTypeOption = { id: string; name: string; status: string; segment?: string };
 type ResponsibleOption = { id: string; fullName: string; isActive: boolean };
 
 const fetcher = <T,>(url: string): Promise<T> =>
@@ -75,6 +76,7 @@ type SortField = "name" | "responsibleName" | "lastPaidAt" | "workOpsCount";
 type SortDir = "asc" | "desc";
 
 export function ExecutorsClient() {
+  const router = useRouter();
   const { data, isLoading, mutate } = useSWR<Row[]>("/api/executors", fetcher);
   const { data: bankAccounts } = useSWR<BankAccountOption[]>("/api/bank-accounts", fetcher);
   const { data: workTypes } = useSWR<WorkTypeOption[]>("/api/work-types", fetcher);
@@ -237,7 +239,11 @@ export function ExecutorsClient() {
 
   const workTypeOpts = React.useMemo(() => {
     if (!workTypes) return [];
-    return workTypes.map((w) => ({ value: w.id, label: w.name }));
+    const sorted = [...workTypes].sort((a, b) =>
+      (a.segment ?? "").localeCompare(b.segment ?? "", "ru") ||
+      a.name.localeCompare(b.name, "ru")
+    );
+    return sorted.map((w) => ({ value: w.id, label: w.name, group: w.segment }));
   }, [workTypes]);
 
   const recipientOpts = React.useMemo(
@@ -261,7 +267,6 @@ export function ExecutorsClient() {
     <>
       <PageHeader
         title="Исполнители"
-        description="Все исполнители: штатные, внешние, юрлица, сервисы и банки. Кликните на строку — откроется карточка с настройками и сметой."
         actions={
           <Button onClick={() => setWizardOpen(true)}>
             <Plus className="h-4 w-4 mr-1" /> Добавить исполнителя
@@ -325,18 +330,10 @@ export function ExecutorsClient() {
               <SortableHead field="name" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
                 Исполнитель
               </SortableHead>
-              <TableHead>Статус компании</TableHead>
-              <SortableHead
-                field="workOpsCount"
-                sortBy={sort.field}
-                sortDir={sort.dir}
-                onSort={handleSort}
-                className="text-right"
-              >
-                Работ / операций
-              </SortableHead>
+              <TableHead>Статус в компании</TableHead>
               <TableHead className="border-r-2 border-neutral-300">Тип</TableHead>
               <TableHead>Виды работ</TableHead>
+              <TableHead>Специальность</TableHead>
               <TableHead>Проекты</TableHead>
               <SortableHead
                 field="responsibleName"
@@ -348,13 +345,7 @@ export function ExecutorsClient() {
               </SortableHead>
               <TableHead>Источник оплаты</TableHead>
               <TableHead>Тип получателя</TableHead>
-              <TableHead>Реквизиты</TableHead>
-              <TableHead>Контакт</TableHead>
               <TableHead>В чате ТГ</TableHead>
-              <TableHead>Специальность</TableHead>
-              <TableHead>Примечание</TableHead>
-              <TableHead>Договор</TableHead>
-              <TableHead>NDA</TableHead>
               <TableHead className="border-r-2 border-neutral-300">Доступ</TableHead>
               <TableHead>Статус</TableHead>
               <SortableHead
@@ -365,19 +356,28 @@ export function ExecutorsClient() {
               >
                 Последняя выплата
               </SortableHead>
+              <SortableHead
+                field="workOpsCount"
+                sortBy={sort.field}
+                sortDir={sort.dir}
+                onSort={handleSort}
+                className="text-right"
+              >
+                Работ / операций
+              </SortableHead>
               <TableHead className="w-24" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={20} className="text-center text-neutral-500 py-8">
+                <TableCell colSpan={15} className="text-center text-neutral-500 py-8">
                   Загрузка...
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={20} className="text-center text-neutral-500 py-8">
+                <TableCell colSpan={15} className="text-center text-neutral-500 py-8">
                   Нет исполнителей
                 </TableCell>
               </TableRow>
@@ -388,78 +388,39 @@ export function ExecutorsClient() {
                     <button
                       type="button"
                       className="text-left hover:underline"
-                      onClick={() => setEditing(r)}
+                      onClick={() => router.push(`/admin/executors/${r.id}`)}
                     >
                       {r.name}
                     </button>
                     {r.email && <div className="text-xs text-neutral-500">{r.email}</div>}
                   </TableCell>
-                  <TableCell className="text-sm">
+                  <TableCell>
                     {r.companyStatus === "core"
                       ? "Ядро"
                       : r.companyStatus === "orbit"
                         ? "Орбита"
                         : "—"}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{r.workOpsCount}</TableCell>
-                  <TableCell className="border-r-2 border-neutral-300 text-sm">
+                  <TableCell className="border-r-2 border-neutral-300">
                     {EXECUTOR_TYPES[r.type as keyof typeof EXECUTOR_TYPES] ?? r.type}
                   </TableCell>
-                  <TableCell className="text-sm whitespace-pre-line max-w-48">
-                    {r.workTypeNames.join("\n") || "—"}
+                  <TableCell className="max-w-48 truncate">
+                    {r.workTypeNames.join(", ") || "—"}
                   </TableCell>
-                  <TableCell className="text-sm whitespace-pre-line max-w-48">
-                    {r.projectNames.join("\n") || "—"}
+                  <TableCell className="max-w-32 truncate">
+                    {r.specialty ?? "—"}
                   </TableCell>
-                  <TableCell className="text-sm">{r.responsibleName ?? "—"}</TableCell>
-                  <TableCell className="text-sm">{r.defaultBankAccountName ?? "—"}</TableCell>
-                  <TableCell className="text-sm">{r.recipientType ?? "—"}</TableCell>
-                  <TableCell className="text-sm whitespace-pre-line max-w-48 truncate" title={r.requisites ?? ""}>
-                    {r.requisites || "—"}
+                  <TableCell className="max-w-48 truncate">
+                    {r.projectNames.join(", ") || "—"}
                   </TableCell>
-                  <TableCell className="text-sm whitespace-pre-line max-w-48 truncate" title={r.contacts ?? ""}>
-                    {r.contacts || "—"}
-                  </TableCell>
+                  <TableCell>{r.responsibleName ?? "—"}</TableCell>
+                  <TableCell>{r.defaultBankAccountName ?? "—"}</TableCell>
+                  <TableCell>{r.recipientType ?? "—"}</TableCell>
                   <TableCell className="text-center">
                     {r.inTgChat ? (
                       <Check className="h-4 w-4 text-green-600 inline" />
                     ) : (
                       <X className="h-4 w-4 text-neutral-300 inline" />
-                    )}
-                  </TableCell>
-                  <TableCell className="text-sm">{r.specialty ?? "—"}</TableCell>
-                  <TableCell
-                    className="text-sm max-w-32 truncate"
-                    title={r.note ?? ""}
-                  >
-                    {r.note || "—"}
-                  </TableCell>
-                  <TableCell className="text-sm">
-                    {r.contractFile ? (
-                      <a
-                        href={r.contractFile}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:underline"
-                      >
-                        ссылка
-                      </a>
-                    ) : (
-                      "—"
-                    )}
-                  </TableCell>
-                  <TableCell className="text-sm">
-                    {r.ndaFile ? (
-                      <a
-                        href={r.ndaFile}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:underline"
-                      >
-                        ссылка
-                      </a>
-                    ) : (
-                      "—"
                     )}
                   </TableCell>
                   <TableCell className="border-r-2 border-neutral-300">
@@ -487,19 +448,18 @@ export function ExecutorsClient() {
                   <TableCell>
                     <StatusBadge dict={ENTITY_STATUSES} value={r.status} />
                   </TableCell>
-                  <TableCell className="text-sm">
+                  <TableCell>
                     {r.lastPaidAt ? formatDate(r.lastPaidAt) : "—"}
                   </TableCell>
+                  <TableCell className="text-right tabular-nums">{r.workOpsCount}</TableCell>
                   <TableCell>
                     <div className="flex items-center justify-end gap-0.5">
-                      <a
-                        href={`/admin/executors/${r.id}`}
-                        className="inline-flex items-center justify-center rounded-md text-xs text-blue-600 hover:text-blue-800 hover:bg-accent px-2 h-8 whitespace-nowrap"
-                        title="Открыть смету"
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => router.push(`/admin/executors/${r.id}?tab=settings`)}
+                        title="Открыть настройки"
                       >
-                        Смета
-                      </a>
-                      <Button size="sm" variant="ghost" onClick={() => setEditing(r)} title="Редактировать">
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
                       <Button

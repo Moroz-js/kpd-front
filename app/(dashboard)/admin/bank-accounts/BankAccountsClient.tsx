@@ -92,7 +92,6 @@ export function BankAccountsClient() {
     <>
       <PageHeader
         title="Банковские счета"
-        description="Расчётные счета компании. Используются как «Источник оплаты» в выплатах и начислениях."
         actions={
           <Button onClick={() => setEditing("new")}>
             <Plus className="h-4 w-4 mr-1" /> Добавить счёт

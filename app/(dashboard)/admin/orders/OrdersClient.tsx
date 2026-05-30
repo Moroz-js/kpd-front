@@ -40,6 +40,7 @@ type Row = {
   projectName: string;
   clientId: string | null;
   clientName: string | null;
+  company: string | null;
   hasUnpaidCharges: boolean;
   createdAt: string;
 };
@@ -63,6 +64,7 @@ export function OrdersClient() {
   const { data, isLoading, mutate } = useSWR<Row[]>("/api/orders", fetcher);
   const { data: projects } = useSWR<ProjectOption[]>("/api/projects/options", fetcher);
 
+  const [companyFilter, setCompanyFilter] = React.useState<string[]>([]);
   const [clientFilter, setClientFilter] = React.useState<string[]>([]);
   const [projectFilter, setProjectFilter] = React.useState<string[]>([]);
   const [statusFilter, setStatusFilter] = React.useState<string[]>(["active"]);
@@ -73,6 +75,11 @@ export function OrdersClient() {
   const [editing, setEditing] = React.useState<Row | "new" | null>(null);
   const [archiveTarget, setArchiveTarget] = React.useState<Row | null>(null);
   const [unarchiveTarget, setUnarchiveTarget] = React.useState<Row | null>(null);
+
+  const companyOptions = React.useMemo(() => {
+    const companies = Array.from(new Set((data ?? []).map((r) => r.company ?? "__empty__")));
+    return companies.map((c) => ({ value: c, label: c === "__empty__" ? "Пусто" : c }));
+  }, [data]);
 
   const clientOptions = React.useMemo(() => {
     const list = data ?? [];
@@ -93,6 +100,7 @@ export function OrdersClient() {
 
   const rows = React.useMemo(() => {
     let list = data ?? [];
+    if (companyFilter.length) list = list.filter((r) => companyFilter.includes(r.company ?? "__empty__"));
     if (clientFilter.length) list = list.filter((r) => clientFilter.includes(r.clientId ?? ""));
     if (projectFilter.length) list = list.filter((r) => projectFilter.includes(r.projectId));
     if (statusFilter.length) list = list.filter((r) => statusFilter.includes(r.status));
@@ -106,7 +114,7 @@ export function OrdersClient() {
       return sort.dir === "asc" ? cmp : -cmp;
     });
     return list;
-  }, [data, clientFilter, projectFilter, statusFilter, sort]);
+  }, [data, companyFilter, clientFilter, projectFilter, statusFilter, sort]);
 
   function handleSort(field: string, dir: SortDir) {
     setSort({ field: field as SortField, dir });
@@ -129,7 +137,6 @@ export function OrdersClient() {
     <>
       <PageHeader
         title="Заказы"
-        description="Заказы по договорам с клиентами."
         actions={
           <Button onClick={() => setEditing("new")}>
             <Plus className="h-4 w-4 mr-1" /> Добавить заказ
@@ -138,6 +145,12 @@ export function OrdersClient() {
       />
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
+        <MultiSelectFilter
+          label="Компания"
+          options={companyOptions}
+          value={companyFilter}
+          onChange={setCompanyFilter}
+        />
         <MultiSelectFilter
           label="Клиент"
           options={clientOptions}

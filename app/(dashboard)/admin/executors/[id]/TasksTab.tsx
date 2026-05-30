@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -91,6 +91,15 @@ export function TasksTab({ executorId, isAdmin, isOwner, onTaskCountChange }: Pr
     }
   }, [executorId, onTaskCountChange]);
 
+  const STATUS_ORDER: Record<string, number> = {
+    pending: 0, in_progress: 1, review: 2, paused: 3, done: 99,
+  };
+
+  const sortedTasks = React.useMemo(
+    () => [...tasks].sort((a, b) => (STATUS_ORDER[a.status] ?? 50) - (STATUS_ORDER[b.status] ?? 50)),
+    [tasks]
+  );
+
   useEffect(() => { load(); }, [load]);
 
   async function handleDelete(id: string) {
@@ -139,19 +148,19 @@ export function TasksTab({ executorId, isAdmin, isOwner, onTaskCountChange }: Pr
         <div className="overflow-x-auto">
           <table className="w-full text-xs border-separate border-spacing-0">
             <thead>
-              <tr className="bg-neutral-50">
-                <th className="border border-neutral-200 px-3 py-2 text-left font-medium text-neutral-600 min-w-[300px]">Задача</th>
-                <th className="border border-neutral-200 px-3 py-2 text-left font-medium text-neutral-600 min-w-[110px]">Статус</th>
-                <th className="border border-neutral-200 px-3 py-2 text-left font-medium text-neutral-600 min-w-[90px]">Срок</th>
-                <th className="border border-neutral-200 px-3 py-2 text-left font-medium text-neutral-600 min-w-[140px]">Результат</th>
-                <th className="border border-neutral-200 px-3 py-2 text-left font-medium text-neutral-600 min-w-[140px]">Комментарий</th>
-                <th className="border border-neutral-200 px-3 py-2 w-10"></th>
+              <tr className="bg-neutral-100">
+                <th className="border-b border-neutral-200 px-3 py-2 text-left text-xs font-medium text-neutral-600 uppercase tracking-wide min-w-[300px]">Задача</th>
+                <th className="border-b border-neutral-200 px-3 py-2 text-left text-xs font-medium text-neutral-600 uppercase tracking-wide min-w-[110px]">Статус</th>
+                <th className="border-b border-neutral-200 px-3 py-2 text-left text-xs font-medium text-neutral-600 uppercase tracking-wide min-w-[90px]">Срок</th>
+                <th className="border-b border-neutral-200 px-3 py-2 text-left text-xs font-medium text-neutral-600 uppercase tracking-wide min-w-[140px]">Результат</th>
+                <th className="border-b border-neutral-200 px-3 py-2 text-left text-xs font-medium text-neutral-600 uppercase tracking-wide min-w-[140px]">Комментарий</th>
+                <th className="border-b border-neutral-200 px-3 py-2 w-10"></th>
               </tr>
             </thead>
             <tbody>
-              {tasks.map((task) => (
-                <tr key={task.id} className={`hover:bg-neutral-50 ${task.status === "done" ? "opacity-60" : ""}`}>
-                  <td className="border border-neutral-200 px-3 py-1.5">
+              {sortedTasks.map((task) => (
+                <tr key={task.id} className={`hover:bg-neutral-50 border-b border-neutral-100 ${task.status === "done" ? "opacity-60" : ""}`}>
+                  <td className="px-3 py-1.5">
                     <div className="flex items-center gap-1.5">
                       {task.isOnboarding && (
                         <span className="text-[10px] text-neutral-400 border border-neutral-200 rounded px-1">онбординг</span>
@@ -159,7 +168,7 @@ export function TasksTab({ executorId, isAdmin, isOwner, onTaskCountChange }: Pr
                       <span>{task.title}</span>
                     </div>
                   </td>
-                  <td className="border border-neutral-200 px-3 py-1.5">
+                  <td className="px-3 py-1.5">
                     {isAdmin || isOwner ? (
                       <Select
                         value={task.status}
@@ -180,10 +189,10 @@ export function TasksTab({ executorId, isAdmin, isOwner, onTaskCountChange }: Pr
                       <TaskStatusBadge status={task.status} />
                     )}
                   </td>
-                  <td className="border border-neutral-200 px-3 py-1.5 text-neutral-500">
+                  <td className="px-3 py-1.5 text-neutral-500">
                     {formatDate(task.plannedDoneAt)}
                   </td>
-                  <td className="border border-neutral-200 px-3 py-1.5">
+                  <td className="px-3 py-1.5">
                     {(isAdmin || isOwner) ? (
                       <InlineEdit
                         value={task.result ?? ""}
@@ -199,7 +208,7 @@ export function TasksTab({ executorId, isAdmin, isOwner, onTaskCountChange }: Pr
                       <span className="text-neutral-600">{task.result || "—"}</span>
                     )}
                   </td>
-                  <td className="border border-neutral-200 px-3 py-1.5">
+                  <td className="px-3 py-1.5">
                     {(isAdmin || isOwner) ? (
                       <InlineEdit
                         value={task.comment ?? ""}
@@ -215,7 +224,7 @@ export function TasksTab({ executorId, isAdmin, isOwner, onTaskCountChange }: Pr
                       <span className="text-neutral-600">{task.comment || "—"}</span>
                     )}
                   </td>
-                  <td className="border border-neutral-200 px-3 py-1.5">
+                  <td className="px-3 py-1.5">
                     {isAdmin && (
                       <button
                         title="Удалить"
@@ -286,11 +295,12 @@ function InlineEdit({ value, onSave }: { value: string; onSave: (v: string) => v
   }
   return (
     <span
-      className="cursor-pointer hover:bg-neutral-100 rounded px-1 py-0.5 text-neutral-600 min-w-[60px] inline-block"
+      className="inline-flex items-center gap-1 cursor-pointer hover:bg-neutral-100 rounded px-1 py-0.5 text-neutral-600 group"
       onClick={() => setEditing(true)}
       title="Нажмите для редактирования"
     >
-      {v || <span className="text-neutral-300">—</span>}
+      <span className="min-w-[40px]">{v || <span className="text-neutral-300">—</span>}</span>
+      <Pencil className="h-3 w-3 shrink-0 text-neutral-300 group-hover:text-neutral-500 transition-colors" />
     </span>
   );
 }

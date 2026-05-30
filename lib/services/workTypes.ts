@@ -14,18 +14,22 @@ export type WorkTypeListRow = {
   name: string;
   segment: string;
   status: string;
-  projectNames: string[]; // C — полные названия проектов
-  projectCount: number; // D
-  projectTypes: string[]; // E — distinct
-  estimateSources: string[]; // F — distinct sourceType
-  issuedWorkCount: number; // G
+  projectNames: string[];
+  projectCount: number;
+  projectTypes: string[];
+  estimateSources: string[];
+  issuedWorkCount: number;
+  isUnused: boolean;
   createdAt: Date;
 };
 
 export async function listWorkTypes(): Promise<WorkTypeListRow[]> {
-  const [workTypes, issued] = await Promise.all([
+  const [workTypes, issued, planLines] = await Promise.all([
     prisma.workType.findMany({ orderBy: { name: "asc" } }),
     listIssuedWorks(),
+    prisma.spendingPlanLine.findMany({
+      select: { workTypeId: true, projectId: true, project: { select: { name: true, type: true } } },
+    }),
   ]);
 
   const byTypeId = new Map<string, typeof issued>();
@@ -35,27 +39,46 @@ export async function listWorkTypes(): Promise<WorkTypeListRow[]> {
     else byTypeId.set(row.workTypeId, [row]);
   }
 
+  // Plan projects per workTypeId
+  const planByTypeId = new Map<string, Map<string, { name: string; type: string }>>();
+  for (const line of planLines) {
+    if (!planByTypeId.has(line.workTypeId)) planByTypeId.set(line.workTypeId, new Map());
+    planByTypeId.get(line.workTypeId)!.set(line.projectId, {
+      name: line.project.name,
+      type: line.project.type,
+    });
+  }
+
+  const planWorkTypeIds = new Set(planLines.map(l => l.workTypeId));
+  const factWorkTypeIds = new Set(issued.map(r => r.workTypeId));
+
   return workTypes.map((wt) => {
     const rows = byTypeId.get(wt.id) ?? [];
-    const projects = new Map<string, { name: string; type: string }>();
+    const planProjects = planByTypeId.get(wt.id) ?? new Map();
+
+    // projectCount and projectNames from SpendingPlanLine (plan)
+    const planProjectArr = Array.from(planProjects.values()).sort((a, b) =>
+      a.name.localeCompare(b.name, "ru")
+    );
+    const planProjectTypes = Array.from(new Set(planProjectArr.map(p => p.type))).sort();
+
     const sources = new Set<string>();
-    for (const r of rows) {
-      projects.set(r.projectId, { name: r.projectName, type: r.projectType });
-      sources.add(r.sourceType);
-    }
-    const projectArr = Array.from(projects.values()).sort((a, b) => a.name.localeCompare(b.name, "ru"));
-    const projectTypes = Array.from(new Set(projectArr.map((p) => p.type))).sort();
+    for (const r of rows) sources.add(r.sourceType);
+
+    const isUnused = !planWorkTypeIds.has(wt.id) && !factWorkTypeIds.has(wt.id);
+
     return {
       id: wt.id,
       name: wt.name,
       segment: wt.segment,
       status: wt.status,
-      projectNames: projectArr.map((p) => p.name),
-      projectCount: projectArr.length,
-      projectTypes,
+      projectNames: planProjectArr.map(p => p.name),
+      projectCount: planProjectArr.length,
+      projectTypes: planProjectTypes,
       estimateSources: Array.from(sources).sort(),
       issuedWorkCount: rows.length,
-      createdAt: new Date(), // нет в schema; используется для default-сорта, но мы сортируем по имени
+      isUnused,
+      createdAt: new Date(),
     };
   });
 }

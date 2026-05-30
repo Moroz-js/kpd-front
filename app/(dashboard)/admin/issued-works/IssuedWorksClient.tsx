@@ -3,13 +3,16 @@
 import * as React from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { Pencil, CheckCircle2 } from "lucide-react";
+import { Pencil, CheckCircle2, X } from "lucide-react";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import { WORK_STATUSES, EXECUTOR_TYPES, PROJECT_TYPES } from "@/lib/statuses";
-import { formatMoney, formatDate, weekLabel, monthLabel, MONTHS } from "@/lib/format";
+import { formatMoney, formatDate, formatDateShort, weekLabel, monthLabel, MONTHS } from "@/lib/format";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -78,7 +81,7 @@ export function IssuedWorksClient() {
   const { data: executors } = useSWR<ExecutorOption[]>("/api/executors", fetcher);
   const { data: workTypes } = useSWR<WorkTypeOption[]>("/api/work-types", fetcher);
 
-  const [yearPlanFactFilter, setYearPlanFactFilter] = React.useState<string[]>([]);
+  const [yearPlanFactFilter, setYearPlanFactFilter] = React.useState<string[]>([String(new Date().getFullYear())]);
   const [executionYearFilter, setExecutionYearFilter] = React.useState<string[]>([]);
   const [executionMonthFilter, setExecutionMonthFilter] = React.useState<string[]>([]);
   const [weekFilter, setWeekFilter] = React.useState<string[]>([]);
@@ -96,6 +99,41 @@ export function IssuedWorksClient() {
   ]);
 
   const [editing, setEditing] = React.useState<Row | null>(null);
+
+  // Bulk
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+  const [bulkStatus, setBulkStatus] = React.useState("");
+  const [bulkPlannedPayAt, setBulkPlannedPayAt] = React.useState("");
+  const [bulkSaving, setBulkSaving] = React.useState(false);
+
+  function rowId(r: Row) { return `${r.sourceType}:${r.sourceId}`; }
+  function toggleRow(r: Row) {
+    const id = rowId(r);
+    setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }
+  function toggleAll() {
+    if (selectedIds.size === rows.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(rows.map(rowId)));
+  }
+  async function handleBulkApply() {
+    const ids = Array.from(selectedIds);
+    const patch: Record<string, unknown> = {};
+    if (bulkStatus) patch.workStatus = bulkStatus;
+    if (bulkPlannedPayAt) patch.plannedPayAt = new Date(bulkPlannedPayAt).toISOString();
+    if (Object.keys(patch).length === 0) return toast.error("Выберите хотя бы одно поле");
+    setBulkSaving(true);
+    const res = await fetch("/api/issued-works/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids, patch }),
+    });
+    setBulkSaving(false);
+    if (!res.ok) return toast.error("Ошибка массового обновления");
+    const { updated } = await res.json() as { updated: number };
+    toast.success(`Обновлено ${updated} записей`);
+    setSelectedIds(new Set()); setBulkStatus(""); setBulkPlannedPayAt("");
+    mutate();
+  }
 
   function compareRows(a: Row, b: Row): number {
     for (const s of sort) {
@@ -157,13 +195,20 @@ export function IssuedWorksClient() {
         .map(([value, label]) => ({ value, label })),
     [allRows]
   );
-  const workTypeOptions = React.useMemo(
-    () =>
-      Array.from(new Map(allRows.map((r) => [r.workTypeId, r.workTypeName])).entries())
-        .sort((a, b) => a[1].localeCompare(b[1], "ru"))
-        .map(([value, label]) => ({ value, label })),
-    [allRows]
-  );
+  const workTypeOptions = React.useMemo(() => {
+    const map = new Map<string, { label: string; group: string }>();
+    for (const r of allRows) {
+      if (!map.has(r.workTypeId)) {
+        map.set(r.workTypeId, { label: r.workTypeName, group: r.workTypeSegment ?? "" });
+      }
+    }
+    return Array.from(map.entries())
+      .sort((a, b) =>
+        (a[1].group ?? "").localeCompare(b[1].group ?? "", "ru") ||
+        a[1].label.localeCompare(b[1].label, "ru")
+      )
+      .map(([value, { label, group }]) => ({ value, label, group }));
+  }, [allRows]);
 
   const rows = React.useMemo(() => {
     let list = allRows;
@@ -212,10 +257,7 @@ export function IssuedWorksClient() {
 
   return (
     <>
-      <PageHeader
-        title="Выставленные работы"
-        description="Все выставленные работы."
-      />
+      <PageHeader title="Выставленные работы" />
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <MultiSelectFilter
@@ -277,10 +319,47 @@ export function IssuedWorksClient() {
         />
       </div>
 
+      {rows.length > 0 && (
+        <div className="flex items-center gap-4 px-1 py-1.5 text-xs text-neutral-500">
+          <span>{rows.length} записей</span>
+          <span className="text-neutral-800 font-semibold tabular-nums">
+            {formatMoney(rows.reduce((s, r) => s + r.amount, 0))}
+          </span>
+        </div>
+      )}
+
+      {/* Bulk toolbar */}
+      {selectedIds.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200">
+          <span className="text-xs font-medium text-blue-700">{selectedIds.size} выбрано</span>
+          <Select value={bulkStatus} onValueChange={(v) => v && setBulkStatus(v)}>
+            <SelectTrigger className="h-7 w-44 text-xs">
+              <SelectValue>{bulkStatus ? (WORK_STATUSES[bulkStatus as keyof typeof WORK_STATUSES]?.label ?? "Статус") : "Статус"}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(WORK_STATUSES).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-neutral-500">Дата план:</span>
+            <Input type="date" className="h-7 text-xs w-36" value={bulkPlannedPayAt} onChange={(e) => setBulkPlannedPayAt(e.target.value)} />
+          </div>
+          <Button size="sm" className="h-7 text-xs" onClick={handleBulkApply} disabled={bulkSaving}>
+            {bulkSaving ? "..." : "Применить"}
+          </Button>
+          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { setSelectedIds(new Set()); setBulkStatus(""); setBulkPlannedPayAt(""); }}>
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      )}
+
       <div className="rounded-md border bg-white overflow-x-auto">
         <Table className="min-w-[1700px]">
           <TableHeader>
             <TableRow>
+              <TableHead className="w-8">
+                <Checkbox checked={selectedIds.size === rows.length && rows.length > 0} onCheckedChange={toggleAll} />
+              </TableHead>
               <SortableHead
                 field="yearPlanFact"
                 sortBy={activeSortField()}
@@ -369,37 +448,40 @@ export function IssuedWorksClient() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={17} className="text-center text-neutral-500 py-8">
+                <TableCell colSpan={18} className="text-center text-neutral-500 py-8">
                   Загрузка...
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={17} className="text-center text-neutral-500 py-12">
+                <TableCell colSpan={18} className="text-center text-neutral-500 py-12">
                   Пока нет ни одной работы. Они появятся после создания строк в Личных сметах
                   и Прочих тратах (Phase 3).
                 </TableCell>
               </TableRow>
             ) : (
               rows.map((r) => (
-                <TableRow key={`${r.sourceType}:${r.sourceId}`}>
+                <TableRow key={`${r.sourceType}:${r.sourceId}`} className={selectedIds.has(rowId(r)) ? "bg-blue-50" : ""}>
+                  <TableCell>
+                    <Checkbox checked={selectedIds.has(rowId(r))} onCheckedChange={() => toggleRow(r)} />
+                  </TableCell>
                   <TableCell className="text-sm tabular-nums">{r.yearPlanFact ?? "—"}</TableCell>
                   <TableCell className="text-sm tabular-nums">{r.executionYear}</TableCell>
                   <TableCell className="text-sm">{monthLabel(r.executionMonth)}</TableCell>
                   <TableCell className="border-r-2 border-neutral-300 text-sm">
                     {r.weekPlanFact != null ? weekLabel(r.weekPlanFact) : "—"}
                   </TableCell>
-                  <TableCell className="text-sm">{r.executorName}</TableCell>
-                  <TableCell className="text-sm">{r.projectName}</TableCell>
-                  <TableCell className="text-sm">{r.workTypeName}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMoney(r.amount)}</TableCell>
+                  <TableCell>{r.executorName}</TableCell>
+                  <TableCell>{r.projectName}</TableCell>
+                  <TableCell>{r.workTypeName}</TableCell>
+                  <TableCell className="text-right tabular-nums font-semibold text-sm">{formatMoney(r.amount)}</TableCell>
                   <TableCell className="border-r-2 border-neutral-300">
                     <StatusBadge dict={WORK_STATUSES} value={r.workStatus} />
                   </TableCell>
-                  <TableCell className="text-sm">{formatDate(r.checkedAt)}</TableCell>
-                  <TableCell className="text-sm">{formatDate(r.paidAt)}</TableCell>
-                  <TableCell className="border-r-2 border-neutral-300 text-sm">
-                    {formatDate(r.plannedPayAt)}
+                  <TableCell>{formatDateShort(r.checkedAt)}</TableCell>
+                  <TableCell>{formatDateShort(r.paidAt)}</TableCell>
+                  <TableCell className="border-r-2 border-neutral-300">
+                    {formatDateShort(r.plannedPayAt)}
                   </TableCell>
                   <TableCell className="text-sm">
                     {PROJECT_TYPES[r.projectType as keyof typeof PROJECT_TYPES] ?? "—"}

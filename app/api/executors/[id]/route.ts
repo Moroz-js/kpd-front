@@ -45,6 +45,10 @@ const patchSchema = z.object({
   recipientType: z.string().nullable().optional(),
   responsibleUserId: z.string().nullable().optional(),
   defaultBankAccountId: z.string().nullable().optional(),
+  oldEstimateUrl: z.string().nullable().optional(),
+  entityForm: z.string().nullable().optional(),
+  specialties: z.string().nullable().optional(),
+  isResponsible: z.boolean().optional(),
   workTypeIds: z.array(z.string()).optional(),
 });
 

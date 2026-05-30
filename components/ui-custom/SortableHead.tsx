@@ -52,10 +52,10 @@ export function SortableHead({ field, sortBy, sortDir, onSort, children, classNa
         {children}
         {active ? (
           sortDir === "asc"
-            ? <ChevronUp className="h-3.5 w-3.5 text-neutral-700" />
-            : <ChevronDown className="h-3.5 w-3.5 text-neutral-700" />
+            ? <ChevronUp className="h-3.5 w-3.5 text-neutral-900" />
+            : <ChevronDown className="h-3.5 w-3.5 text-neutral-900" />
         ) : (
-          <ChevronsUpDown className="h-3.5 w-3.5 text-neutral-300" />
+          <ChevronsUpDown className="h-3.5 w-3.5 text-neutral-400" />
         )}
       </span>
     </TableHead>
@@ -91,10 +91,10 @@ export function UrlSortableHead({ field, sortBy, sortDir, searchParamsStr, child
         {children}
         {active ? (
           sortDir === "asc"
-            ? <ChevronUp className="h-3.5 w-3.5 text-neutral-700" />
-            : <ChevronDown className="h-3.5 w-3.5 text-neutral-700" />
+            ? <ChevronUp className="h-3.5 w-3.5 text-neutral-900" />
+            : <ChevronDown className="h-3.5 w-3.5 text-neutral-900" />
         ) : (
-          <ChevronsUpDown className="h-3.5 w-3.5 text-neutral-300" />
+          <ChevronsUpDown className="h-3.5 w-3.5 text-neutral-400" />
         )}
       </span>
     </TableHead>

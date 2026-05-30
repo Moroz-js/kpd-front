@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     prisma.otherExpense.findMany({ select: { projectId: true, amount: true, workStatus: true, plannedPayAt: true, paidAt: true } }),
     prisma.spendingPlanLine.findMany({ where: { year }, select: { projectId: true, week: true, amount: true } }),
     prisma.cashflowOpeningBalance.findUnique({ where: { year } }),
-    prisma.project.findMany({ where: { status: "active" }, select: { id: true, name: true } }),
+    prisma.project.findMany({ where: { status: "active" }, select: { id: true, name: true, type: true } }),
   ]);
 
   const activeProjectIds = new Set(activeProjects.map(p => p.id));
@@ -163,12 +163,40 @@ export async function GET(req: NextRequest) {
       return {
         id: p.id,
         name: p.name,
+        type: p.type,
         plan,
         iw,
         charges: charges2,
         cashflow,
       };
     });
+
+  const externalProjects = projectRows.filter(p => p.type === "client");
+  const internalProjects = projectRows.filter(p => p.type !== "client");
+
+  // ─── Aggregates ───────────────────────────────────────────────
+  const TAXES_NAME = "Налоги";
+  const MOTIVATION_NAME = "Мотивация";
+  const taxesProject = activeProjects.find(p => p.name === TAXES_NAME);
+  const motivationProject = activeProjects.find(p => p.name === MOTIVATION_NAME);
+  const taxesId = taxesProject?.id;
+  const motivationId = motivationProject?.id;
+
+  const zeroArr = () => new Array(weeksInYear).fill(0);
+
+  const projectExpenses = zeroArr();
+  const nonProjectExpenses = zeroArr();
+  const taxes = zeroArr();
+  const motivation = zeroArr();
+
+  for (let i = 0; i < weeksInYear; i++) {
+    for (const p of externalProjects) projectExpenses[i] += p.plan[i];
+    for (const p of internalProjects) {
+      if (p.id === taxesId) taxes[i] += p.plan[i];
+      else if (p.id === motivationId) motivation[i] += p.plan[i];
+      else nonProjectExpenses[i] += p.plan[i];
+    }
+  }
 
   // ─── Week headers ──────────────────────────────────────────────
   const weekHeaders = weeks.map(w => {
@@ -187,5 +215,8 @@ export async function GET(req: NextRequest) {
     openingBalance: openingBalance?.amount ?? 0,
     summary: summaryRows,
     projects: projectRows,
+    externalProjects,
+    internalProjects,
+    aggregates: { projectExpenses, nonProjectExpenses, taxes, motivation },
   });
 }

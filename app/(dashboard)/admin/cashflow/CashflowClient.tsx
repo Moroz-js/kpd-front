@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import useSWR from "swr";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { getISOWeeksInYear } from "@/lib/iso-weeks";
+import { CashflowChart } from "./CashflowChart";
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
@@ -17,8 +18,7 @@ function fmt(n: number) {
 
 function fmtSign(n: number) {
   if (n === 0) return "—";
-  const sign = n > 0 ? "+" : "";
-  return sign + n.toLocaleString("ru-RU", { maximumFractionDigits: 0 });
+  return n.toLocaleString("ru-RU", { maximumFractionDigits: 0 });
 }
 
 type WeekHeader = { week: number; month: number; monthName: string };
@@ -40,10 +40,18 @@ type SummaryRows = {
 type ProjectRow = {
   id: string;
   name: string;
+  type: string;
   plan: number[];
   iw: number[];
   charges: number[];
   cashflow: number[];
+};
+
+type Aggregates = {
+  projectExpenses: number[];
+  nonProjectExpenses: number[];
+  taxes: number[];
+  motivation: number[];
 };
 
 type CashflowData = {
@@ -53,6 +61,9 @@ type CashflowData = {
   openingBalance: number;
   summary: SummaryRows;
   projects: ProjectRow[];
+  externalProjects: ProjectRow[];
+  internalProjects: ProjectRow[];
+  aggregates: Aggregates;
 };
 
 type CashflowResponse = CashflowData | { error: string };
@@ -71,12 +82,17 @@ const SUMMARY_DEFS: SummaryDef[] = [
   { key: "incomePlanOnly", label: "Приход (план)" },
   { key: "incomePlanFact", label: "Приход (план+факт)" },
   { key: "expensePlanDP", label: "Расход (план из ДП)" },
-  { key: "balanceEndDP", label: "Баланс на конец (из ДП)", highlight: true },
+  { key: "balanceEndDP", label: "Баланс на конец (из ДП)" },
   { key: "paidFromBudget", label: "Оплачено из смет" },
   { key: "unpaidFromBudget", label: "Неоплачено из смет" },
   { key: "totalExpenseBudget", label: "Общий расход из смет" },
-  { key: "deltaDP", label: "Несхождение смет с ДП", signed: true },
-  { key: "balanceEndBudget", label: "Баланс из смет", highlight: true },
+  { key: "balanceEndBudget", label: "Баланс на конец периода из смет" },
+];
+
+type AggregateDef = { key: keyof Aggregates; label: string; bold: boolean };
+const AGGREGATE_DEFS: AggregateDef[] = [
+  { key: "projectExpenses", label: "Проектные расходы", bold: true },
+  { key: "nonProjectExpenses", label: "Непроектные расходы", bold: true },
 ];
 
 function OpeningBalanceInput({
@@ -89,6 +105,10 @@ function OpeningBalanceInput({
   onSaved: (v: number) => void;
 }) {
   const [draft, setDraft] = useState(String(initial));
+
+  useEffect(() => {
+    setDraft(String(initial));
+  }, [initial]);
 
   async function save() {
     const amount = parseFloat(draft.replace(/\s/g, "").replace(",", "."));
@@ -116,6 +136,7 @@ export function CashflowClient() {
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
   const [openingBalance, setOpeningBalance] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<"table" | "chart">("table");
   const YEARS = [currentYear - 2, currentYear - 1, currentYear, currentYear + 1];
 
   const { data, mutate } = useSWR<CashflowResponse>(`/api/cashflow?year=${year}`, fetcher, {
@@ -134,25 +155,41 @@ export function CashflowClient() {
     return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
   })();
 
+  const [showOldWeeks, setShowOldWeeks] = useState(false);
+
+  const weeks = (data && !("error" in data)) ? data.weeks : [];
+  const visibleWeeks = React.useMemo(() => {
+    if (!weeks.length || showOldWeeks || year !== currentYear) return weeks;
+    return weeks.filter((wh) => wh.week >= currentISOWeek - 2);
+  }, [weeks, showOldWeeks, year, currentYear, currentISOWeek]);
+
+  const visibleWeekIndices = React.useMemo(
+    () => visibleWeeks.map((vw) => weeks.findIndex((w) => w.week === vw.week)),
+    [visibleWeeks, weeks]
+  );
+
   if (!data) return <div className="p-6 text-sm text-neutral-500">Загрузка…</div>;
   if ("error" in data) return <div className="p-6 text-sm text-neutral-500">{data.error}</div>;
 
-  const { weeks, summary, projects, weeksInYear } = data;
+  const { summary, projects, weeksInYear, externalProjects, internalProjects, aggregates } = data;
 
-  // Month groups
-  const monthGroups: { label: string; count: number }[] = [];
-  for (const wh of weeks) {
-    const label = `${String(wh.month).padStart(2, "0")}-${wh.monthName}`;
-    const last = monthGroups[monthGroups.length - 1];
-    if (last && last.label === label) last.count++;
-    else monthGroups.push({ label, count: 1 });
-  }
-
-  const tdCls = "px-2 py-1 text-right text-xs tabular-nums whitespace-nowrap border-r border-neutral-100 last:border-0";
+  const numCls = "px-2 py-1 text-right text-xs tabular-nums whitespace-nowrap border-r border-neutral-100 last:border-0";
+  const tdCls = numCls;
   const thCls = "px-2 py-1 text-center text-xs font-medium text-neutral-500 border-r border-neutral-100 whitespace-nowrap";
   const stickyLbl = "sticky left-0 z-10 bg-white px-3 py-1 text-xs border-r border-neutral-200 whitespace-nowrap min-w-[200px] max-w-[240px] shadow-[1px_0_0_0_#e5e7eb]";
   const stickyHdr = "sticky left-0 z-[15] bg-neutral-50 border-r border-neutral-200 shadow-[1px_0_0_0_#e5e7eb] px-3 py-1 text-xs font-semibold text-neutral-500 tracking-wide uppercase whitespace-nowrap min-w-[200px]";
   const isFuture = (wIdx: number) => weeks[wIdx]?.week > currentISOWeek && year === currentYear;
+  const isCurrent = (wIdx: number) => weeks[wIdx]?.week === currentISOWeek && year === currentYear;
+  const isPast = (wIdx: number) => weeks[wIdx]?.week < currentISOWeek && year === currentYear;
+
+  // Recompute month groups from visible weeks
+  const visibleMonthGroups: { label: string; count: number }[] = [];
+  for (const wh of visibleWeeks) {
+    const label = wh.monthName;
+    const last = visibleMonthGroups[visibleMonthGroups.length - 1];
+    if (last && last.label === label) last.count++;
+    else visibleMonthGroups.push({ label, count: 1 });
+  }
 
   function rowTotal(arr: number[]) { return arr.reduce((a, b) => a + b, 0); }
 
@@ -176,13 +213,55 @@ export function CashflowClient() {
         </div>
       </div>
 
+      {/* Tab bar */}
+      <div className="border-b border-neutral-200">
+        <nav className="flex gap-0">
+          {(["table", "chart"] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                activeTab === tab
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-neutral-500 hover:text-neutral-800 hover:border-neutral-300"
+              }`}
+            >
+              {tab === "table" ? "Таблица" : "График"}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {activeTab === "chart" && (
+        <CashflowChart
+          weeks={weeks}
+          balanceEndDP={summary.balanceEndDP}
+          balanceEndBudget={summary.balanceEndBudget}
+          currentISOWeek={currentISOWeek}
+          year={year}
+        />
+      )}
+
+      {activeTab === "table" && (
       <div className="rounded-lg border border-neutral-200 bg-white">
-        <div className="overflow-auto" style={{ maxHeight: "calc(100vh - 180px)" }}>
+        {year === currentYear && (
+          <div className="px-3 pt-2 pb-0">
+            <button
+              className="text-xs text-neutral-400 hover:text-neutral-700 hover:underline underline-offset-2"
+              onClick={() => setShowOldWeeks((v) => !v)}
+            >
+              {showOldWeeks
+                ? "Скрыть прошлые недели"
+                : `Показать ${weeks.length - visibleWeeks.length} прошлых недель`}
+            </button>
+          </div>
+        )}
+        <div className="overflow-auto" style={{ maxHeight: "calc(100vh - 200px)" }}>
           <table className="min-w-max border-collapse text-sm">
             <thead className="sticky top-0 z-20">
               <tr className="bg-neutral-50 border-b border-neutral-100">
                 <th className={cn(stickyLbl, "z-30 font-semibold text-neutral-600 bg-neutral-50")} rowSpan={2}>Показатель / Проект</th>
-                {monthGroups.map((mg, i) => (
+                {visibleMonthGroups.map((mg, i) => (
                   <th key={i} colSpan={mg.count} className="px-2 py-1 text-center text-xs font-medium text-neutral-500 border-r border-neutral-100 bg-neutral-50">
                     {mg.label}
                   </th>
@@ -190,31 +269,37 @@ export function CashflowClient() {
                 <th className={cn(thCls, "bg-neutral-100 font-semibold")}>Итого</th>
               </tr>
               <tr className="bg-neutral-50 border-b border-neutral-200">
-                {weeks.map((wh, i) => (
-                  <th key={wh.week} className={cn(thCls, "bg-neutral-50", wh.week === currentISOWeek && year === currentYear ? "!bg-blue-50" : "", isFuture(i) ? "text-neutral-300" : "")}>
-                    {wh.week}
-                  </th>
-                ))}
-                <th className={cn(thCls, "bg-neutral-100")}></th>
+                <th className={cn(stickyLbl, "z-30 bg-neutral-50 text-[10px] text-neutral-400 font-normal italic")} />
+                {visibleWeeks.map((wh, vi) => {
+                  const realIdx = visibleWeekIndices[vi];
+                  return (
+                    <th key={wh.week} className={cn(
+                      thCls,
+                      isCurrent(realIdx) ? "!bg-blue-50 font-semibold" : isPast(realIdx) ? "text-neutral-400 bg-neutral-50/30" : "bg-neutral-50"
+                    )}>
+                      {wh.week}
+                    </th>
+                  );
+                })}
+                <th className={cn(thCls, "bg-neutral-100")}>Неделя</th>
               </tr>
             </thead>
             <tbody>
               <tr className="bg-neutral-50 border-b border-neutral-200">
                 <td className={stickyHdr}>Сводка</td>
-                <td colSpan={weeksInYear + 1} className="bg-neutral-50" />
+                <td colSpan={visibleWeeks.length + 1} className="bg-neutral-50" />
               </tr>
               {SUMMARY_DEFS.map(def => {
                 const arr = summary[def.key];
                 const total = rowTotal(arr);
                 return (
                   <tr key={def.key} className={cn("border-b border-neutral-100 hover:bg-neutral-50", def.highlight ? "font-semibold bg-neutral-50/50" : "")}>
-                    <td className={cn(stickyLbl, def.highlight ? "font-semibold bg-neutral-50" : "font-normal")}>{def.label}</td>
-                    {arr.map((v, i) => (
-                      <td key={i} className={cn(tdCls,
-                        isFuture(i) ? "text-neutral-300 bg-neutral-50/30" : "",
-                        weeks[i]?.week === currentISOWeek && year === currentYear ? "bg-blue-50/40" : "",
+                    <td className={cn(stickyLbl, "text-right", def.highlight ? "font-semibold bg-neutral-50" : "font-normal italic text-neutral-500")}>{def.label}</td>
+                    {visibleWeekIndices.map((idx) => (
+                      <td key={idx} className={cn(tdCls,
+                        isCurrent(idx) ? "bg-blue-50/70 font-semibold" : isPast(idx) ? "text-neutral-400 bg-neutral-50/30" : isFuture(idx) ? "bg-neutral-800/5 text-neutral-700" : "",
                       )}>
-                        {"signed" in def && def.signed ? fmtSign(v) : fmt(v)}
+                        {"signed" in def && def.signed ? fmtSign(arr[idx] ?? 0) : fmt(arr[idx] ?? 0)}
                       </td>
                     ))}
                     <td className={cn(tdCls, "bg-neutral-50")}>
@@ -223,120 +308,96 @@ export function CashflowClient() {
                   </tr>
                 );
               })}
-
-              {/* Block 2.1: Plan from dashboards */}
-              <tr className="bg-neutral-50 border-t-2 border-b border-neutral-200">
-                <td className={stickyHdr}>План расходов из ДП</td>
-                <td colSpan={weeksInYear + 1} className="bg-neutral-50" />
-              </tr>
-              {projects.map(p => (
-                <tr key={`plan-${p.id}`} className="border-b border-neutral-100 hover:bg-neutral-50">
-                  <td className={cn(stickyLbl, "font-normal")}>{p.name}</td>
-                  {p.plan.map((v, i) => (
-                    <td key={i} className={cn(tdCls, isFuture(i) ? "text-neutral-300 bg-neutral-50/30" : "", weeks[i]?.week === currentISOWeek && year === currentYear ? "bg-blue-50/40" : "")}>
-                      {fmt(v)}
-                    </td>
-                  ))}
-                  <td className={cn(tdCls, "bg-neutral-50 font-medium")}>{fmt(rowTotal(p.plan))}</td>
-                </tr>
-              ))}
-              {projects.length === 0 && (
-                <tr><td colSpan={weeksInYear + 2} className={cn(stickyLbl, "text-neutral-400 font-normal")}>Нет данных</td></tr>
-              )}
-
-              {/* Block 2.2: IssuedWork */}
-              <tr className="bg-neutral-50 border-t-2 border-b border-neutral-200">
-                <td className={stickyHdr}>План-факт расходов из работ</td>
-                <td colSpan={weeksInYear + 1} className="bg-neutral-50" />
-              </tr>
-              {projects.map(p => (
-                <tr key={`iw-${p.id}`} className="border-b border-neutral-100 hover:bg-neutral-50">
-                  <td className={cn(stickyLbl, "font-normal")}>{p.name}</td>
-                  {p.iw.map((v, i) => (
-                    <td key={i} className={cn(tdCls, isFuture(i) ? "text-neutral-300 bg-neutral-50/30" : "", weeks[i]?.week === currentISOWeek && year === currentYear ? "bg-blue-50/40" : "")}>
-                      {fmt(v)}
-                    </td>
-                  ))}
-                  <td className={cn(tdCls, "bg-neutral-50 font-medium")}>{fmt(rowTotal(p.iw))}</td>
-                </tr>
-              ))}
-              {projects.length === 0 && (
-                <tr><td colSpan={weeksInYear + 2} className={cn(stickyLbl, "text-neutral-400 font-normal")}>Нет данных</td></tr>
-              )}
-
-              {/* Block 2.3: Charges (income) */}
-              <tr className="bg-neutral-50 border-t-2 border-b border-neutral-200">
-                <td className={stickyHdr}>План доходов</td>
-                <td colSpan={weeksInYear + 1} className="bg-neutral-50" />
-              </tr>
-              {projects.map(p => (
-                <tr key={`charges-${p.id}`} className="border-b border-neutral-100 hover:bg-neutral-50">
-                  <td className={cn(stickyLbl, "font-normal")}>{p.name}</td>
-                  {p.charges.map((v, i) => (
-                    <td key={i} className={cn(tdCls, isFuture(i) ? "text-neutral-300 bg-neutral-50/30" : "", weeks[i]?.week === currentISOWeek && year === currentYear ? "bg-blue-50/40" : "")}>
-                      {fmt(v)}
-                    </td>
-                  ))}
-                  <td className={cn(tdCls, "bg-neutral-50 font-medium")}>{fmt(rowTotal(p.charges))}</td>
-                </tr>
-              ))}
-              {projects.length === 0 && (
-                <tr><td colSpan={weeksInYear + 2} className={cn(stickyLbl, "text-neutral-400 font-normal")}>Нет данных</td></tr>
-              )}
-
-              {/* Block 2.4: Rolling cashflow */}
-              <tr className="bg-neutral-50 border-t-2 border-b border-neutral-200">
-                <td className={stickyHdr}>Кэшфлоу по проектам</td>
-                <td colSpan={weeksInYear + 1} className="bg-neutral-50" />
-              </tr>
-              {projects.map(p => {
-                const last = p.cashflow[p.cashflow.length - 1] ?? 0;
+              {/* Aggregate rows */}
+              {aggregates && AGGREGATE_DEFS.map(def => {
+                const arr = aggregates[def.key];
+                const total = rowTotal(arr);
                 return (
-                  <tr key={`cf-${p.id}`} className="border-b border-neutral-100 hover:bg-neutral-50">
-                    <td className={cn(stickyLbl, "font-normal")}>{p.name}</td>
-                    {p.cashflow.map((v, i) => (
-                      <td key={i} className={cn(tdCls, isFuture(i) ? "text-neutral-300 bg-neutral-50/30" : "", weeks[i]?.week === currentISOWeek && year === currentYear ? "bg-blue-50/40" : "")}>
-                        {fmtSign(v)}
+                  <tr key={`agg-${def.key}`} className="border-b border-neutral-100 hover:bg-neutral-50">
+                    <td className={cn(stickyLbl, "text-right", def.bold ? "font-semibold bg-neutral-50" : "font-normal italic text-neutral-500")}>{def.label}</td>
+                    {visibleWeekIndices.map((idx) => (
+                      <td key={idx} className={cn(tdCls,
+                        isCurrent(idx) ? "bg-blue-50/70" : isPast(idx) ? "text-neutral-400 bg-neutral-50/30" : isFuture(idx) ? "bg-neutral-800/5 text-neutral-700" : "",
+                        def.bold ? "font-semibold" : ""
+                      )}>
+                        {fmt(arr[idx] ?? 0)}
                       </td>
                     ))}
-                    <td className={cn(tdCls, "bg-neutral-50 font-medium")}>
-                      {fmtSign(last)}
-                    </td>
+                    <td className={cn(tdCls, "bg-neutral-50", def.bold ? "font-semibold" : "")}>{fmt(total)}</td>
                   </tr>
                 );
               })}
-              {projects.length === 0 && (
-                <tr><td colSpan={weeksInYear + 2} className={cn(stickyLbl, "text-neutral-400 font-normal")}>Нет данных</td></tr>
-              )}
 
-              {/* Block 2.5: Delta */}
-              <tr className="bg-neutral-50 border-t-2 border-b border-neutral-200">
-                <td className={stickyHdr}>Несхождение смет с ДП</td>
-                <td colSpan={weeksInYear + 1} className="bg-neutral-50" />
-              </tr>
-              {projects.map(p => (
-                <tr key={`delta-${p.id}`} className="border-b border-neutral-100 hover:bg-neutral-50">
-                  <td className={cn(stickyLbl, "font-normal")}>{p.name}</td>
-                  {p.iw.map((v, i) => {
-                    const delta = v - p.plan[i];
-                    return (
-                      <td key={i} className={cn(tdCls, isFuture(i) ? "text-neutral-300 bg-neutral-50/30" : "", weeks[i]?.week === currentISOWeek && year === currentYear ? "bg-blue-50/40" : "")}>
-                        {fmtSign(delta)}
-                      </td>
-                    );
-                  })}
-                  <td className={cn(tdCls, "bg-neutral-50 font-medium")}>
-                    {fmtSign(rowTotal(p.iw) - rowTotal(p.plan))}
-                  </td>
-                </tr>
-              ))}
-              {projects.length === 0 && (
-                <tr><td colSpan={weeksInYear + 2} className={cn(stickyLbl, "text-neutral-400 font-normal")}>Нет данных</td></tr>
-              )}
+              {/* Helper: render project block with external/internal separator */}
+              {(["plan", "iw", "charges", "cf"] as const).map((blockKey) => {
+                const blockLabels = {
+                  plan: "План расходов из ДП",
+                  iw: "План-факт расходов из работ",
+                  charges: "План доходов",
+                  cf: "Кэшфлоу по проектам",
+                };
+                const extProjects = externalProjects ?? projects;
+                const intProjects = internalProjects ?? [];
+                const allInBlock = [...extProjects, ...intProjects];
+                const hasInternal = intProjects.length > 0;
+
+                return (
+                  <React.Fragment key={blockKey}>
+                    <tr aria-hidden><td colSpan={visibleWeeks.length + 2} className="h-2 bg-neutral-50/60 p-0 border-0" /></tr>
+                    <tr className="bg-neutral-50 border-t-2 border-b border-neutral-200">
+                      <td className={stickyHdr}>{blockLabels[blockKey]}</td>
+                      <td colSpan={visibleWeeks.length + 1} className="bg-neutral-50" />
+                    </tr>
+                    {extProjects.map(p => {
+                      const arr = blockKey === "plan" ? p.plan : blockKey === "iw" ? p.iw : blockKey === "charges" ? p.charges : p.cashflow;
+                      const last = arr[arr.length - 1] ?? 0;
+                      return (
+                        <tr key={`${blockKey}-${p.id}`} className="border-b border-neutral-100 hover:bg-neutral-50">
+                          <td className={cn(stickyLbl, "font-normal")}>{p.name}</td>
+                          {visibleWeekIndices.map((idx) => (
+                            <td key={idx} className={cn(tdCls, isCurrent(idx) ? "bg-blue-50/70 font-semibold" : isPast(idx) ? "text-neutral-400 bg-neutral-50/30" : isFuture(idx) ? "bg-neutral-800/5 text-neutral-700" : "")}>
+                              {blockKey === "cf" ? fmtSign(arr[idx] ?? 0) : fmt(arr[idx] ?? 0)}
+                            </td>
+                          ))}
+                          <td className={cn(tdCls, "bg-neutral-50 font-medium")}>
+                            {blockKey === "cf" ? fmtSign(last) : fmt(rowTotal(arr))}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {hasInternal && (
+                      <tr>
+                        <td colSpan={visibleWeeks.length + 2} className="border-t-2 border-neutral-300 bg-neutral-100 h-0.5 p-0" />
+                      </tr>
+                    )}
+                    {intProjects.map(p => {
+                      const arr = blockKey === "plan" ? p.plan : blockKey === "iw" ? p.iw : blockKey === "charges" ? p.charges : p.cashflow;
+                      const last = arr[arr.length - 1] ?? 0;
+                      return (
+                        <tr key={`${blockKey}-${p.id}`} className="border-b border-neutral-100 hover:bg-neutral-50">
+                          <td className={cn(stickyLbl, "font-normal text-neutral-500")}>{p.name}</td>
+                          {visibleWeekIndices.map((idx) => (
+                            <td key={idx} className={cn(tdCls, "text-neutral-500", isCurrent(idx) ? "bg-blue-50/70 font-semibold" : isPast(idx) ? "text-neutral-300 bg-neutral-50/30" : isFuture(idx) ? "bg-neutral-800/5 text-neutral-600" : "")}>
+                              {blockKey === "cf" ? fmtSign(arr[idx] ?? 0) : fmt(arr[idx] ?? 0)}
+                            </td>
+                          ))}
+                          <td className={cn(tdCls, "bg-neutral-50 font-medium text-neutral-500")}>
+                            {blockKey === "cf" ? fmtSign(last) : fmt(rowTotal(arr))}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {allInBlock.length === 0 && (
+                      <tr><td colSpan={visibleWeeks.length + 2} className={cn(stickyLbl, "text-neutral-400 font-normal")}>Нет данных</td></tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
       </div>
+      )}
     </div>
   );
 }

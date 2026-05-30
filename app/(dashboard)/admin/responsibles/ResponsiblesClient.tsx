@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { Plus, Pencil, Archive, ArchiveRestore, ExternalLink, RefreshCw } from "lucide-react";
+import { Archive, ArchiveRestore, ExternalLink } from "lucide-react";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
@@ -12,9 +12,6 @@ import { ConfirmDialog } from "@/components/ui-custom/ConfirmDialog";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SortableHead } from "@/components/ui-custom/SortableHead";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 
 type Row = {
   id: string;
@@ -22,7 +19,7 @@ type Row = {
   email: string;
   isActive: boolean;
   projectCount: number;
-  projectNames: string[];
+  projects: { id: string; name: string }[];
   createdAt: string;
 };
 
@@ -38,7 +35,6 @@ export function ResponsiblesClient() {
     field: "fullName",
     dir: "asc",
   });
-  const [editing, setEditing] = React.useState<Row | "new" | null>(null);
   const [archiveTarget, setArchiveTarget] = React.useState<Row | null>(null);
   const [unarchiveTarget, setUnarchiveTarget] = React.useState<Row | null>(null);
 
@@ -79,15 +75,7 @@ export function ResponsiblesClient() {
 
   return (
     <>
-      <PageHeader
-        title="Ответственные"
-        description="Руководители проектов. Имеют доступ к своим проектам и связанным с ними сметам."
-        actions={
-          <Button onClick={() => setEditing("new")}>
-            <Plus className="h-4 w-4 mr-1" /> Добавить ответственного
-          </Button>
-        }
-      />
+      <PageHeader title="Ответственные" />
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <MultiSelectFilter
@@ -149,20 +137,32 @@ export function ResponsiblesClient() {
                     />
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{r.projectCount}</TableCell>
-                  <TableCell className="text-sm whitespace-pre-line">
-                    {r.projectNames.join("\n") || "—"}
+                  <TableCell>
+                    {r.projects.length === 0
+                      ? <span className="text-neutral-400">—</span>
+                      : r.projects.map((p) => (
+                          <Link
+                            key={p.id}
+                            href={`/admin/projects/${p.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block hover:underline text-blue-600"
+                          >
+                            {p.name}
+                          </Link>
+                        ))
+                    }
                   </TableCell>
                   <TableCell className="text-right whitespace-nowrap">
                     <Link
                       href={`/admin/responsibles/${r.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
                       title="Открыть карточку"
                       className={buttonVariants({ variant: "ghost", size: "sm" })}
                     >
                       <ExternalLink className="h-3.5 w-3.5" />
                     </Link>
-                    <Button size="sm" variant="ghost" onClick={() => setEditing(r)} title="Редактировать">
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
                     {r.isActive ? (
                       <Button size="sm" variant="ghost" onClick={() => setArchiveTarget(r)} title="Архивировать">
                         <Archive className="h-3.5 w-3.5" />
@@ -184,17 +184,6 @@ export function ResponsiblesClient() {
           </TableBody>
         </Table>
       </div>
-
-      {editing && (
-        <ResponsibleEditDialog
-          row={editing === "new" ? null : editing}
-          onClose={() => setEditing(null)}
-          onSaved={() => {
-            setEditing(null);
-            mutate();
-          }}
-        />
-      )}
 
       <ConfirmDialog
         open={!!archiveTarget}
@@ -221,123 +210,4 @@ export function ResponsiblesClient() {
   );
 }
 
-function generatePassword(): string {
-  const chars = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789!@#$%";
-  return Array.from({ length: 12 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
-}
 
-function ResponsibleEditDialog({
-  row,
-  onClose,
-  onSaved,
-}: {
-  row: Row | null;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const isNew = !row;
-  const [fullName, setFullName] = React.useState(row?.fullName ?? "");
-  const [email, setEmail] = React.useState(row?.email ?? "");
-  const [password, setPassword] = React.useState(() => isNew ? generatePassword() : "");
-  const [submitting, setSubmitting] = React.useState(false);
-
-  React.useEffect(() => {
-    setFullName(row?.fullName ?? "");
-    setEmail(row?.email ?? "");
-    setPassword(row ? "" : generatePassword());
-  }, [row]);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!fullName.trim()) return toast.error("Введите имя");
-    if (!email.trim()) return toast.error("Введите email");
-    if (isNew && password.length < 6) return toast.error("Пароль не короче 6 символов");
-
-    setSubmitting(true);
-    const body: Record<string, string> = { fullName: fullName.trim(), email: email.trim() };
-    if (isNew) body.password = password;
-
-    const res = await fetch(isNew ? "/api/responsibles" : `/api/responsibles/${row.id}`, {
-      method: isNew ? "POST" : "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    setSubmitting(false);
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      toast.error(err.error ?? "Не удалось сохранить");
-      return;
-    }
-    toast.success(isNew ? "Ответственный создан" : "Ответственный обновлён");
-    onSaved();
-  }
-
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{row ? "Редактировать ответственного" : "Новый ответственный"}</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="fullName">Имя</Label>
-            <Input
-              id="fullName"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              placeholder="Например: Иванов Сергей"
-              autoFocus
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="email">Email (логин)</Label>
-            <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="ivanov@kpd.local"
-              required
-            />
-          </div>
-          {isNew && (
-            <div className="space-y-2">
-              <Label htmlFor="password">Пароль</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Минимум 6 символов"
-                  className="font-mono"
-                  required
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  onClick={() => setPassword(generatePassword())}
-                  title="Сгенерировать"
-                >
-                  <RefreshCw className="h-4 w-4" />
-                </Button>
-              </div>
-              {password && password.length < 6 && (
-                <p className="text-xs text-red-600">Пароль слишком короткий</p>
-              )}
-            </div>
-          )}
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>
-              Отмена
-            </Button>
-            <Button type="submit" disabled={submitting || (isNew && password.length < 6)}>
-              {submitting ? "Сохранение..." : "Сохранить"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}

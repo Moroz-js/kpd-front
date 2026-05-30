@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
 import { ChevronLeft, Plus, Pencil, Check, TrendingUp, CreditCard, AlertTriangle, Trash2 } from "lucide-react";
@@ -28,8 +28,7 @@ function fmt(n: number) {
 
 function fmtSign(n: number) {
   if (n === 0) return "—";
-  const sign = n > 0 ? "+" : "";
-  return sign + n.toLocaleString("ru-RU", { maximumFractionDigits: 0 });
+  return n.toLocaleString("ru-RU", { maximumFractionDigits: 0 });
 }
 
 type WeekHeader = { week: number; month: number; monthName: string };
@@ -93,7 +92,7 @@ type DashboardData = {
   summary: Record<SummaryKey | "expensePlan" | "overspend", number[]>;
   workTypes: { id: string; name: string; weeks: number[] }[];
   planLines: PlanLineRow[];
-  executors: { id: string; name: string }[];
+  executors: { id: string; name: string; workTypeIds: string[] }[];
   availableWorkTypes: { id: string; name: string }[];
   worksTable: WorkTableRow[];
   chargesTable: ChargeTableRow[];
@@ -122,16 +121,25 @@ function AddPlanLineDialog({
   onClose: () => void;
   projectId: string;
   year: number;
-  executors: { id: string; name: string }[];
+  executors: { id: string; name: string; workTypeIds: string[] }[];
   workTypes: { id: string; name: string }[];
   onCreated: () => void;
 }) {
-  const [executorId, setExecutorId] = useState<string | null>(null);
   const [workTypeId, setWorkTypeId] = useState<string | null>(null);
+  const [executorId, setExecutorId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  const filteredExecutors = workTypeId
+    ? executors.filter(e => e.workTypeIds.includes(workTypeId))
+    : executors;
+
+  function handleWorkTypeChange(id: string) {
+    setWorkTypeId(id);
+    setExecutorId(null);
+  }
+
   async function handleSave() {
-    if (!executorId || !workTypeId) { toast.error("Выберите исполнителя и вид работ"); return; }
+    if (!executorId || !workTypeId) { toast.error("Выберите вид работ и исполнителя"); return; }
     setSaving(true);
     const res = await fetch(`/api/projects/${projectId}/spending-plan`, {
       method: "POST",
@@ -154,23 +162,8 @@ function AddPlanLineDialog({
         <DialogHeader><DialogTitle>Добавить строку плана</DialogTitle></DialogHeader>
         <div className="space-y-4 py-2">
           <div>
-            <Label>Исполнитель</Label>
-            <Select value={executorId} onValueChange={setExecutorId}>
-              <SelectTrigger className="mt-1 w-full" data-placeholder={!executorId || undefined}>
-                <SelectValue>
-                  {executorId
-                    ? (executors.find(e => e.id === executorId)?.name ?? executorId)
-                    : <span className="text-muted-foreground">Выберите исполнителя…</span>}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {executors.map(e => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
             <Label>Вид работ</Label>
-            <Select value={workTypeId} onValueChange={setWorkTypeId}>
+            <Select value={workTypeId ?? ""} onValueChange={v => v && handleWorkTypeChange(v)}>
               <SelectTrigger className="mt-1 w-full" data-placeholder={!workTypeId || undefined}>
                 <SelectValue>
                   {workTypeId
@@ -180,6 +173,29 @@ function AddPlanLineDialog({
               </SelectTrigger>
               <SelectContent>
                 {workTypes.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>
+              Исполнитель
+              {workTypeId && filteredExecutors.length === 0 && (
+                <span className="ml-2 text-xs text-amber-600 font-normal">Нет исполнителей с этим видом работ</span>
+              )}
+              {workTypeId && filteredExecutors.length > 0 && (
+                <span className="ml-2 text-xs text-neutral-400 font-normal">{filteredExecutors.length} доступно</span>
+              )}
+            </Label>
+            <Select value={executorId ?? ""} onValueChange={v => v && setExecutorId(v)}>
+              <SelectTrigger className="mt-1 w-full" data-placeholder={!executorId || undefined}>
+                <SelectValue>
+                  {executorId
+                    ? (executors.find(e => e.id === executorId)?.name ?? executorId)
+                    : <span className="text-muted-foreground">Выберите исполнителя…</span>}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {filteredExecutors.map(e => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -268,6 +284,7 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
   const [addOpen, setAddOpen] = useState(false);
   const [confirmRow, setConfirmRow] = useState<PlanLineRow | null>(null);
   const [deletingRowId, setDeletingRowId] = useState<string | null>(null);
+  const [showOldWeeks, setShowOldWeeks] = useState(false);
 
   async function deletePlanRow(pl: PlanLineRow) {
     const ids = pl.lineIds.filter((id): id is string => id !== null);
@@ -303,6 +320,17 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
     return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
   })();
 
+  const visibleWeeks = React.useMemo(() => {
+    if (!data) return [];
+    if (showOldWeeks || year !== currentYear) return data.weeks;
+    return data.weeks.filter((wh) => wh.week >= currentISOWeek - 2);
+  }, [data, showOldWeeks, year, currentYear, currentISOWeek]);
+
+  const visibleWeekIndices = React.useMemo(
+    () => visibleWeeks.map((vw) => (data?.weeks ?? []).findIndex((w) => w.week === vw.week)),
+    [visibleWeeks, data]
+  );
+
   const YEARS = [currentYear - 1, currentYear, currentYear + 1];
 
   if (!data) return <div className="p-6 text-sm text-neutral-500">Загрузка…</div>;
@@ -311,9 +339,9 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
 
   // Group month headers
   const monthGroups: { label: string; count: number }[] = [];
-  for (const wh of weeks) {
+  for (const wh of visibleWeeks) {
     const last = monthGroups[monthGroups.length - 1];
-    const label = `${String(wh.month).padStart(2, "0")}-${wh.monthName}`;
+    const label = wh.monthName;
     if (last && last.label === label) last.count++;
     else monthGroups.push({ label, count: 1 });
   }
@@ -341,7 +369,9 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
           </Link>
           <div>
             <h1 className="text-xl font-semibold text-neutral-900">{project.name}</h1>
-            <p className="text-sm text-neutral-500">{project.client && `${project.client} · `}{project.responsible ?? "Без ответственного"}</p>
+            <p className="text-sm text-neutral-500">
+              {project.responsible ?? "Без ответственного"}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -378,6 +408,18 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
 
       {/* Main grid */}
       <div className="rounded-lg border border-neutral-200 bg-white">
+        {year === currentYear && (
+          <div className="px-3 pt-2 pb-0">
+            <button
+              className="text-xs text-neutral-400 hover:text-neutral-700 hover:underline underline-offset-2"
+              onClick={() => setShowOldWeeks((v) => !v)}
+            >
+              {showOldWeeks
+                ? "Скрыть прошлые недели"
+                : `Показать ${(data?.weeks.length ?? 0) - visibleWeeks.length} прошлых недель`}
+            </button>
+          </div>
+        )}
         <div className="overflow-auto" style={{ maxHeight: "calc(100vh - 280px)" }}>
           <table className="min-w-max border-collapse text-sm">
             <thead className="sticky top-0 z-20">
@@ -393,8 +435,8 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
               </tr>
               {/* Week row */}
               <tr className="bg-neutral-50 border-b border-neutral-200">
-                {weeks.map(wh => (
-                  <th key={wh.week} className={cn(thCls, "bg-neutral-50", wh.week === currentISOWeek && year === currentYear ? "!bg-blue-50" : "")}>
+                {visibleWeeks.map(wh => (
+                  <th key={wh.week} className={cn(thCls, "bg-neutral-50", wh.week === currentISOWeek && year === currentYear ? "!bg-blue-50 font-semibold" : wh.week < currentISOWeek && year === currentYear ? "text-neutral-400" : "")}>
                     {wh.week}
                   </th>
                 ))}
@@ -404,7 +446,7 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
             <tbody>
               <tr className="bg-neutral-50 border-b border-neutral-200">
                 <td className={stickyHdr}>Сводка</td>
-                <td colSpan={weeks.length + 1} className="bg-neutral-50" />
+                <td colSpan={visibleWeeks.length + 1} className="bg-neutral-50" />
               </tr>
               {SUMMARY_DEFS.map(({ key, label, signed, highlight }) => {
                 const arr = summary[key] ?? [];
@@ -420,14 +462,18 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                     "hover:bg-neutral-50 border-b border-neutral-100",
                     highlight && "bg-blue-50/30 font-semibold"
                   )}>
-                    <td className={cn(stickyLbl, !highlight && "font-normal")}>{label}</td>
-                    {arr.map((v, i) => (
-                      <td key={i} className={cn(tdCls,
-                        weeks[i]?.week === currentISOWeek && year === currentYear ? "bg-blue-50/50" : "",
-                      )}>
-                        {cellVal(v)}
-                      </td>
-                    ))}
+                    <td className={cn(stickyLbl, !highlight && "font-normal italic text-neutral-500")}>{label}</td>
+                    {visibleWeekIndices.map((idx, vi) => {
+                      const v = arr[idx] ?? 0;
+                      const wh = visibleWeeks[vi];
+                      return (
+                        <td key={idx} className={cn(tdCls,
+                          wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50/70 font-semibold" : wh?.week < currentISOWeek && year === currentYear ? "text-neutral-400 bg-neutral-50/40" : "",
+                        )}>
+                          {cellVal(v)}
+                        </td>
+                      );
+                    })}
                     <td className={cn(tdCls, "bg-neutral-50 font-medium")}>
                       {cellVal(total)}
                     </td>
@@ -443,18 +489,22 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
               {workTypes.length === 0 && (
                 <tr>
                   <td className={stickyLbl}>—</td>
-                  {weeks.map((_, i) => <td key={i} className={tdCls}>—</td>)}
+                  {visibleWeeks.map((_, i) => <td key={i} className={tdCls}>—</td>)}
                   <td className={tdCls}>—</td>
                 </tr>
               )}
               {workTypes.map(wt => (
                 <tr key={wt.id} className="hover:bg-neutral-50 border-b border-neutral-100">
                   <td className={cn(stickyLbl, "font-normal")}>{wt.name}</td>
-                  {wt.weeks.map((v, i) => (
-                    <td key={i} className={cn(tdCls, weeks[i]?.week === currentISOWeek && year === currentYear ? "bg-blue-50/50" : "")}>
-                      {fmt(v)}
-                    </td>
-                  ))}
+                  {visibleWeekIndices.map((idx, vi) => {
+                    const wh = visibleWeeks[vi];
+                    const v = wt.weeks[idx] ?? 0;
+                    return (
+                      <td key={idx} className={cn(tdCls, wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50/70 font-semibold" : wh?.week < currentISOWeek && year === currentYear ? "text-neutral-400 bg-neutral-50/40" : "")}>
+                        {fmt(v)}
+                      </td>
+                    );
+                  })}
                   <td className={cn(tdCls, "bg-neutral-50 font-medium")}>{fmt(rowTotal(wt.weeks))}</td>
                 </tr>
               ))}
@@ -462,17 +512,19 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
               {/* Block 3: Overspend (row41 = expenses − expensePlan) */}
               <tr className="bg-neutral-50 border-t-2 border-b border-neutral-200">
                 <td className={stickyHdr}>Перерасход (факт − план)</td>
-                <td colSpan={weeks.length + 1} className="bg-neutral-50" />
+                <td colSpan={visibleWeeks.length + 1} className="bg-neutral-50" />
               </tr>
               <tr className="border-b border-neutral-100">
                 <td className={cn(stickyLbl, "font-normal")}>Перерасход</td>
-                {(summary.overspend ?? []).map((v, i) => (
-                  <td key={i} className={cn(tdCls,
-                    weeks[i]?.week === currentISOWeek && year === currentYear ? "bg-blue-50/50" : "",
-                  )}>
-                    {v === 0 ? "—" : fmtSign(v)}
-                  </td>
-                ))}
+                {visibleWeekIndices.map((idx, vi) => {
+                  const wh = visibleWeeks[vi];
+                  const v = (summary.overspend ?? [])[idx] ?? 0;
+                  return (
+                    <td key={idx} className={cn(tdCls, wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50/70 font-semibold" : wh?.week < currentISOWeek && year === currentYear ? "text-neutral-400 bg-neutral-50/40" : "")}>
+                      {v === 0 ? "—" : fmtSign(v)}
+                    </td>
+                  );
+                })}
                 <td className={cn(tdCls, "bg-neutral-50 font-medium")}>
                   {rowTotal(summary.overspend ?? []) === 0 ? "—" : fmtSign(rowTotal(summary.overspend ?? []))}
                 </td>
@@ -481,24 +533,26 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
               {/* Block 4: SpendingPlan (row42 = итог; rows 43+ = строки) */}
               <tr className="bg-neutral-50 border-t-2 border-b border-neutral-200">
                 <td className={stickyHdr}>План расходов (ДП)</td>
-                <td colSpan={weeks.length + 1} className="bg-neutral-50" />
+                <td colSpan={visibleWeeks.length + 1} className="bg-neutral-50" />
               </tr>
               {/* Row 42: итог плана */}
               <tr className="border-b border-neutral-200 bg-neutral-50/50 font-semibold">
                 <td className={cn(stickyLbl, "bg-neutral-50/80")}>Итого план</td>
-                {(summary.expensePlan ?? []).map((v, i) => (
-                  <td key={i} className={cn(tdCls, "bg-neutral-50/50",
-                    weeks[i]?.week === currentISOWeek && year === currentYear ? "bg-blue-50/50" : ""
-                  )}>
-                    {fmt(v)}
-                  </td>
-                ))}
+                {visibleWeekIndices.map((idx, vi) => {
+                  const wh = visibleWeeks[vi];
+                  const v = (summary.expensePlan ?? [])[idx] ?? 0;
+                  return (
+                    <td key={idx} className={cn(tdCls, "bg-neutral-50/50", wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50/70" : "")}>
+                      {fmt(v)}
+                    </td>
+                  );
+                })}
                 <td className={cn(tdCls, "bg-neutral-50 font-semibold")}>{fmt(rowTotal(summary.expensePlan ?? []))}</td>
               </tr>
               {planLines.length === 0 && !canManagePlan && (
                 <tr className="border-b border-neutral-100">
                   <td className={cn(stickyLbl, "font-normal text-neutral-400")}>Нет строк плана</td>
-                  {weeks.map((_, i) => (
+                  {visibleWeeks.map((_, i) => (
                     <td key={i} className={tdCls}>—</td>
                   ))}
                   <td className={cn(tdCls, "bg-neutral-50")}>—</td>
@@ -512,8 +566,8 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                     <td className={cn(stickyLbl, "font-normal")}>
                       <div className="flex items-center gap-1 min-w-0">
                         <div className="flex flex-col leading-tight min-w-0 flex-1">
-                          <span className="truncate">{pl.executorName}</span>
-                          <span className="text-neutral-400 text-[11px] truncate">{pl.workTypeName}</span>
+                          <span className="truncate font-medium text-neutral-900">{pl.workTypeName}</span>
+                          <span className="text-neutral-400 text-[11px] truncate">{pl.executorName}</span>
                         </div>
                         {canManagePlan && (
                           <Button
@@ -529,24 +583,28 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                         )}
                       </div>
                     </td>
-                    {pl.weeks.map((v, i) => (
-                      <td key={i} className={cn("p-0 text-right border-r border-neutral-100 last:border-0", weeks[i]?.week === currentISOWeek && year === currentYear ? "bg-blue-50/50" : "")}>
-                        {canManagePlan ? (
-                          <PlanCell
-                            value={v}
-                            lineId={pl.lineIds[i]}
-                            projectId={projectId}
-                            executorId={pl.executorId}
-                            workTypeId={pl.workTypeId}
-                            year={year}
-                            week={weeks[i]?.week ?? i + 1}
-                            onUpdate={() => mutate()}
-                          />
-                        ) : (
-                          <span className="text-xs tabular-nums">{v ? fmt(parseFloat(v)) : "·"}</span>
-                        )}
-                      </td>
-                    ))}
+                    {visibleWeekIndices.map((idx, vi) => {
+                      const wh = visibleWeeks[vi];
+                      const v = pl.weeks[idx] ?? null;
+                      return (
+                        <td key={idx} className={cn("p-0 text-right border-r border-neutral-100 last:border-0", wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50/70" : wh?.week < currentISOWeek && year === currentYear ? "bg-neutral-50/40" : "")}>
+                          {canManagePlan ? (
+                            <PlanCell
+                              value={v}
+                              lineId={pl.lineIds[idx]}
+                              projectId={projectId}
+                              executorId={pl.executorId}
+                              workTypeId={pl.workTypeId}
+                              year={year}
+                              week={visibleWeeks[vi]?.week ?? idx + 1}
+                              onUpdate={() => mutate()}
+                            />
+                          ) : (
+                            <span className="text-xs tabular-nums">{v ? fmt(parseFloat(v)) : "·"}</span>
+                          )}
+                        </td>
+                      );
+                    })}
                     <td className={cn(tdCls, "bg-neutral-50 font-medium")}>{fmt(rowTotal(weekAmounts))}</td>
                   </tr>
                 );
@@ -565,12 +623,12 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                       строка плана
                     </Button>
                   </td>
-                  {weeks.map((_, i) => (
+                  {visibleWeeks.map((wh, i) => (
                     <td
                       key={i}
                       className={cn(
                         tdCls,
-                        weeks[i]?.week === currentISOWeek && year === currentYear ? "bg-blue-50/50" : ""
+                        wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50/70" : ""
                       )}
                     />
                   ))}

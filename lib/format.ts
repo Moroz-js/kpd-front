@@ -46,6 +46,19 @@ export function formatDate(date: Date | string | null | undefined): string {
   return dateFormatter.format(d);
 }
 
+const dateShortFormatter = new Intl.DateTimeFormat(LOCALE, {
+  timeZone: TIMEZONE,
+  day: "2-digit",
+  month: "2-digit",
+});
+
+/** Формат дд.мм — используется когда год вынесен в отдельную колонку/фильтр */
+export function formatDateShort(date: Date | string | null | undefined): string {
+  if (!date) return "—";
+  const d = typeof date === "string" ? new Date(date) : date;
+  return dateShortFormatter.format(d);
+}
+
 export function formatDateTime(date: Date | string | null | undefined): string {
   if (!date) return "—";
   const d = typeof date === "string" ? new Date(date) : date;

@@ -228,6 +228,10 @@ export type UpdateExecutorInput = {
   recipientType?: string | null;
   responsibleUserId?: string | null;
   defaultBankAccountId?: string | null;
+  oldEstimateUrl?: string | null;
+  entityForm?: string | null;
+  specialties?: string | null;
+  isResponsible?: boolean;
   workTypeIds?: string[]; // полная замена
 };
 
@@ -265,6 +269,10 @@ export async function updateExecutor(id: string, patch: UpdateExecutorInput, use
         ...(patch.defaultBankAccountId !== undefined && {
           defaultBankAccountId: patch.defaultBankAccountId,
         }),
+        ...(patch.oldEstimateUrl !== undefined && { oldEstimateUrl: patch.oldEstimateUrl }),
+        ...(patch.entityForm !== undefined && { entityForm: patch.entityForm }),
+        ...(patch.specialties !== undefined && { specialties: patch.specialties }),
+        ...(patch.isResponsible !== undefined && { isResponsible: patch.isResponsible }),
       },
     });
   });

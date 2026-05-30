@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, CheckCircle, ChevronDown, CircleDollarSign } from "lucide-react";
+import { Plus, Pencil, Trash2, CheckCircle, ChevronDown, CircleDollarSign, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -78,8 +78,6 @@ type Props = {
   executorId: string;
   isAdmin: boolean;
   isOwner: boolean;
-  projects: Project[];
-  workTypes: WorkType[];
   bankAccounts: BankAccount[];
 };
 
@@ -110,7 +108,7 @@ function StatusBadge({ status, type }: { status: string; type: "work" | "payment
 
 type AllPaymentRow = PaymentRow & { periodYear: number; periodMonth: number };
 
-export function WorksTab({ executorId, isAdmin, isOwner, projects, workTypes, bankAccounts }: Props) {
+export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) {
   const [works, setWorks] = useState<WorkRow[]>([]);
   const [allPayments, setAllPayments] = useState<AllPaymentRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -124,6 +122,11 @@ export function WorksTab({ executorId, isAdmin, isOwner, projects, workTypes, ba
   const [deleteTarget, setDeleteTarget] = useState<{ type: "work" | "payment"; id: string; label: string } | null>(null);
   const [checkTarget, setCheckTarget] = useState<WorkRow | null>(null);
   const [markPaidTarget, setMarkPaidTarget] = useState<PaymentRow | null>(null);
+
+  // Bulk state (Р-1)
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+  const [bulkStatus, setBulkStatus] = React.useState<string>("");
+  const [bulkDate, setBulkDate] = React.useState<string>("");
 
   const fetchData = useCallback(async () => {
     const [worksRes, paymentsRes] = await Promise.all([
@@ -259,6 +262,26 @@ export function WorksTab({ executorId, isAdmin, isOwner, projects, workTypes, ba
 
   const canCreate = isAdmin || isOwner;
 
+  async function handleBulkApply() {
+    const patch: { workStatus?: string; plannedPayAt?: string | null } = {};
+    if (bulkStatus) patch.workStatus = bulkStatus;
+    if (bulkDate !== "") patch.plannedPayAt = bulkDate || null;
+    if (Object.keys(patch).length === 0) return;
+
+    const res = await fetch(`/api/executors/${executorId}/works/bulk`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: Array.from(selectedIds), patch }),
+    });
+    if (!res.ok) return toast.error("Не удалось применить изменения");
+    const { updated } = await res.json();
+    toast.success(`Обновлено работ: ${updated}`);
+    setSelectedIds(new Set());
+    setBulkStatus("");
+    setBulkDate("");
+    silentLoad();
+  }
+
   async function handleMarkPaid(paymentId: string, paidAt: string, bankAccountId: string | null) {
     // Оптимистичное обновление
     const applyPaid = (p: AllPaymentRow) =>
@@ -309,15 +332,48 @@ export function WorksTab({ executorId, isAdmin, isOwner, projects, workTypes, ba
     <div className="space-y-4">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
-        {canCreate && (
-          <Button size="sm" onClick={() => setCreateWorkOpen(true)}>
-            <Plus className="h-3.5 w-3.5 mr-1" /> Работа
-          </Button>
-        )}
-        {isAdmin && (
-          <Button size="sm" variant="outline" onClick={() => setCreatePaymentOpen(true)}>
-            <Plus className="h-3.5 w-3.5 mr-1" /> Выплата
-          </Button>
+        {selectedIds.size > 0 ? (
+          <>
+            <span className="text-xs font-medium text-neutral-700">{selectedIds.size} работ выбрано</span>
+            {isAdmin && (
+              <Select value={bulkStatus} onValueChange={(v) => v && setBulkStatus(v)}>
+                <SelectTrigger className="h-8 w-44 text-xs">
+                  <SelectValue>{bulkStatus ? (WORK_STATUS_LABELS[bulkStatus] ?? "Статус не менять") : "Статус не менять"}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(WORK_STATUS_LABELS).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>{v}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <Input
+              type="date"
+              className="h-8 text-xs w-36"
+              value={bulkDate}
+              onChange={(e) => setBulkDate(e.target.value)}
+              placeholder="Дата план"
+            />
+            <Button size="sm" onClick={handleBulkApply} disabled={!bulkStatus && !bulkDate}>
+              Применить
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>
+              <X className="h-3.5 w-3.5 mr-1" /> Снять
+            </Button>
+          </>
+        ) : (
+          <>
+            {canCreate && (
+              <Button size="sm" onClick={() => setCreateWorkOpen(true)}>
+                <Plus className="h-3.5 w-3.5 mr-1" /> Работа
+              </Button>
+            )}
+            {isAdmin && (
+              <Button size="sm" variant="outline" onClick={() => setCreatePaymentOpen(true)}>
+                <Plus className="h-3.5 w-3.5 mr-1" /> Выплата
+              </Button>
+            )}
+          </>
         )}
         <div className="ml-auto flex gap-2 flex-wrap">
           <Select value={filterYear} onValueChange={(v) => setFilterYear(v ?? "")}>
@@ -337,14 +393,14 @@ export function WorksTab({ executorId, isAdmin, isOwner, projects, workTypes, ba
             <SelectTrigger className="h-8 w-44 text-xs">
               <SelectValue>
                 {filterProject
-                  ? (projects.find((p) => p.id === filterProject)?.name ?? "—")
+                  ? (works.find((w) => w.projectId === filterProject)?.project.name ?? "—")
                   : "Все проекты"}
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="">Все проекты</SelectItem>
-              {projects.map((p) => (
-                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+              {Array.from(new Map(works.map((w) => [w.projectId, w.project])).entries()).map(([id, p]) => (
+                <SelectItem key={id} value={id}>{p.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -398,10 +454,10 @@ export function WorksTab({ executorId, isAdmin, isOwner, projects, workTypes, ba
           ri += cnt;
         }
 
-        const th = "border border-neutral-200 px-2 py-1.5 text-left font-medium text-neutral-600 bg-neutral-50";
-        const thr = "border border-neutral-200 px-2 py-1.5 text-right font-medium text-neutral-600 bg-neutral-50";
-        const td = "border border-neutral-200 px-2 py-1.5";
-        const tdDim = "border border-neutral-200 px-2 py-1.5 text-neutral-300";
+        const th = "border-b border-neutral-200 px-2 py-2 text-left text-xs font-medium text-neutral-600 bg-neutral-100 uppercase tracking-wide";
+        const thr = "border-b border-neutral-200 px-2 py-2 text-right text-xs font-medium text-neutral-600 bg-neutral-100 uppercase tracking-wide";
+        const td = "border-b border-neutral-100 px-2 py-2 text-xs";
+        const tdDim = "border-b border-neutral-100 px-2 py-2 text-xs text-neutral-300";
 
         const showWorks = filterType !== "payments";
         const showPayments = filterType !== "works";
@@ -411,6 +467,26 @@ export function WorksTab({ executorId, isAdmin, isOwner, projects, workTypes, ba
             <table className="w-full text-xs border-separate border-spacing-0">
               <thead>
                 <tr>
+                  <th className={`${th} w-8 px-1`}>
+                    {(() => {
+                      const allWorkIds = flatRows.filter((r) => r.kind === "work").map((r) => r.data.id);
+                      const allSelected = allWorkIds.length > 0 && allWorkIds.every((id) => selectedIds.has(id));
+                      return (
+                        <input
+                          type="checkbox"
+                          checked={allSelected}
+                          onChange={() => {
+                            if (allSelected) {
+                              setSelectedIds(new Set());
+                            } else {
+                              setSelectedIds(new Set(allWorkIds));
+                            }
+                          }}
+                          className="h-3.5 w-3.5 cursor-pointer"
+                        />
+                      );
+                    })()}
+                  </th>
                   <th className={`${th} min-w-[40px]`}>Год</th>
                   <th className={`${th} min-w-[72px]`}>Месяц</th>
                   {showWorks && <>
@@ -449,6 +525,20 @@ export function WorksTab({ executorId, isAdmin, isOwner, projects, workTypes, ba
                     const canEdit = isAdmin || (isOwner && w.workStatus !== "checked" && w.workStatus !== "paid");
                     return (
                       <tr key={w.id} className="hover:bg-neutral-50">
+                        <td className="border border-neutral-200 px-1 py-1.5 w-8 text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(w.id)}
+                            onChange={() => {
+                              setSelectedIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(w.id)) next.delete(w.id); else next.add(w.id);
+                                return next;
+                              });
+                            }}
+                            className="h-3.5 w-3.5 cursor-pointer"
+                          />
+                        </td>
                         {isFirst && <td className={ymClass} rowSpan={span}>{row.year}</td>}
                         {isFirst && <td className={`${ymClass} whitespace-nowrap`} rowSpan={span}>{monthFullLabel(row.month)}</td>}
                         {showWorks && <>
@@ -497,6 +587,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, projects, workTypes, ba
                   const p = row.data;
                   return (
                     <tr key={p.id} className="hover:bg-blue-50/30">
+                      <td className="border border-neutral-200 px-1 py-1.5 w-8" />
                       {isFirst && <td className={ymClass} rowSpan={span}>{row.year}</td>}
                       {isFirst && <td className={`${ymClass} whitespace-nowrap`} rowSpan={span}>{monthFullLabel(row.month)}</td>}
                       {showWorks && <>
@@ -540,8 +631,6 @@ export function WorksTab({ executorId, isAdmin, isOwner, projects, workTypes, ba
       {createWorkOpen && (
         <CreateWorkDialog
           executorId={executorId}
-          projects={projects}
-          workTypes={workTypes}
           onClose={() => setCreateWorkOpen(false)}
           onCreated={() => { setCreateWorkOpen(false); silentLoad(); }}
         />
@@ -565,8 +654,6 @@ export function WorksTab({ executorId, isAdmin, isOwner, projects, workTypes, ba
         <EditWorkDialog
           executorId={executorId}
           work={editWork}
-          projects={projects}
-          workTypes={workTypes}
           isAdmin={isAdmin}
           onClose={() => setEditWork(null)}
           onSaved={() => { setEditWork(null); silentLoad(); }}
@@ -745,14 +832,10 @@ function InlineDateInput({
 
 function CreateWorkDialog({
   executorId,
-  projects,
-  workTypes,
   onClose,
   onCreated,
 }: {
   executorId: string;
-  projects: Project[];
-  workTypes: WorkType[];
   onClose: () => void;
   onCreated: () => void;
 }) {
@@ -772,6 +855,32 @@ function CreateWorkDialog({
   const [report, setReport] = useState("");
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Динамическая загрузка проектов из плана расходов
+  const [planProjects, setPlanProjects] = useState<Project[]>([]);
+  const [planWorkTypes, setPlanWorkTypes] = useState<WorkType[]>([]);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+  const [loadingWorkTypes, setLoadingWorkTypes] = useState(false);
+
+  React.useEffect(() => {
+    setLoadingProjects(true);
+    fetch(`/api/executors/${executorId}/plan-projects`)
+      .then((r) => r.json())
+      .then(setPlanProjects)
+      .catch(() => {})
+      .finally(() => setLoadingProjects(false));
+  }, [executorId]);
+
+  React.useEffect(() => {
+    if (!projectId) { setPlanWorkTypes([]); return; }
+    setLoadingWorkTypes(true);
+    setWorkTypeId("");
+    fetch(`/api/executors/${executorId}/plan-work-types?projectId=${projectId}`)
+      .then((r) => r.json())
+      .then(setPlanWorkTypes)
+      .catch(() => {})
+      .finally(() => setLoadingWorkTypes(false));
+  }, [executorId, projectId]);
 
   // Авто-расчёт суммы
   React.useEffect(() => {
@@ -853,24 +962,36 @@ function CreateWorkDialog({
             <Select value={projectId} onValueChange={(v) => setProjectId(v ?? "")}>
               <SelectTrigger>
                 <SelectValue>
-                  {projectId ? (projects.find((p) => p.id === projectId)?.name ?? "—") : "Выберите проект"}
+                  {loadingProjects
+                    ? "Загрузка..."
+                    : projectId ? (planProjects.find((p) => p.id === projectId)?.name ?? "—") : "Выберите проект"}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {projects.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                {planProjects.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                {!loadingProjects && planProjects.length === 0 && (
+                  <div className="px-2 py-1.5 text-xs text-neutral-400">Нет проектов в плане расходов</div>
+                )}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-1.5">
             <Label>Вид работ *</Label>
-            <Select value={workTypeId} onValueChange={(v) => setWorkTypeId(v ?? "")}>
+            <Select value={workTypeId} onValueChange={(v) => setWorkTypeId(v ?? "")} disabled={!projectId}>
               <SelectTrigger>
                 <SelectValue>
-                  {workTypeId ? (workTypes.find((w) => w.id === workTypeId)?.name ?? "—") : "Выберите вид работ"}
+                  {!projectId
+                    ? "Сначала выберите проект"
+                    : loadingWorkTypes
+                      ? "Загрузка..."
+                      : workTypeId ? (planWorkTypes.find((w) => w.id === workTypeId)?.name ?? "—") : "Выберите вид работ"}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {workTypes.map((wt) => <SelectItem key={wt.id} value={wt.id}>{wt.name}</SelectItem>)}
+                {planWorkTypes.map((wt) => <SelectItem key={wt.id} value={wt.id}>{wt.name}</SelectItem>)}
+                {!loadingWorkTypes && projectId && planWorkTypes.length === 0 && (
+                  <div className="px-2 py-1.5 text-xs text-neutral-400">Нет видов работ в плане для этого проекта</div>
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -925,16 +1046,12 @@ function CreateWorkDialog({
 function EditWorkDialog({
   executorId,
   work,
-  projects,
-  workTypes,
   isAdmin,
   onClose,
   onSaved,
 }: {
   executorId: string;
   work: WorkRow;
-  projects: Project[];
-  workTypes: WorkType[];
   isAdmin: boolean;
   onClose: () => void;
   onSaved: () => void;
@@ -957,6 +1074,25 @@ function EditWorkDialog({
   const [workStatus, setWorkStatus] = useState(work.workStatus);
   const [comment, setComment] = useState(work.comment ?? "");
   const [saving, setSaving] = useState(false);
+
+  // Dynamic plan-based projects/work types
+  const [planProjects, setPlanProjects] = useState<Project[]>([]);
+  const [planWorkTypes, setPlanWorkTypes] = useState<WorkType[]>([]);
+
+  React.useEffect(() => {
+    fetch(`/api/executors/${executorId}/plan-projects`)
+      .then((r) => r.json())
+      .then(setPlanProjects)
+      .catch(() => {});
+  }, [executorId]);
+
+  React.useEffect(() => {
+    if (!projectId) { setPlanWorkTypes([]); return; }
+    fetch(`/api/executors/${executorId}/plan-work-types?projectId=${projectId}`)
+      .then((r) => r.json())
+      .then(setPlanWorkTypes)
+      .catch(() => {});
+  }, [executorId, projectId]);
 
   const currentYear = new Date().getFullYear();
   const years = [currentYear - 2, currentYear - 1, currentYear, currentYear + 1];
@@ -1029,10 +1165,10 @@ function EditWorkDialog({
             <Label>Проект</Label>
             <Select value={projectId} onValueChange={(v) => setProjectId(v ?? "")}>
               <SelectTrigger>
-                <SelectValue>{projects.find((p) => p.id === projectId)?.name ?? "—"}</SelectValue>
+                <SelectValue>{planProjects.find((p) => p.id === projectId)?.name ?? work.project.name}</SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {projects.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                {planProjects.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -1040,10 +1176,10 @@ function EditWorkDialog({
             <Label>Вид работ</Label>
             <Select value={workTypeId} onValueChange={(v) => setWorkTypeId(v ?? "")}>
               <SelectTrigger>
-                <SelectValue>{workTypes.find((w) => w.id === workTypeId)?.name ?? "—"}</SelectValue>
+                <SelectValue>{planWorkTypes.find((w) => w.id === workTypeId)?.name ?? work.workType.name}</SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {workTypes.map((wt) => <SelectItem key={wt.id} value={wt.id}>{wt.name}</SelectItem>)}
+                {planWorkTypes.map((wt) => <SelectItem key={wt.id} value={wt.id}>{wt.name}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>

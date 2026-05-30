@@ -1,0 +1,63 @@
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { getSessionUser } from "@/lib/auth";
+import { isAdmin, canViewExecutorEstimate } from "@/lib/permissions";
+import { prisma } from "@/lib/db";
+
+const bulkSchema = z.object({
+  ids: z.array(z.string()).min(1),
+  patch: z.object({
+    workStatus: z.string().optional(),
+    plannedPayAt: z.string().nullable().optional(),
+  }),
+});
+
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id: executorId } = await params;
+  const user = await getSessionUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!canViewExecutorEstimate(user, executorId))
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const body = await req.json().catch(() => null);
+  const parsed = bulkSchema.safeParse(body);
+  if (!parsed.success)
+    return NextResponse.json({ error: "Validation", details: parsed.error.flatten() }, { status: 400 });
+
+  const { ids, patch } = parsed.data;
+
+  // Verify all works belong to this executor (IDOR protection)
+  const works = await prisma.work.findMany({
+    where: { id: { in: ids }, executorId },
+    select: { id: true, workStatus: true },
+  });
+
+  if (works.length !== ids.length) {
+    return NextResponse.json({ error: "Some works not found for this executor" }, { status: 400 });
+  }
+
+  const updateData: Record<string, unknown> = {};
+
+  if (patch.workStatus !== undefined) {
+    if (!isAdmin(user)) return NextResponse.json({ error: "Forbidden: status change requires admin" }, { status: 403 });
+    updateData.workStatus = patch.workStatus;
+  }
+
+  if (patch.plannedPayAt !== undefined) {
+    updateData.plannedPayAt = patch.plannedPayAt ? new Date(patch.plannedPayAt) : null;
+  }
+
+  if (Object.keys(updateData).length === 0) {
+    return NextResponse.json({ updated: 0 });
+  }
+
+  const result = await prisma.work.updateMany({
+    where: { id: { in: ids }, executorId },
+    data: updateData,
+  });
+
+  return NextResponse.json({ updated: result.count });
+}

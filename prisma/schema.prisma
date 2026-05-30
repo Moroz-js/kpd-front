@@ -53,6 +53,10 @@ model Executor {
   defaultBankAccount   BankAccount? @relation("ExecutorDefaultBankAccount", fields: [defaultBankAccountId], references: [id])
   responsibleUserId    String?
   responsibleUser      User? @relation("ExecutorResponsible", fields: [responsibleUserId], references: [id])
+  isResponsible   Boolean   @default(false)
+  oldEstimateUrl  String?
+  specialties     String?   // JSON array of segments
+  entityForm      String?   // ИП | ООО | ОАО | ПАО | ...
   status          String    @default("active") // active | archived
   accessRevokedAt DateTime?
   onboardingSeeded Boolean  @default(false)
@@ -110,6 +114,7 @@ model Project {
   otherExpenses     OtherExpense[]
   orders            Order[]
   spendingPlanLines SpendingPlanLine[]
+  verificationResults ProjectVerificationResult[]
 
   @@unique([clientId, shortName])
   @@index([responsibleUserId])
@@ -444,4 +449,29 @@ model ActivityLog {
   @@index([userId, createdAt])
   @@index([createdAt])
   @@map("activity_logs")
+}
+
+model ProjectVerification {
+  id        String   @id @default(cuid())
+  date      DateTime
+  createdAt DateTime @default(now())
+  createdBy String
+  results   ProjectVerificationResult[]
+
+  @@map("project_verifications")
+}
+
+model ProjectVerificationResult {
+  id             String              @id @default(cuid())
+  verificationId String
+  projectId      String
+  checked        Boolean             @default(false)
+  updatedAt      DateTime            @updatedAt
+  verification   ProjectVerification @relation(fields: [verificationId], references: [id], onDelete: Cascade)
+  project        Project             @relation(fields: [projectId], references: [id])
+
+  @@unique([verificationId, projectId])
+  @@index([verificationId])
+  @@index([projectId])
+  @@map("project_verification_results")
 }

@@ -2,8 +2,10 @@
 
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, CheckCircle } from "lucide-react";
+import { Plus, Pencil, Trash2, CheckCircle, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -11,14 +13,19 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import { PageHeader } from "@/components/ui-custom/PageHeader";
+import { StatusBadge } from "@/components/ui-custom/StatusBadge";
+import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
+import { WORK_STATUSES, PAYMENT_STATUSES } from "@/lib/statuses";
 import { formatMoney, formatDate, MONTHS } from "@/lib/format";
 import { getISOWeek, weekLabel } from "@/lib/iso-weeks";
-import { WORK_STATUSES, PAYMENT_STATUSES, BADGE_TONE_CLASS } from "@/lib/statuses";
 import { nearestPaymentDate, toLocalDateString } from "@/lib/iso-weeks";
 
 // ─── Константы ────────────────────────────────────────────────────────────────
@@ -29,18 +36,6 @@ const PREFERRED_PAY_METHODS = [
   "Р/С контрагента ЧГ", "Р/С контрагента ЕС", "Бизнес-картой РФ",
   "Бизнес-картой КЗ", "Бизнес-картой ЧГ", "Бизнес-картой СЛ", "4DEV", "ГПХ",
 ];
-
-const WORK_STATUS_LABELS: Record<string, string> = {
-  submitted: "Выставлено",
-  checked: "Проверено",
-  paid: "Оплачено",
-  rework: "Нужно доработать",
-};
-
-const PAYMENT_STATUS_LABELS: Record<string, string> = {
-  planned: "Запланировано",
-  paid: "Оплачено",
-};
 
 // ─── Типы ─────────────────────────────────────────────────────────────────────
 
@@ -95,34 +90,7 @@ async function readApiJson<T>(r: Response): Promise<T> {
   }
 }
 
-function payWeek(plannedPayAt: string | null, paidAt: string | null): string {
-  const d = paidAt ?? plannedPayAt;
-  if (!d) return "—";
-  return weekLabel(getISOWeek(new Date(d)));
-}
-
-function StatusBadge({ status, type }: { status: string; type: "work" | "payment" }) {
-  const dict = type === "work" ? WORK_STATUSES : PAYMENT_STATUSES;
-  const entry = dict[status as keyof typeof dict];
-  if (!entry) return <span className="text-[10px] text-neutral-400">—</span>;
-  return (
-    <span className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-medium whitespace-nowrap ${BADGE_TONE_CLASS[entry.tone]}`}>
-      {type === "work" ? WORK_STATUS_LABELS[status] : PAYMENT_STATUS_LABELS[status]}
-    </span>
-  );
-}
-
-function DateInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const ref = useRef<HTMLInputElement>(null);
-  return (
-    <div className="relative w-full cursor-pointer" onClick={() => { ref.current?.focus(); try { ref.current?.showPicker(); } catch { /**/ } }}>
-      <input ref={ref} type="date" value={value} onChange={(e) => onChange(e.target.value)}
-        className="w-full h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring cursor-pointer" />
-    </div>
-  );
-}
-
-// ─── Главный компонент ────────────────────────────────────────────────────────
+// ─── Утилиты ──────────────────────────────────────────────────────────────────
 
 export function OtherExpensesClient({ isAdmin, userId, projects, executors, workTypes, responsibles, bankAccounts }: Props) {
   const [rows, setRows] = useState<OtherExpense[]>([]);
@@ -132,15 +100,24 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
   const [deleteTarget, setDeleteTarget] = useState<OtherExpense | null>(null);
   const [checkTarget, setCheckTarget] = useState<OtherExpense | null>(null);
 
+  // Bulk
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkWorkStatus, setBulkWorkStatus] = useState("");
+  const [bulkPayStatus, setBulkPayStatus] = useState("");
+  const [bulkPlannedPayAt, setBulkPlannedPayAt] = useState("");
+  const [bulkPaidAt, setBulkPaidAt] = useState("");
+  const [bulkBankId, setBulkBankId] = useState("");
+  const [bulkSaving, setBulkSaving] = useState(false);
+
   // Фильтры
-  const [fYear, setFYear] = useState("");
-  const [fMonth, setFMonth] = useState("");
-  const [fProject, setFProject] = useState("");
-  const [fExecutor, setFExecutor] = useState("");
-  const [fWorkType, setFWorkType] = useState("");
-  const [fResponsible, setFResponsible] = useState("");
-  const [fWorkStatus, setFWorkStatus] = useState("");
-  const [fPayStatus, setFPayStatus] = useState("");
+  const [fYear, setFYear] = useState<string[]>([]);
+  const [fMonth, setFMonth] = useState<string[]>([]);
+  const [fProject, setFProject] = useState<string[]>([]);
+  const [fExecutor, setFExecutor] = useState<string[]>([]);
+  const [fWorkType, setFWorkType] = useState<string[]>([]);
+  const [fResponsible, setFResponsible] = useState<string[]>([]);
+  const [fWorkStatus, setFWorkStatus] = useState<string[]>([]);
+  const [fPayStatus, setFPayStatus] = useState<string[]>([]);
 
   const fetchData = useCallback(async () => {
     const r = await fetch("/api/other-expenses");
@@ -167,14 +144,14 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
   const allYears = [...new Set(rows.map(r => r.executionYear))].sort();
 
   const filtered = rows.filter(r => {
-    if (fYear && String(r.executionYear) !== fYear) return false;
-    if (fMonth && String(r.executionMonth) !== fMonth) return false;
-    if (fProject && r.projectId !== fProject) return false;
-    if (fExecutor && r.executorId !== fExecutor) return false;
-    if (fWorkType && r.workTypeId !== fWorkType) return false;
-    if (fResponsible && r.responsibleUserId !== fResponsible) return false;
-    if (fWorkStatus && r.workStatus !== fWorkStatus) return false;
-    if (fPayStatus && r.paymentStatus !== fPayStatus) return false;
+    if (fYear.length && !fYear.includes(String(r.executionYear))) return false;
+    if (fMonth.length && !fMonth.includes(String(r.executionMonth))) return false;
+    if (fProject.length && !fProject.includes(r.projectId)) return false;
+    if (fExecutor.length && !fExecutor.includes(r.executorId)) return false;
+    if (fWorkType.length && !fWorkType.includes(r.workTypeId)) return false;
+    if (fResponsible.length && !fResponsible.includes(r.responsibleUserId)) return false;
+    if (fWorkStatus.length && !fWorkStatus.includes(r.workStatus)) return false;
+    if (fPayStatus.length && !fPayStatus.includes(r.paymentStatus)) return false;
     return true;
   });
 
@@ -204,10 +181,64 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
     }
   }
 
+  function toggleRow(id: string) {
+    setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }
+
+  function toggleAll() {
+    if (selectedIds.size === filtered.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(filtered.map(r => r.id)));
+  }
+
+  async function handleBulkApply() {
+    const ids = Array.from(selectedIds);
+    const patch: Record<string, unknown> = {};
+    if (bulkWorkStatus) patch.workStatus = bulkWorkStatus;
+    if (bulkPayStatus) patch.paymentStatus = bulkPayStatus;
+    if (bulkPlannedPayAt) patch.plannedPayAt = new Date(bulkPlannedPayAt).toISOString();
+    if (bulkPaidAt) patch.paidAt = new Date(bulkPaidAt).toISOString();
+    if (bulkBankId && bulkBankId !== "__none__") patch.bankAccountId = bulkBankId;
+    if (Object.keys(patch).length === 0) return toast.error("Выберите хотя бы одно поле");
+    setBulkSaving(true);
+    const res = await fetch("/api/other-expenses/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids, patch }),
+    });
+    setBulkSaving(false);
+    if (!res.ok) return toast.error("Ошибка массового обновления");
+    const { updated } = await res.json() as { updated: number };
+    toast.success(`Обновлено ${updated} записей`);
+    setSelectedIds(new Set());
+    setBulkWorkStatus(""); setBulkPayStatus(""); setBulkPlannedPayAt(""); setBulkPaidAt(""); setBulkBankId("");
+    silentLoad();
+  }
+
   const th = "border border-neutral-200 px-2 py-1.5 text-left font-medium text-neutral-600 bg-neutral-50 text-xs whitespace-nowrap";
   const thr = th + " text-right";
   const td = "border border-neutral-200 px-2 py-1.5 text-xs";
   const tdr = td + " text-right";
+
+  const workTypeOpts = React.useMemo(() => {
+    const map = new Map<string, { label: string; group: string }>();
+    for (const r of rows) {
+      if (!map.has(r.workTypeId)) {
+        map.set(r.workTypeId, { label: r.workType.name, group: r.workType.segment ?? "" });
+      }
+    }
+    return Array.from(map.entries())
+      .sort((a, b) =>
+        (a[1].group ?? "").localeCompare(b[1].group ?? "", "ru") ||
+        a[1].label.localeCompare(b[1].label, "ru")
+      )
+      .map(([value, { label, group }]) => ({ value, label, group }));
+  }, [rows]);
+
+  function payWeek(plannedPayAt: string | null, paidAt: string | null): string {
+    const d = paidAt ?? plannedPayAt;
+    if (!d) return "—";
+    return weekLabel(getISOWeek(new Date(d)));
+  }
 
   return (
     <div className="space-y-4">
@@ -219,98 +250,196 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
 
         <div className="ml-auto flex flex-wrap gap-2">
           {/* Фильтры */}
-          {[
-            { label: "Все годы", value: fYear, setValue: setFYear, opts: allYears.map(y => ({ v: String(y), l: `${y} год` })) },
-            { label: "Все месяцы", value: fMonth, setValue: setFMonth, opts: MONTHS.map(m => ({ v: m.value, l: m.label })) },
-            { label: "Все проекты", value: fProject, setValue: setFProject, opts: projects.map(p => ({ v: p.id, l: p.name })) },
-            { label: "Все исполнители", value: fExecutor, setValue: setFExecutor, opts: executors.map(e => ({ v: e.id, l: e.name })) },
-            { label: "Все ответственные", value: fResponsible, setValue: setFResponsible, opts: responsibles.map(r => ({ v: r.id, l: r.fullName })) },
-            { label: "Статус работы", value: fWorkStatus, setValue: setFWorkStatus, opts: Object.entries(WORK_STATUS_LABELS).map(([v, l]) => ({ v, l })) },
-            { label: "Статус выплаты", value: fPayStatus, setValue: setFPayStatus, opts: Object.entries(PAYMENT_STATUS_LABELS).map(([v, l]) => ({ v, l })) },
-          ].map(({ label, value, setValue, opts }) => (
-            <Select key={label} value={value} onValueChange={(v) => setValue(v ?? "")}>
-              <SelectTrigger className="h-8 text-xs w-40"><SelectValue>{value ? (opts.find(o => o.v === value)?.l ?? label) : label}</SelectValue></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">— {label} —</SelectItem>
-                {opts.map(o => <SelectItem key={o.v} value={o.v}>{o.l}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          ))}
+          <MultiSelectFilter
+            label="Год"
+            options={allYears.map(y => ({ value: String(y), label: `${y} год` }))}
+            value={fYear}
+            onChange={setFYear}
+          />
+          <MultiSelectFilter
+            label="Месяц"
+            options={MONTHS.map(m => ({ value: m.value, label: m.label }))}
+            value={fMonth}
+            onChange={setFMonth}
+          />
+          <MultiSelectFilter
+            label="Проект"
+            options={projects.map(p => ({ value: p.id, label: p.name }))}
+            value={fProject}
+            onChange={setFProject}
+          />
+          <MultiSelectFilter
+            label="Исполнитель"
+            options={executors.map(e => ({ value: e.id, label: e.name }))}
+            value={fExecutor}
+            onChange={setFExecutor}
+          />
+          <MultiSelectFilter
+            label="Вид работ"
+            options={workTypeOpts}
+            value={fWorkType}
+            onChange={setFWorkType}
+          />
+          <MultiSelectFilter
+            label="Ответственный"
+            options={responsibles.map(r => ({ value: r.id, label: r.fullName }))}
+            value={fResponsible}
+            onChange={setFResponsible}
+          />
+          <MultiSelectFilter
+            label="Статус работы"
+            options={Object.entries(WORK_STATUSES).map(([v, { label: l }]) => ({ value: v, label: l }))}
+            value={fWorkStatus}
+            onChange={setFWorkStatus}
+          />
+          <MultiSelectFilter
+            label="Статус выплаты"
+            options={Object.entries(PAYMENT_STATUSES).map(([v, { label: l }]) => ({ value: v, label: l }))}
+            value={fPayStatus}
+            onChange={setFPayStatus}
+          />
         </div>
       </div>
 
-      {loading ? (
-        <div className="text-sm text-neutral-400 py-8 text-center">Загрузка...</div>
-      ) : filtered.length === 0 ? (
-        <div className="text-sm text-neutral-400 py-8 text-center">Нет данных</div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs border-separate border-spacing-0">
-            <thead>
-              <tr>
-                <th className={th}>Год</th>
-                <th className={th}>Месяц</th>
-                <th className={th}>Неделя оплаты</th>
-                <th className={th}>Проект</th>
-                <th className={th}>Исполнитель</th>
-                <th className={th} style={{ minWidth: 200 }}>Описание работы</th>
-                <th className={th}>Вид работ</th>
-                <th className={th}>Ответственный</th>
-                <th className={th}>Способ оплаты</th>
-                <th className={th}>Дата план</th>
-                <th className={thr}>Сумма</th>
-                <th className={th}>Статус работы</th>
-                <th className={th}>Статус выплаты</th>
-                <th className={thr}>Выплата</th>
-                <th className={th}>Дата оплаты</th>
-                <th className={th}>Счёт</th>
-                <th className={th} style={{ width: 64 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((row) => (
-                <tr key={row.id} className="hover:bg-neutral-50">
-                  <td className={td}>{row.executionYear}</td>
-                  <td className={td + " whitespace-nowrap"}>{MONTHS.find(m => m.value === String(row.executionMonth))?.label ?? row.executionMonth}</td>
-                  <td className={td}>{payWeek(row.plannedPayAt, row.paidAt)}</td>
-                  <td className={td + " max-w-[120px] truncate"} title={row.project.name}>{row.project.name}</td>
-                  <td className={td + " whitespace-nowrap"}>{row.executor.name}</td>
-                  <td className={td + " max-w-[200px]"}><div className="truncate" title={row.description}>{row.description}</div></td>
-                  <td className={td}>{row.workType.name}</td>
-                  <td className={td + " whitespace-nowrap"}>{row.responsibleUser.fullName}</td>
-                  <td className={td}>{row.preferredPayMethod ?? "—"}</td>
-                  <td className={td}>{formatDate(row.plannedPayAt)}</td>
-                  <td className={tdr}>{formatMoney(row.amount)}</td>
-                  <td className={td}><StatusBadge status={row.workStatus} type="work" /></td>
-                  <td className={td}>{row.paymentStatus ? <StatusBadge status={row.paymentStatus} type="payment" /> : <span className="text-neutral-300">—</span>}</td>
-                  <td className={tdr}>{row.paymentAmount != null ? formatMoney(row.paymentAmount) : "—"}</td>
-                  <td className={td}>{formatDate(row.paidAt)}</td>
-                  <td className={td}>{row.bankAccount?.name ?? "—"}</td>
-                  <td className={td}>
-                    <div className="flex gap-1 items-center">
-                      {isAdmin && row.workStatus !== "checked" && row.workStatus !== "paid" && (
-                        <button title="Проверить" className="p-0.5 text-blue-600 hover:text-blue-800" onClick={() => setCheckTarget(row)}>
-                          <CheckCircle className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                      {canEdit(row) && (
-                        <button title="Редактировать" className="p-0.5 text-neutral-500 hover:text-neutral-800" onClick={() => setEditTarget(row)}>
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                      {canEdit(row) && (
-                        <button title="Удалить" className="p-0.5 text-red-400 hover:text-red-600" onClick={() => setDeleteTarget(row)}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Bulk toolbar */}
+      {selectedIds.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200">
+          <span className="text-xs font-medium text-blue-700">{selectedIds.size} выбрано</span>
+          <Select value={bulkWorkStatus} onValueChange={(v) => v && setBulkWorkStatus(v)}>
+            <SelectTrigger className="h-7 w-44 text-xs">
+              <SelectValue>{bulkWorkStatus ? (WORK_STATUSES[bulkWorkStatus as keyof typeof WORK_STATUSES]?.label ?? "Статус работы") : "Статус работы"}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(WORK_STATUSES).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={bulkPayStatus} onValueChange={(v) => v && setBulkPayStatus(v)}>
+            <SelectTrigger className="h-7 w-44 text-xs">
+              <SelectValue>{bulkPayStatus ? (PAYMENT_STATUSES[bulkPayStatus as keyof typeof PAYMENT_STATUSES]?.label ?? "Статус выплаты") : "Статус выплаты"}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(PAYMENT_STATUSES).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-neutral-500">Дата план:</span>
+            <Input type="date" className="h-7 text-xs w-36" value={bulkPlannedPayAt} onChange={(e) => setBulkPlannedPayAt(e.target.value)} />
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-neutral-500">Дата оплаты:</span>
+            <Input type="date" className="h-7 text-xs w-36" value={bulkPaidAt} onChange={(e) => setBulkPaidAt(e.target.value)} />
+          </div>
+          <Select value={bulkBankId || "__none__"} onValueChange={(v) => setBulkBankId(v === "__none__" ? "" : (v ?? ""))}>
+            <SelectTrigger className="h-7 w-44 text-xs">
+              <SelectValue>{bulkBankId ? (bankAccounts.find(b => b.id === bulkBankId)?.name ?? "Источник оплаты") : "— не менять —"}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">— не менять —</SelectItem>
+              {bankAccounts.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Button size="sm" className="h-7 text-xs" onClick={handleBulkApply} disabled={bulkSaving}>
+            {bulkSaving ? "..." : "Применить"}
+          </Button>
+          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { setSelectedIds(new Set()); setBulkWorkStatus(""); setBulkPayStatus(""); setBulkPlannedPayAt(""); setBulkPaidAt(""); setBulkBankId(""); }}>
+            <X className="h-3.5 w-3.5" />
+          </Button>
         </div>
       )}
+
+      {filtered.length > 0 && (
+        <div className="flex items-center gap-4 px-1 py-1 text-xs text-neutral-500">
+          <span>{filtered.length} записей</span>
+          <span className="text-neutral-800 font-semibold tabular-nums">
+            {formatMoney(filtered.reduce((s, r) => s + (r.amount ?? 0), 0))}
+          </span>
+        </div>
+      )}
+
+      <div className="rounded-md border bg-white overflow-x-auto">
+        <Table className="min-w-[1600px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-8">
+                <Checkbox checked={selectedIds.size === filtered.length && filtered.length > 0} onCheckedChange={toggleAll} />
+              </TableHead>
+              <TableHead>Год</TableHead>
+              <TableHead>Месяц</TableHead>
+              <TableHead>Неделя оплаты</TableHead>
+              <TableHead>Проект</TableHead>
+              <TableHead>Исполнитель</TableHead>
+              <TableHead className="min-w-[200px]">Описание работы</TableHead>
+              <TableHead>Вид работ</TableHead>
+              <TableHead>Ответственный</TableHead>
+              <TableHead>Способ оплаты</TableHead>
+              <TableHead>Дата план</TableHead>
+              <TableHead className="text-right">Сумма</TableHead>
+              <TableHead>Статус работы</TableHead>
+              <TableHead>Статус выплаты</TableHead>
+              <TableHead className="text-right">Выплата</TableHead>
+              <TableHead>Дата оплаты</TableHead>
+              <TableHead>Счёт</TableHead>
+              <TableHead className="w-16" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={18} className="text-center text-neutral-500 py-8">Загрузка...</TableCell>
+              </TableRow>
+            ) : filtered.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={18} className="text-center text-neutral-500 py-8">Нет данных</TableCell>
+              </TableRow>
+            ) : filtered.map((row) => (
+              <TableRow key={row.id} className={selectedIds.has(row.id) ? "bg-blue-50" : ""}>
+                <TableCell>
+                  <Checkbox checked={selectedIds.has(row.id)} onCheckedChange={() => toggleRow(row.id)} />
+                </TableCell>
+                <TableCell>{row.executionYear}</TableCell>
+                <TableCell className="whitespace-nowrap">{MONTHS.find(m => m.value === String(row.executionMonth))?.label ?? row.executionMonth}</TableCell>
+                <TableCell>{payWeek(row.plannedPayAt, row.paidAt)}</TableCell>
+                <TableCell className="max-w-[120px] truncate" title={row.project.name}>{row.project.name}</TableCell>
+                <TableCell className="whitespace-nowrap">{row.executor.name}</TableCell>
+                <TableCell className="max-w-[200px]"><div className="truncate" title={row.description}>{row.description}</div></TableCell>
+                <TableCell>{row.workType.name}</TableCell>
+                <TableCell className="whitespace-nowrap">{row.responsibleUser.fullName}</TableCell>
+                <TableCell>{row.preferredPayMethod ?? "—"}</TableCell>
+                <TableCell>{formatDate(row.plannedPayAt)}</TableCell>
+                <TableCell className="text-right tabular-nums font-semibold">{formatMoney(row.amount)}</TableCell>
+                <TableCell><StatusBadge dict={WORK_STATUSES} value={row.workStatus} /></TableCell>
+                <TableCell>
+                  {row.paymentStatus
+                    ? <StatusBadge dict={PAYMENT_STATUSES} value={row.paymentStatus} />
+                    : <span className="text-neutral-300">—</span>}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">{row.paymentAmount != null ? formatMoney(row.paymentAmount) : "—"}</TableCell>
+                <TableCell>{formatDate(row.paidAt)}</TableCell>
+                <TableCell>{row.bankAccount?.name ?? "—"}</TableCell>
+                <TableCell>
+                  <div className="flex gap-1 items-center">
+                    {isAdmin && row.workStatus !== "checked" && row.workStatus !== "paid" && (
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Проверить" onClick={() => setCheckTarget(row)}>
+                        <CheckCircle className="h-3.5 w-3.5 text-blue-600" />
+                      </Button>
+                    )}
+                    {canEdit(row) && (
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Редактировать" onClick={() => setEditTarget(row)}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                    {canEdit(row) && (
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Удалить" onClick={() => setDeleteTarget(row)}>
+                        <Trash2 className="h-3.5 w-3.5 text-red-400" />
+                      </Button>
+                    )}
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
 
       {/* Диалоги */}
       {createOpen && (
@@ -383,6 +512,20 @@ function OtherExpenseFormDialog({
   const [projectId, setProjectId] = useState(initial?.projectId ?? "");
   const [executorId, setExecutorId] = useState(initial?.executorId ?? "");
   const [workTypeId, setWorkTypeId] = useState(initial?.workTypeId ?? "");
+  const [executorWorkTypeIds, setExecutorWorkTypeIds] = useState<string[] | null>(null);
+
+  // Load work type IDs for selected executor
+  React.useEffect(() => {
+    if (!executorId) { setExecutorWorkTypeIds(null); return; }
+    fetch(`/api/executors/${executorId}/work-type-ids`)
+      .then(r => r.json())
+      .then((ids: string[]) => { setExecutorWorkTypeIds(ids); })
+      .catch(() => setExecutorWorkTypeIds(null));
+  }, [executorId]);
+
+  const filteredWorkTypes = executorWorkTypeIds
+    ? workTypes.filter(w => executorWorkTypeIds.includes(w.id))
+    : workTypes;
   const [responsibleUserId, setResponsibleUserId] = useState(initial?.responsibleUserId ?? (isAdmin ? "" : userId));
   const [bankAccountId, setBankAccountId] = useState(initial?.bankAccountId ?? "");
   const [year, setYear] = useState(String(initial?.executionYear ?? now.getFullYear()));
@@ -474,8 +617,19 @@ function OtherExpenseFormDialog({
           <div className="space-y-1.5">
             <Label>Вид работ *</Label>
             <Select value={workTypeId} onValueChange={(v) => setWorkTypeId(v ?? "")}>
-              <SelectTrigger><SelectValue>{workTypes.find(w => w.id === workTypeId)?.name ?? "Выберите"}</SelectValue></SelectTrigger>
-              <SelectContent>{workTypes.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}</SelectContent>
+              <SelectTrigger>
+                <SelectValue>
+                  {workTypeId ? (workTypes.find(w => w.id === workTypeId)?.name ?? "Выберите") : "Выберите"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {filteredWorkTypes.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
+                {filteredWorkTypes.length === 0 && (
+                  <div className="px-3 py-2 text-xs text-neutral-400">
+                    {executorId ? "Нет видов работ у исполнителя" : "Сначала выберите исполнителя"}
+                  </div>
+                )}
+              </SelectContent>
             </Select>
           </div>
           <div className="space-y-1.5 col-span-2">
@@ -513,11 +667,11 @@ function OtherExpenseFormDialog({
           </div>
           <div className="space-y-1.5">
             <Label>Дата оплаты — план</Label>
-            <DateInput value={plannedPayAt} onChange={setPlannedPayAt} />
+            <Input type="date" className="h-9" value={plannedPayAt} onChange={(e) => setPlannedPayAt(e.target.value)} />
           </div>
           <div className="space-y-1.5">
             <Label>Дата оплаты (факт)</Label>
-            <DateInput value={paidAt} onChange={setPaidAt} />
+            <Input type="date" className="h-9" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} />
           </div>
           <div className="space-y-1.5">
             <Label>Источник оплаты</Label>

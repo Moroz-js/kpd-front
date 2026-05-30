@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { Plus, Pencil, Archive, ArchiveRestore, LayoutDashboard } from "lucide-react";
+import { Plus, Pencil, Archive, ArchiveRestore, ExternalLink } from "lucide-react";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
@@ -28,6 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { VerificationTab } from "./VerificationTab";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -80,7 +81,7 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
 
   const [responsibleFilter, setResponsibleFilter] = React.useState<string[]>([]);
   const [statusFilter, setStatusFilter] = React.useState<string[]>(["active"]);
-  const [clientFilter, setClientFilter] = React.useState<string[]>([]);
+  const [companyFilter, setCompanyFilter] = React.useState<string[]>([]);
   const [typeFilter, setTypeFilter] = React.useState<string[]>([]);
   const [sort, setSort] = React.useState<{ field: SortField; dir: SortDir }>({
     field: "createdAt",
@@ -99,8 +100,10 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
       );
     }
     if (statusFilter.length) list = list.filter((r) => statusFilter.includes(r.status));
-    if (clientFilter.length) {
-      list = list.filter((r) => clientFilter.includes(r.clientId ?? "__none__"));
+    if (companyFilter.length) {
+      list = list.filter((r) =>
+        companyFilter.includes(r.company ?? "__empty__")
+      );
     }
     if (typeFilter.length) list = list.filter((r) => typeFilter.includes(r.type));
 
@@ -114,7 +117,7 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
       return sort.dir === "asc" ? cmp : -cmp;
     });
     return list;
-  }, [data, responsibleFilter, statusFilter, clientFilter, typeFilter, sort]);
+  }, [data, responsibleFilter, statusFilter, companyFilter, typeFilter, sort]);
 
   function handleSort(field: string, dir: SortDir) {
     setSort({ field: field as SortField, dir });
@@ -145,18 +148,17 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
     return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
   }, [data]);
 
-  const clientOptions = React.useMemo(() => {
+  const companyOptions = React.useMemo(() => {
     const list = data ?? [];
-    const map = new Map<string, string>();
-    for (const r of list) {
-      const id = r.clientId ?? "__none__";
-      const name = r.clientName ?? "— Без клиента —";
-      map.set(id, name);
-    }
-    return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
+    const companies = Array.from(new Set(list.map((r) => r.company ?? "__empty__")));
+    return companies.map((c) => ({
+      value: c,
+      label: c === "__empty__" ? "Пусто" : c,
+    }));
   }, [data]);
 
   const isAdmin = scope === "all";
+  const [activeTab, setActiveTab] = React.useState<"projects" | "verification">("projects");
   const detailHref = (id: string) =>
     isAdmin ? `/admin/projects/${id}` : `/responsible/projects/${id}`;
 
@@ -164,11 +166,6 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
     <>
       <PageHeader
         title="Проекты"
-        description={
-          isAdmin
-            ? "Все проекты компании. Имя формируется из «Название – Клиент». Тип проекта вычисляется автоматически по клиенту."
-            : "Ваши проекты как руководителя. Управлять списком и архивировать может только администратор."
-        }
         actions={
           isAdmin ? (
             <Button onClick={() => setEditing("new")}>
@@ -178,6 +175,31 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
         }
       />
 
+      {/* Tab bar — only for admin */}
+      {isAdmin && (
+        <div className="border-b border-neutral-200 mb-4">
+          <nav className="flex gap-0">
+            {(["projects", "verification"] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                  activeTab === tab
+                    ? "border-blue-600 text-blue-600"
+                    : "border-transparent text-neutral-500 hover:text-neutral-800 hover:border-neutral-300"
+                }`}
+              >
+                {tab === "projects" ? "Проекты" : "Проверка"}
+              </button>
+            ))}
+          </nav>
+        </div>
+      )}
+
+      {isAdmin && activeTab === "verification" && <VerificationTab />}
+
+      {(!isAdmin || activeTab === "projects") && (
+      <>
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <MultiSelectFilter
           label="Руководитель"
@@ -186,10 +208,10 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
           onChange={setResponsibleFilter}
         />
         <MultiSelectFilter
-          label="Клиент"
-          options={clientOptions}
-          value={clientFilter}
-          onChange={setClientFilter}
+          label="Компания"
+          options={companyOptions}
+          value={companyFilter}
+          onChange={setCompanyFilter}
         />
         <MultiSelectFilter
           label="Тип"
@@ -209,7 +231,6 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-10" />
               <SortableHead field="name" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
                 Проект
               </SortableHead>
@@ -250,15 +271,6 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
                 Начислено
               </SortableHead>
               <TableHead>Компания</TableHead>
-              <SortableHead
-                field="clientName"
-                sortBy={sort.field}
-                sortDir={sort.dir}
-                onSort={handleSort}
-              >
-                Клиент
-              </SortableHead>
-              <TableHead>Название</TableHead>
               <TableHead>Тип</TableHead>
               <TableHead className="w-24" />
             </TableRow>
@@ -266,13 +278,13 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={12} className="text-center text-neutral-500 py-8">
+                <TableCell colSpan={8} className="text-center text-neutral-500 py-8">
                   Загрузка...
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={12} className="text-center text-neutral-500 py-8">
+                <TableCell colSpan={8} className="text-center text-neutral-500 py-8">
                   {scope === "mine"
                     ? "Вы пока не назначены руководителем ни на один проект."
                     : "Нет проектов"}
@@ -281,32 +293,27 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
             ) : (
               rows.map((r) => (
                 <TableRow key={r.id} className={r.status === "archived" ? "opacity-60" : ""}>
-                  <TableCell>
+                  <TableCell className="font-medium">
                     <Link
                       href={detailHref(r.id)}
-                      className={buttonVariants({ variant: "ghost", size: "icon-sm" })}
-                      title="Открыть дашборд"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 hover:underline text-neutral-900"
                     >
-                      <LayoutDashboard className="h-3.5 w-3.5" />
-                    </Link>
-                  </TableCell>
-                  <TableCell className="font-medium">
-                    <Link href={detailHref(r.id)} className="hover:underline">
+                      <ExternalLink className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
                       {r.name}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-sm">
+                  <TableCell>
                     {r.responsibleName ?? <span className="text-neutral-400">—</span>}
                   </TableCell>
                   <TableCell>
                     <StatusBadge dict={ENTITY_STATUSES} value={r.status} />
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMoney(r.debt)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMoney(r.paid)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMoney(r.charged)}</TableCell>
-                  <TableCell className="text-sm">{r.company ?? "—"}</TableCell>
-                  <TableCell className="text-sm">{r.clientName ?? "—"}</TableCell>
-                  <TableCell className="text-sm">{r.shortName}</TableCell>
+                  <TableCell className="text-right tabular-nums font-semibold text-sm">{formatMoney(r.debt)}</TableCell>
+                  <TableCell className="text-right tabular-nums font-semibold text-sm">{formatMoney(r.paid)}</TableCell>
+                  <TableCell className="text-right tabular-nums font-semibold text-sm">{formatMoney(r.charged)}</TableCell>
+                  <TableCell>{r.company ?? "—"}</TableCell>
                   <TableCell className="text-sm">
                     <StatusBadge
                       tone={r.type === "internal" ? "blue" : r.type === "client" ? "slate" : "gray"}
@@ -347,6 +354,8 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
           </TableBody>
         </Table>
       </div>
+      </>
+      )}
 
       {isAdmin && editing && clients && responsibles && (
         <ProjectEditDialog
@@ -405,8 +414,6 @@ function ProjectEditDialog({
   const [shortName, setShortName] = React.useState(row?.shortName ?? "");
   const [clientId, setClientId] = React.useState(row?.clientId ?? "");
   const [responsibleUserId, setResponsibleUserId] = React.useState(row?.responsibleUserId ?? "");
-  const [executorIds, setExecutorIds] = React.useState<string[]>([]);
-  const [executorSearch, setExecutorSearch] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
   const [confirmClientChange, setConfirmClientChange] = React.useState(false);
 
@@ -414,13 +421,6 @@ function ProjectEditDialog({
     setShortName(row?.shortName ?? "");
     setClientId(row?.clientId ?? "");
     setResponsibleUserId(row?.responsibleUserId ?? "");
-    setExecutorIds([]);
-    if (row?.id) {
-      fetch(`/api/projects/${row.id}/executors`)
-        .then((r) => r.json())
-        .then((ids: string[]) => setExecutorIds(ids))
-        .catch(() => {});
-    }
   }, [row]);
 
   const activeClients = clients.filter(
@@ -464,13 +464,6 @@ function ProjectEditDialog({
       return;
     }
     const saved = await res.json();
-    const projectId: string = saved.id ?? row?.id;
-
-    await fetch(`/api/projects/${projectId}/executors`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ executorIds }),
-    });
 
     setSubmitting(false);
     toast.success(isNew ? "Проект создан" : "Проект обновлён");
@@ -481,22 +474,12 @@ function ProjectEditDialog({
     e.preventDefault();
     if (!shortName.trim()) return toast.error("Введите название проекта");
     if (!clientId) return toast.error("Выберите клиента");
+    if (!responsibleUserId) return toast.error("Выберите руководителя проекта");
     if (clientChanged) {
       setConfirmClientChange(true);
       return;
     }
     await performSave();
-  }
-
-  const activeExecutors = executors.filter((e) => e.status !== "archived");
-  const filteredExecutors = executorSearch.trim()
-    ? activeExecutors.filter((e) => e.name.toLowerCase().includes(executorSearch.toLowerCase()))
-    : activeExecutors;
-
-  function toggleExecutor(id: string) {
-    setExecutorIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
   }
 
   return (
@@ -539,7 +522,7 @@ function ProjectEditDialog({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="responsibleUserId">Руководитель (опционально)</Label>
+              <Label htmlFor="responsibleUserId">Руководитель проекта</Label>
               <Select
                 value={responsibleUserId || "__none__"}
                 onValueChange={(v) => setResponsibleUserId(v === "__none__" ? "" : (v ?? ""))}
@@ -548,11 +531,11 @@ function ProjectEditDialog({
                   <SelectValue>
                     {responsibleUserId
                       ? (activeResponsibles.find((r) => r.id === responsibleUserId)?.fullName ?? responsibleUserId)
-                      : "— Без руководителя —"}
+                      : "— Выберите руководителя —"}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none__">— Без руководителя —</SelectItem>
+                  <SelectItem value="__none__">— Выберите руководителя —</SelectItem>
                   {activeResponsibles.map((r) => (
                     <SelectItem key={r.id} value={r.id}>
                       {r.fullName}
@@ -562,41 +545,6 @@ function ProjectEditDialog({
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label>Исполнители проекта</Label>
-                {executorIds.length > 0 && (
-                  <span className="text-xs text-neutral-500">выбрано: {executorIds.length}</span>
-                )}
-              </div>
-              <Input
-                placeholder="Поиск исполнителя..."
-                value={executorSearch}
-                onChange={(e) => setExecutorSearch(e.target.value)}
-                className="h-8 text-sm"
-              />
-              <div className="border border-neutral-200 rounded-md overflow-y-auto max-h-40">
-                {filteredExecutors.length === 0 ? (
-                  <p className="text-xs text-neutral-400 px-3 py-2">Нет исполнителей</p>
-                ) : (
-                  filteredExecutors.map((e) => (
-                    <label
-                      key={e.id}
-                      className="flex items-center gap-2 px-3 py-1.5 hover:bg-neutral-50 cursor-pointer"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={executorIds.includes(e.id)}
-                        onChange={() => toggleExecutor(e.id)}
-                        className="rounded border-neutral-300"
-                      />
-                      <span className="text-sm">{e.name}</span>
-                    </label>
-                  ))
-                )}
-              </div>
-            </div>
-
             {previewName && (
               <div className="rounded-md bg-neutral-50 border border-neutral-200 px-3 py-2 text-sm space-y-1">
                 <div>

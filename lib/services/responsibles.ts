@@ -17,8 +17,8 @@ export type ResponsibleListRow = {
   fullName: string;
   email: string;
   isActive: boolean;
-  projectCount: number; // C
-  projectNames: string[]; // D
+  projectCount: number;
+  projects: { id: string; name: string }[];
   createdAt: Date;
 };
 
@@ -40,7 +40,7 @@ export async function listResponsibles(): Promise<ResponsibleListRow[]> {
     email: u.email,
     isActive: u.isActive,
     projectCount: u.responsibleProjects.length,
-    projectNames: u.responsibleProjects.map((p) => p.name),
+    projects: u.responsibleProjects.map((p) => ({ id: p.id, name: p.name })),
     createdAt: u.createdAt,
   }));
 }

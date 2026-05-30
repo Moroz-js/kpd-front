@@ -4,6 +4,7 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -16,9 +17,13 @@ import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { formatMoney, formatDate } from "@/lib/format";
+import { formatMoney, formatDate, formatDateShort } from "@/lib/format";
 import { getISOWeek, getISOWeekYear, weekLabel } from "@/lib/iso-weeks";
 import { CHARGE_STATUSES, BADGE_TONE_CLASS } from "@/lib/statuses";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 
 // ─── Типы ─────────────────────────────────────────────────────────────────────
 
@@ -97,7 +102,7 @@ function isMissingM(charge: Charge): boolean {
 
 // ─── Компоненты ───────────────────────────────────────────────────────────────
 
-function StatusBadge({ status }: { status: string }) {
+function ChargeStatusBadge({ status }: { status: string }) {
   const entry = CHARGE_STATUSES[status as keyof typeof CHARGE_STATUSES];
   if (!entry) return <span className="text-[10px] text-neutral-400">—</span>;
   return (
@@ -107,13 +112,64 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function DateInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function InlineDateCell({ value, onSave }: { value: string; onSave: (v: string) => void }) {
   const ref = useRef<HTMLInputElement>(null);
+  const [editing, setEditing] = useState(false);
+  const [v, setV] = useState(value);
+
+  if (!editing) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 cursor-pointer hover:bg-neutral-100 rounded px-1 py-0.5 text-neutral-600 group"
+        onClick={() => { setEditing(true); setTimeout(() => { try { ref.current?.showPicker(); } catch { /**/ } }, 50); }}
+      >
+        {v ? v.slice(5).split("-").reverse().join(".") : <span className="text-neutral-300">—</span>}
+        <Pencil className="h-3 w-3 shrink-0 text-neutral-300 group-hover:text-neutral-500" />
+      </span>
+    );
+  }
   return (
-    <div className="relative w-full cursor-pointer" onClick={() => { ref.current?.focus(); try { ref.current?.showPicker(); } catch { /**/ } }}>
-      <input ref={ref} type="date" value={value} onChange={(e) => onChange(e.target.value)}
-        className="w-full h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring cursor-pointer" />
-    </div>
+    <input
+      ref={ref}
+      autoFocus
+      type="date"
+      value={v}
+      onChange={(e) => setV(e.target.value)}
+      onBlur={() => { setEditing(false); onSave(v); }}
+      className="border border-blue-300 rounded px-1 py-0.5 text-xs outline-none w-32"
+    />
+  );
+}
+
+function InlineTextCell({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [v, setV] = useState(value);
+
+  if (!editing) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 cursor-pointer hover:bg-neutral-100 rounded px-1 py-0.5 text-neutral-600 group max-w-[160px] truncate"
+        onClick={() => setEditing(true)}
+        title={v}
+      >
+        <span className="truncate">{v || <span className="text-neutral-300">—</span>}</span>
+        <Pencil className="h-3 w-3 shrink-0 text-neutral-300 group-hover:text-neutral-500 flex-none" />
+      </span>
+    );
+  }
+  return (
+    <input
+      autoFocus
+      type="text"
+      value={v}
+      onChange={(e) => setV(e.target.value)}
+      onBlur={() => { setEditing(false); onSave(v); }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") { setEditing(false); onSave(v); }
+        if (e.key === "Escape") { setEditing(false); setV(value); }
+      }}
+      className="border border-blue-300 rounded px-1 py-0.5 text-xs outline-none w-40"
+    />
   );
 }
 
@@ -127,9 +183,13 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
   const [deleteTarget, setDeleteTarget] = useState<Charge | null>(null);
 
   // Фильтры
-  const [fBankAccount, setFBankAccount] = useState("");
-  const [fOrder, setFOrder] = useState("");
-  const [fStatus, setFStatus] = useState("");
+  const [fBankAccount, setFBankAccount] = useState<string[]>([]);
+  const [fOrder, setFOrder] = useState<string[]>([]);
+  const [fStatus, setFStatus] = useState<string[]>([]);
+  const [fClient, setFClient] = useState<string[]>([]);
+
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState("");
 
   const fetchData = useCallback(async () => {
     const r = await fetch("/api/charges");
@@ -148,11 +208,79 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
   useEffect(() => { load(); }, [load]);
 
   const filtered = rows.filter(r => {
-    if (fBankAccount && r.bankAccountId !== fBankAccount) return false;
-    if (fOrder && r.orderId !== fOrder) return false;
-    if (fStatus && r.status !== fStatus) return false;
+    if (fBankAccount.length && !fBankAccount.includes(r.bankAccountId)) return false;
+    if (fOrder.length && !fOrder.includes(r.orderId)) return false;
+    if (fStatus.length && !fStatus.includes(r.status)) return false;
+    if (fClient.length) {
+      const clientId = r.order?.project?.client?.id ?? "__empty__";
+      if (!fClient.includes(clientId)) return false;
+    }
     return true;
   });
+
+  const clientOptions = React.useMemo(() => {
+    const map = new Map<string, string>();
+    for (const r of rows) {
+      const id = r.order?.project?.client?.id ?? "__empty__";
+      const name = r.order?.project?.client?.name ?? "Пусто";
+      map.set(id, name);
+    }
+    return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
+  }, [rows]);
+
+  async function patchInlineStatus(id: string, status: string) {
+    const res = await fetch(`/api/charges/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    if (!res.ok) return toast.error("Не удалось изменить статус");
+    setRows(prev => prev.map(r => r.id === id ? { ...r, status } : r));
+  }
+
+  async function patchInlinePaidAt(id: string, paidAt: string) {
+    const res = await fetch(`/api/charges/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paidAt: paidAt ? new Date(paidAt).toISOString() : null }),
+    });
+    if (!res.ok) return toast.error("Не удалось изменить дату");
+    setRows(prev => prev.map(r => r.id === id ? { ...r, paidAt: paidAt || null } : r));
+  }
+
+  async function patchInlinePurpose(id: string, paymentPurpose: string) {
+    const res = await fetch(`/api/charges/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paymentPurpose: paymentPurpose || null }),
+    });
+    if (!res.ok) return toast.error("Не удалось изменить назначение");
+    setRows(prev => prev.map(r => r.id === id ? { ...r, paymentPurpose: paymentPurpose || null } : r));
+  }
+
+  function toggleRow(id: string) {
+    setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }
+  function toggleAll() {
+    if (selectedIds.size === filtered.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(filtered.map(r => r.id)));
+  }
+
+  async function handleBulkApply() {
+    if (!bulkStatus) return toast.error("Выберите статус");
+    const ids = Array.from(selectedIds);
+    const res = await fetch("/api/charges/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids, patch: { status: bulkStatus } }),
+    });
+    if (!res.ok) return toast.error("Ошибка массового обновления");
+    const { updated } = await res.json() as { updated: number };
+    toast.success(`Обновлено ${updated} начислений`);
+    setRows(prev => prev.map(r => selectedIds.has(r.id) ? { ...r, status: bulkStatus } : r));
+    setSelectedIds(new Set());
+    setBulkStatus("");
+  }
 
   async function handleDelete(row: Charge) {
     setDeleteTarget(null);
@@ -167,11 +295,6 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
     }
   }
 
-  const th = "border border-neutral-200 px-2 py-1.5 text-left font-medium text-neutral-600 bg-neutral-50 text-xs whitespace-nowrap";
-  const thr = th + " text-right";
-  const td = "border border-neutral-200 px-2 py-1.5 text-xs";
-  const tdr = td + " text-right";
-
   return (
     <div className="space-y-4">
       {/* Toolbar */}
@@ -181,89 +304,147 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
         </Button>
 
         <div className="ml-auto flex flex-wrap gap-2">
-          {[
-            { label: "Все счета", value: fBankAccount, setValue: setFBankAccount, opts: bankAccounts.map(b => ({ v: b.id, l: b.name })) },
-            { label: "Все заказы", value: fOrder, setValue: setFOrder, opts: orders.map(o => ({ v: o.id, l: `№${o.orderNumber} ${o.description}` })) },
-            { label: "Все статусы", value: fStatus, setValue: setFStatus, opts: Object.entries(CHARGE_STATUSES).map(([v, s]) => ({ v, l: s.label })) },
-          ].map(({ label, value, setValue, opts }) => (
-            <Select key={label} value={value} onValueChange={(v) => setValue(v ?? "")}>
-              <SelectTrigger className="h-8 text-xs w-44"><SelectValue>{value ? (opts.find(o => o.v === value)?.l ?? label) : label}</SelectValue></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">— {label} —</SelectItem>
-                {opts.map(o => <SelectItem key={o.v} value={o.v}>{o.l}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          ))}
+          <MultiSelectFilter
+            label="Банк. счёт"
+            options={bankAccounts.map(b => ({ value: b.id, label: b.name }))}
+            value={fBankAccount}
+            onChange={setFBankAccount}
+          />
+          <MultiSelectFilter
+            label="Клиент"
+            options={clientOptions}
+            value={fClient}
+            onChange={setFClient}
+          />
+          <MultiSelectFilter
+            label="Заказ"
+            options={orders.map(o => ({ value: o.id, label: `№${o.orderNumber} ${o.description}` }))}
+            value={fOrder}
+            onChange={setFOrder}
+          />
+          <MultiSelectFilter
+            label="Статус"
+            options={Object.entries(CHARGE_STATUSES).map(([v, s]) => ({ value: v, label: s.label }))}
+            value={fStatus}
+            onChange={setFStatus}
+          />
         </div>
       </div>
 
+      {/* Bulk toolbar */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-2 rounded-md border bg-blue-50 border-blue-200 px-3 py-2">
+          <span className="text-xs text-blue-700 font-medium">Выбрано: {selectedIds.size}</span>
+          <Select value={bulkStatus} onValueChange={(v) => setBulkStatus(v ?? "")}>
+            <SelectTrigger className="h-7 text-xs w-40 bg-white">
+              <SelectValue>{bulkStatus ? (CHARGE_STATUSES[bulkStatus as keyof typeof CHARGE_STATUSES]?.label ?? bulkStatus) : "— статус —"}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(CHARGE_STATUSES).map(([k, v]) => (
+                <SelectItem key={k} value={k}>{v.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button size="sm" className="h-7" onClick={handleBulkApply} disabled={!bulkStatus}>
+            Применить
+          </Button>
+          <Button size="sm" variant="ghost" className="h-7 text-neutral-500" onClick={() => setSelectedIds(new Set())}>
+            Сбросить
+          </Button>
+        </div>
+      )}
+
       {loading ? (
-        <div className="text-sm text-neutral-400 py-8 text-center">Загрузка...</div>
+        <div className="text-xs text-neutral-400 py-8 text-center">Загрузка...</div>
       ) : filtered.length === 0 ? (
-        <div className="text-sm text-neutral-400 py-8 text-center">Нет данных</div>
+        <div className="text-xs text-neutral-400 py-8 text-center">Нет данных</div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs border-separate border-spacing-0">
-            <thead>
-              <tr>
-                <th className={th}>Банк. счёт</th>
-                <th className={th}>№ счёта</th>
-                <th className={th}>Заказ</th>
-                <th className={th}>Номер</th>
-                <th className={thr}>Сумма</th>
-                <th className={th}>Выставлен план</th>
-                <th className={th}>Выставлен факт</th>
-                <th className={th}>Оплачен план</th>
-                <th className={th}>Месяц плана</th>
-                <th className={th}>Неделя плана</th>
-                <th className={th}>Неделя месяца</th>
-                <th className={th}>Год плана</th>
-                <th className={th}>Оплачен факт</th>
-                <th className={th}>Неделя план-факт</th>
-                <th className={th}>Год план-факт</th>
-                <th className={th}>Статус</th>
-                <th className={th}>Проект</th>
-                <th className={th}>Клиент</th>
-                <th className={th} style={{ minWidth: 160 }}>Назначение</th>
-                <th className={th} style={{ width: 48 }}></th>
-              </tr>
-            </thead>
-            <tbody>
+        <div className="rounded-md border bg-white overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-8">
+                  <Checkbox
+                    checked={filtered.length > 0 && selectedIds.size === filtered.length}
+                    onCheckedChange={toggleAll}
+                  />
+                </TableHead>
+                <TableHead>Банк. счёт</TableHead>
+                <TableHead>№ счёта</TableHead>
+                <TableHead>Заказ</TableHead>
+                <TableHead>Номер</TableHead>
+                <TableHead className="text-right">Сумма</TableHead>
+                <TableHead>Выст. план</TableHead>
+                <TableHead>Выст. факт</TableHead>
+                <TableHead>Опл. план</TableHead>
+                <TableHead>Месяц</TableHead>
+                <TableHead>Неделя</TableHead>
+                <TableHead>Год</TableHead>
+                <TableHead>Опл. факт</TableHead>
+                <TableHead>Статус</TableHead>
+                <TableHead>Проект</TableHead>
+                <TableHead style={{ minWidth: 160 }}>Назначение</TableHead>
+                <TableHead className="w-10" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {filtered.map((row) => {
                 const pd = planDate(row);
                 const weekPF = payWeekPF(row);
                 const yearPF = payYearPF(row);
-                const missingA = !row.bankAccountId;
-                const missingB = !row.invoiceNumber;
-                const missingC = !row.orderId;
-                const missingE = !row.amount;
-                const projectName = row.order?.project?.name;
-                const missingV = !projectName;
                 const overdueH = isOverdueH(row);
                 const missingM = isMissingM(row);
 
                 return (
-                  <tr key={row.id} className="hover:bg-neutral-50">
-                    <td className={`${td} ${cellRed(missingA)}`}>{row.bankAccount?.name ?? <span className="text-neutral-300">—</span>}</td>
-                    <td className={`${td} ${cellRed(missingB)}`}>{row.invoiceNumber || <span className="text-neutral-300">—</span>}</td>
-                    <td className={`${td} ${cellRed(missingC)}`}>{row.order ? `№${row.order.orderNumber}` : <span className="text-neutral-300">—</span>}</td>
-                    <td className={td}>{row.chargeNumber}</td>
-                    <td className={`${tdr} ${cellRed(missingE)}`}>{row.amount ? formatMoney(row.amount) : <span className="text-neutral-300">—</span>}</td>
-                    <td className={td}>{formatDate(row.issuedPlanAt)}</td>
-                    <td className={td}>{formatDate(row.issuedAt)}</td>
-                    <td className={`${td} ${cellRed(overdueH)}`}>{formatDate(row.paidPlanAt)}</td>
-                    <td className={td}>{pd ? MONTH_LABELS[pd.getMonth()] : <span className="text-neutral-300">—</span>}</td>
-                    <td className={td}>{pd ? weekLabel(getISOWeek(pd)) : <span className="text-neutral-300">—</span>}</td>
-                    <td className={td + " whitespace-nowrap"}>{pd ? weekOfMonth(pd) : <span className="text-neutral-300">—</span>}</td>
-                    <td className={td}>{pd ? pd.getFullYear() : <span className="text-neutral-300">—</span>}</td>
-                    <td className={`${td} ${cellRed(missingM)}`}>{formatDate(row.paidAt)}</td>
-                    <td className={td}>{weekPF != null ? weekLabel(weekPF) : <span className="text-neutral-300">—</span>}</td>
-                    <td className={td}>{yearPF ?? <span className="text-neutral-300">—</span>}</td>
-                    <td className={td}><StatusBadge status={row.status} /></td>
-                    <td className={`${td} ${cellRed(missingV)}`}>{projectName ?? <span className="text-neutral-300">—</span>}</td>
-                    <td className={td}>{row.order?.project?.client?.name ?? <span className="text-neutral-300">—</span>}</td>
-                    <td className={td}><div className="truncate max-w-[160px]" title={row.paymentPurpose ?? ""}>{row.paymentPurpose ?? <span className="text-neutral-300">—</span>}</div></td>
-                    <td className={td}>
+                  <TableRow key={row.id} className={selectedIds.has(row.id) ? "bg-blue-50/50" : ""}>
+                    <TableCell>
+                      <Checkbox
+                        checked={selectedIds.has(row.id)}
+                        onCheckedChange={() => toggleRow(row.id)}
+                      />
+                    </TableCell>
+                    <TableCell>{row.bankAccount?.name ?? "—"}</TableCell>
+                    <TableCell>{row.invoiceNumber || "—"}</TableCell>
+                    <TableCell>{row.order ? `№${row.order.orderNumber}` : "—"}</TableCell>
+                    <TableCell>{row.chargeNumber}</TableCell>
+                    <TableCell className="text-right tabular-nums font-semibold text-sm">{row.amount ? formatMoney(row.amount) : "—"}</TableCell>
+                    <TableCell>{formatDateShort(row.issuedPlanAt)}</TableCell>
+                    <TableCell>{formatDateShort(row.issuedAt)}</TableCell>
+                    <TableCell className={overdueH ? "text-red-600" : ""}>{formatDateShort(row.paidPlanAt)}</TableCell>
+                    <TableCell>{pd ? MONTH_LABELS[pd.getMonth()] : "—"}</TableCell>
+                    <TableCell>{pd ? weekLabel(getISOWeek(pd)) : "—"}</TableCell>
+                    <TableCell>{pd ? pd.getFullYear() : "—"}</TableCell>
+                    <TableCell className={missingM ? "text-red-600" : ""}>
+                      <InlineDateCell
+                        value={row.paidAt ? row.paidAt.slice(0, 10) : ""}
+                        onSave={(v) => patchInlinePaidAt(row.id, v)}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Select
+                        value={row.status}
+                        onValueChange={(v) => v && patchInlineStatus(row.id, v)}
+                      >
+                        <SelectTrigger className="h-6 w-auto min-w-[110px] border-0 bg-transparent shadow-none p-0 focus:ring-0 [&>svg]:hidden">
+                          <SelectValue>
+                            <ChargeStatusBadge status={row.status} />
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(CHARGE_STATUSES).map(([k, v]) => (
+                            <SelectItem key={k} value={k}>{v.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell>{row.order?.project?.name ?? "—"}</TableCell>
+                    <TableCell>
+                      <InlineTextCell
+                        value={row.paymentPurpose ?? ""}
+                        onSave={(v) => patchInlinePurpose(row.id, v)}
+                      />
+                    </TableCell>
+                    <TableCell>
                       <div className="flex gap-1 items-center">
                         <button title="Редактировать" className="p-0.5 text-neutral-500 hover:text-neutral-800" onClick={() => setEditTarget(row)}>
                           <Pencil className="h-3.5 w-3.5" />
@@ -272,12 +453,12 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 );
               })}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
 
@@ -427,19 +608,19 @@ function ChargeFormDialog({
           </div>
           <div className="space-y-1.5">
             <Label>Выставлен — план</Label>
-            <DateInput value={issuedPlanAt} onChange={setIssuedPlanAt} />
+            <Input type="date" className="h-8 text-xs" value={issuedPlanAt} onChange={(e) => setIssuedPlanAt(e.target.value)} />
           </div>
           <div className="space-y-1.5">
             <Label>Выставлен — факт</Label>
-            <DateInput value={issuedAt} onChange={setIssuedAt} />
+            <Input type="date" className="h-8 text-xs" value={issuedAt} onChange={(e) => setIssuedAt(e.target.value)} />
           </div>
           <div className="space-y-1.5">
             <Label>Оплачен — план</Label>
-            <DateInput value={paidPlanAt} onChange={setPaidPlanAt} />
+            <Input type="date" className="h-8 text-xs" value={paidPlanAt} onChange={(e) => setPaidPlanAt(e.target.value)} />
           </div>
           <div className="space-y-1.5">
             <Label>Оплачен — факт</Label>
-            <DateInput value={paidAt} onChange={setPaidAt} />
+            <Input type="date" className="h-8 text-xs" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} />
           </div>
           <div className="space-y-1.5 col-span-2">
             <Label>Назначение платежа</Label>

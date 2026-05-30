@@ -71,7 +71,7 @@ export async function GET(req: NextRequest, { params }: Ctx) {
         workType: { select: { id: true, name: true } },
       },
     }),
-    prisma.executor.findMany({ where: { status: "active" }, select: { id: true, name: true } }),
+    prisma.executor.findMany({ where: { status: "active" }, select: { id: true, name: true, executorWorkTypes: { select: { workTypeId: true } } } }),
     prisma.workType.findMany({ where: { status: "active" }, select: { id: true, name: true } }),
   ]);
 
@@ -289,7 +289,11 @@ export async function GET(req: NextRequest, { params }: Ctx) {
     summary,
     workTypes: Array.from(workTypeMap.values()),
     planLines: Array.from(planGroupMap.values()),
-    executors,
+    executors: executors.map(e => ({
+      id: e.id,
+      name: e.name,
+      workTypeIds: e.executorWorkTypes.map(ewt => ewt.workTypeId),
+    })),
     availableWorkTypes: workTypes,
     worksTable,
     chargesTable,

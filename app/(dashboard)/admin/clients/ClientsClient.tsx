@@ -58,6 +58,11 @@ export function ClientsClient() {
   const [archiveTarget, setArchiveTarget] = React.useState<Row | null>(null);
   const [unarchiveTarget, setUnarchiveTarget] = React.useState<Row | null>(null);
 
+  const departmentOptions = React.useMemo(() => {
+    const list = data ?? [];
+    return Array.from(new Set(list.map((r) => r.department).filter(Boolean))).sort();
+  }, [data]);
+
   const companyOptions = React.useMemo(() => {
     const list = data ?? [];
     return Array.from(new Set(list.map((r) => r.company)))
@@ -101,7 +106,6 @@ export function ClientsClient() {
     <>
       <PageHeader
         title="Клиенты"
-        description="Заказчики проектов. Имя формируется из «Департамент – Компания»."
         actions={
           <Button onClick={() => setEditing("new")}>
             <Plus className="h-4 w-4 mr-1" /> Добавить клиента
@@ -131,12 +135,6 @@ export function ClientsClient() {
               <SortableHead field="name" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
                 Клиент
               </SortableHead>
-              <SortableHead field="company" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
-                Компания
-              </SortableHead>
-              <SortableHead field="department" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
-                Департамент
-              </SortableHead>
               <TableHead>Проекты клиента</TableHead>
               <TableHead>Статус проектов</TableHead>
               <SortableHead
@@ -157,13 +155,13 @@ export function ClientsClient() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-neutral-500 py-8">
+                <TableCell colSpan={6} className="text-center text-neutral-500 py-8">
                   Загрузка...
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-neutral-500 py-8">
+                <TableCell colSpan={6} className="text-center text-neutral-500 py-8">
                   Нет клиентов
                 </TableCell>
               </TableRow>
@@ -171,10 +169,8 @@ export function ClientsClient() {
               rows.map((r) => (
                 <TableRow key={r.id} className={r.status === "archived" ? "opacity-60" : ""}>
                   <TableCell className="font-medium">{r.name}</TableCell>
-                  <TableCell>{r.company}</TableCell>
-                  <TableCell>{r.department}</TableCell>
-                  <TableCell className="text-sm whitespace-pre-line">
-                    {r.projectNames.join("\n") || "—"}
+                  <TableCell className="text-xs">
+                    {r.projectNames.join(", ") || "—"}
                   </TableCell>
                   <TableCell>
                     <StatusBadge
@@ -182,8 +178,8 @@ export function ClientsClient() {
                       label={PROJECTS_STATUS_LABEL[r.projectsStatus]}
                     />
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMoney(r.revenue)}</TableCell>
-                  <TableCell className="text-sm">{formatDate(r.createdAt)}</TableCell>
+                  <TableCell className="text-right tabular-nums font-semibold text-sm">{formatMoney(r.revenue)}</TableCell>
+                  <TableCell>{formatDate(r.createdAt)}</TableCell>
                   <TableCell className="text-right whitespace-nowrap">
                     <Button size="sm" variant="ghost" onClick={() => setEditing(r)} title="Редактировать">
                       <Pencil className="h-3.5 w-3.5" />
@@ -208,6 +204,7 @@ export function ClientsClient() {
       {editing && (
         <ClientEditDialog
           row={editing === "new" ? null : editing}
+          allDepartments={departmentOptions}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
@@ -243,10 +240,12 @@ export function ClientsClient() {
 
 function ClientEditDialog({
   row,
+  allDepartments,
   onClose,
   onSaved,
 }: {
   row: Row | null;
+  allDepartments: string[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -292,12 +291,18 @@ function ClientEditDialog({
             <Label htmlFor="department">Департамент</Label>
             <Input
               id="department"
+              list="dept-options"
               value={department}
               onChange={(e) => setDepartment(e.target.value)}
               placeholder="Например: Контент – PR"
               autoFocus
               required
             />
+            <datalist id="dept-options">
+              {allDepartments.map((d) => (
+                <option key={d} value={d} />
+              ))}
+            </datalist>
           </div>
           <div className="space-y-2">
             <Label htmlFor="company">Компания</Label>

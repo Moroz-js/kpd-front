@@ -6,7 +6,7 @@ import { deletePayout, updatePayout } from "@/lib/services/payouts";
 
 const patchSchema = z.object({
   amount: z.number().optional(),
-  paymentStatus: z.enum(["planned", "paid"]).optional(),
+  paymentStatus: z.enum(["planned", "sent", "paid"]).optional(),
   paidAt: z.string().nullable().optional(),
   plannedPayAt: z.string().nullable().optional(),
   bankAccountId: z.string().nullable().optional(),

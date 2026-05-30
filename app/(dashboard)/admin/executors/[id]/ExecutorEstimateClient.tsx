@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { ArrowLeft, Settings, ClipboardList } from "lucide-react";
+import { ArrowLeft, ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { WorksTab } from "./WorksTab";
 import { PivotTab } from "./PivotTab";
@@ -23,6 +23,10 @@ type ExecutorDetail = {
   requisites: string | null;
   recipientType: string | null;
   defaultBankAccountId: string | null;
+  oldEstimateUrl: string | null;
+  specialties: string | null;
+  entityForm: string | null;
+  isResponsible: boolean;
   onboardingSeeded: boolean;
   user: { id: string; email: string; fullName: string; isActive: boolean } | null;
   executorWorkTypes: { workType: WorkType }[];
@@ -44,6 +48,7 @@ type Props = {
   viewerRole: string; // admin | responsible | executor
   viewerExecutorId: string | null;
   backHref?: string;
+  initialTab?: string;
 };
 
 export function ExecutorEstimateClient({
@@ -51,6 +56,7 @@ export function ExecutorEstimateClient({
   viewerRole,
   viewerExecutorId,
   backHref,
+  initialTab,
 }: Props) {
   const isAdmin = viewerRole === "admin";
   const isOwner = viewerRole === "executor" && viewerExecutorId === executorId;
@@ -61,7 +67,10 @@ export function ExecutorEstimateClient({
   const [allWorkTypes, setAllWorkTypes] = useState<WorkType[]>([]); // все активные
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<TabId>("works");
+  const [activeTab, setActiveTab] = useState<TabId>(() => {
+    if (initialTab === "settings") return "settings";
+    return "works";
+  });
   const [openTaskCount, setOpenTaskCount] = useState(0);
 
   const loadExecutor = useCallback(async () => {
@@ -167,17 +176,6 @@ export function ExecutorEstimateClient({
               Задачи {openTaskCount}
             </button>
           )}
-          {isAdmin && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setActiveTab("settings")}
-              className={activeTab === "settings" ? "bg-neutral-100" : ""}
-            >
-              <Settings className="h-4 w-4 mr-1" />
-              Настройки
-            </Button>
-          )}
         </div>
       </div>
 
@@ -212,8 +210,6 @@ export function ExecutorEstimateClient({
             executorId={executorId}
             isAdmin={isAdmin}
             isOwner={isOwner}
-            projects={projects}
-            workTypes={workTypes}
             bankAccounts={bankAccounts}
           />
         )}

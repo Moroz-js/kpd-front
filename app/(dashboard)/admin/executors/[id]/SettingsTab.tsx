@@ -14,7 +14,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { RECIPIENT_TYPES } from "@/lib/statuses";
+import { Checkbox } from "@/components/ui/checkbox";
+import { RECIPIENT_TYPES, WORK_TYPE_SEGMENTS } from "@/lib/statuses";
 
 type BankAccount = { id: string; name: string };
 type WorkType = { id: string; name: string };
@@ -29,6 +30,10 @@ type ExecutorDetail = {
   requisites: string | null;
   recipientType: string | null;
   defaultBankAccountId: string | null;
+  oldEstimateUrl: string | null;
+  specialties: string | null;
+  entityForm: string | null;
+  isResponsible: boolean;
   onboardingSeeded: boolean;
   user: { id: string; email: string; fullName: string; isActive: boolean } | null;
   executorWorkTypes: { workType: WorkType }[];
@@ -50,9 +55,15 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
   const [requisites, setRequisites] = useState(executor.requisites ?? "");
   const [recipientType, setRecipientType] = useState(executor.recipientType ?? "");
   const [defaultBankAccountId, setDefaultBankAccountId] = useState(executor.defaultBankAccountId ?? "");
+  const [oldEstimateUrl, setOldEstimateUrl] = useState(executor.oldEstimateUrl ?? "");
+  const [entityForm, setEntityForm] = useState(executor.entityForm ?? "");
+  const [selectedSpecialties, setSelectedSpecialties] = useState<string[]>(() => {
+    try { return JSON.parse(executor.specialties ?? "[]"); } catch { return []; }
+  });
   const [selectedWorkTypeIds, setSelectedWorkTypeIds] = useState<string[]>(
     executor.executorWorkTypes.map((ewt) => ewt.workType.id)
   );
+  const [isResponsible, setIsResponsible] = useState(executor.isResponsible ?? false);
   const [saving, setSaving] = useState(false);
 
   // Access toggle
@@ -86,6 +97,10 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
           requisites: requisites || null,
           recipientType: recipientType || null,
           defaultBankAccountId: defaultBankAccountId || null,
+          oldEstimateUrl: oldEstimateUrl || null,
+          entityForm: entityForm || null,
+          specialties: JSON.stringify(selectedSpecialties),
+          isResponsible,
           workTypeIds: selectedWorkTypeIds,
         }),
       });
@@ -113,6 +128,12 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
   function toggleWorkType(id: string) {
     setSelectedWorkTypeIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
+
+  function toggleSpecialty(s: string) {
+    setSelectedSpecialties((prev) =>
+      prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]
     );
   }
 
@@ -174,11 +195,44 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
           <Label>Реквизиты</Label>
           <Input value={requisites} onChange={(e) => setRequisites(e.target.value)} placeholder="ИНН, расчётный счёт и т.д." />
         </div>
+        <div className="flex items-center gap-2 pt-1">
+          <Checkbox
+            id="isResponsible"
+            checked={isResponsible}
+            onCheckedChange={(v) => setIsResponsible(Boolean(v))}
+          />
+          <Label htmlFor="isResponsible" className="cursor-pointer">
+            Является ответственным
+          </Label>
+        </div>
       </div>
 
       {/* Payment block */}
       <div className="border rounded-lg p-4 space-y-3">
         <h3 className="text-sm font-semibold text-neutral-800">Оплата</h3>
+        <div className="space-y-1.5">
+          <Label>Форма юридического лица</Label>
+          <Input
+            value={entityForm}
+            onChange={(e) => setEntityForm(e.target.value)}
+            placeholder="ИП, ООО, ОАО, самозанятый и т.д."
+            list="entity-form-options"
+          />
+          <datalist id="entity-form-options">
+            {["ИП", "ООО", "ОАО", "ПАО", "АО", "Самозанятый", "Физлицо"].map(v => (
+              <option key={v} value={v} />
+            ))}
+          </datalist>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Ссылка на старую смету</Label>
+          <Input
+            value={oldEstimateUrl}
+            onChange={(e) => setOldEstimateUrl(e.target.value)}
+            placeholder="https://..."
+            type="url"
+          />
+        </div>
         <div className="space-y-1.5">
           <Label>Источник оплаты по умолчанию</Label>
           <Select value={defaultBankAccountId} onValueChange={(v) => setDefaultBankAccountId(v ?? "")}>
@@ -212,6 +266,30 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
               ))}
             </SelectContent>
           </Select>
+        </div>
+      </div>
+
+      {/* Specialties block */}
+      <div className="border rounded-lg p-4 space-y-3">
+        <h3 className="text-sm font-semibold text-neutral-800">Специальности</h3>
+        <div className="flex flex-wrap gap-2">
+          {WORK_TYPE_SEGMENTS.map((seg) => {
+            const selected = selectedSpecialties.includes(seg);
+            return (
+              <button
+                key={seg}
+                type="button"
+                onClick={() => toggleSpecialty(seg)}
+                className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                  selected
+                    ? "bg-violet-100 border-violet-300 text-violet-800"
+                    : "bg-neutral-50 border-neutral-200 text-neutral-600 hover:bg-neutral-100"
+                }`}
+              >
+                {seg}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -265,7 +343,7 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
           </div>
         )}
         <p className="text-xs text-neutral-400">
-          Чтобы добавить проект — откройте его в разделе «Проекты» и добавьте исполнителя.
+          Чтобы добавить проект исполнителю, руководитель должен добавить строку с этим исполнителем в план расходов проекта.
         </p>
       </div>
 

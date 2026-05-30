@@ -4,12 +4,10 @@ import * as React from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { ChevronLeft, Save, KeyRound, RefreshCw } from "lucide-react";
+import { ChevronLeft, KeyRound, RefreshCw, ExternalLink } from "lucide-react";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
@@ -21,13 +19,6 @@ type Detail = {
   projects: { id: string; name: string; status: string }[];
 };
 
-type ProjectOption = {
-  id: string;
-  name: string;
-  status: string;
-  responsibleUserId: string | null;
-};
-
 const jsonFetcher = <T,>(url: string): Promise<T> =>
   fetch(url).then((r) => {
     if (!r.ok) throw new Error(String(r.status));
@@ -35,63 +26,14 @@ const jsonFetcher = <T,>(url: string): Promise<T> =>
   });
 
 export function ResponsibleDetailClient({ id }: { id: string }) {
-  const { data: detail, mutate: refetchDetail } = useSWR<Detail>(
+  const { data: detail } = useSWR<Detail>(
     `/api/responsibles/${id}`,
     jsonFetcher
   );
-  const { data: allProjects } = useSWR<ProjectOption[]>(
-    "/api/projects/options",
-    jsonFetcher
-  );
 
-  const [assignedIds, setAssignedIds] = React.useState<Set<string>>(new Set());
-  const [initialIds, setInitialIds] = React.useState<Set<string>>(new Set());
-  const [saving, setSaving] = React.useState(false);
   const [resetOpen, setResetOpen] = React.useState(false);
   const [newPassword, setNewPassword] = React.useState("");
   const [resetting, setResetting] = React.useState(false);
-
-  React.useEffect(() => {
-    if (!detail) return;
-    const ids = new Set(detail.projects.map((p) => p.id));
-    setAssignedIds(ids);
-    setInitialIds(new Set(ids));
-  }, [detail]);
-
-  const visibleProjects = React.useMemo(() => {
-    if (!allProjects) return [];
-    return allProjects
-      .filter((p) => p.status === "active" || assignedIds.has(p.id))
-      .sort((a, b) => a.name.localeCompare(b.name, "ru"));
-  }, [allProjects, assignedIds]);
-
-  const dirty = React.useMemo(() => {
-    if (assignedIds.size !== initialIds.size) return true;
-    for (const id of assignedIds) if (!initialIds.has(id)) return true;
-    return false;
-  }, [assignedIds, initialIds]);
-
-  function toggle(projectId: string) {
-    setAssignedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(projectId)) next.delete(projectId);
-      else next.add(projectId);
-      return next;
-    });
-  }
-
-  async function handleSave() {
-    setSaving(true);
-    const res = await fetch(`/api/responsibles/${id}/projects`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectIds: Array.from(assignedIds) }),
-    });
-    setSaving(false);
-    if (!res.ok) return toast.error("Не удалось сохранить назначения");
-    toast.success("Назначения сохранены");
-    refetchDetail();
-  }
 
   function generatePassword() {
     const chars = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789!@#$%";
@@ -122,11 +64,7 @@ export function ResponsibleDetailClient({ id }: { id: string }) {
   }
 
   if (!detail) {
-    return (
-      <>
-        <PageHeader title="Загрузка..." />
-      </>
-    );
+    return <PageHeader title="Загрузка..." />;
   }
 
   return (
@@ -158,61 +96,39 @@ export function ResponsibleDetailClient({ id }: { id: string }) {
 
       {!detail.isActive && (
         <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-900 mb-4">
-          Ответственный архивирован. Назначения проектов сохраняются, но новые активные проекты
-          ему присвоить нельзя без возврата из архива.
+          Ответственный архивирован.
         </div>
       )}
 
       <section className="rounded-md border bg-white p-4">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <h2 className="text-base font-semibold">Назначение проектов</h2>
-            <p className="text-sm text-neutral-500">
-              Отмеченные проекты будут закреплены за этим ответственным. Можно выбирать только
-              активные проекты, уже привязанные проекты остаются в списке для возможности снятия.
-            </p>
-          </div>
-          <Button onClick={handleSave} disabled={!dirty || saving}>
-            <Save className="h-4 w-4 mr-1" /> {saving ? "Сохранение..." : "Сохранить"}
-          </Button>
-        </div>
-
-        {visibleProjects.length === 0 ? (
-          <div className="text-sm text-neutral-500 py-6 text-center">
-            Нет проектов для назначения. Создайте проекты в разделе «Проекты».
-          </div>
+        <h2 className="text-base font-semibold mb-3">Проекты как руководитель</h2>
+        {detail.projects.length === 0 ? (
+          <p className="text-sm text-neutral-500">
+            Не назначен руководителем ни одного проекта.
+          </p>
         ) : (
-          <ul className="divide-y">
-            {visibleProjects.map((p) => {
-              const checked = assignedIds.has(p.id);
-              const assignedToOther = p.responsibleUserId && p.responsibleUserId !== id;
-              return (
-                <li key={p.id} className="py-2 flex items-center gap-3">
-                  <Checkbox
-                    id={`proj-${p.id}`}
-                    checked={checked}
-                    onCheckedChange={() => toggle(p.id)}
-                    disabled={!detail.isActive && !checked}
-                  />
-                  <Label
-                    htmlFor={`proj-${p.id}`}
-                    className="flex-1 text-sm font-normal cursor-pointer flex items-center gap-2"
-                  >
-                    <span>{p.name}</span>
-                    {p.status === "archived" && (
-                      <StatusBadge tone="slate" label="Архивный" />
-                    )}
-                    {assignedToOther && (
-                      <span className="text-xs text-neutral-400">
-                        (сейчас у другого PM — будет переназначен)
-                      </span>
-                    )}
-                  </Label>
-                </li>
-              );
-            })}
+          <ul className="space-y-1.5">
+            {detail.projects.map((p) => (
+              <li key={p.id}>
+                <Link
+                  href={`/admin/projects/${p.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:underline"
+                >
+                  <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                  {p.name}
+                  {p.status === "archived" && (
+                    <span className="text-xs text-neutral-400 ml-1">(архив)</span>
+                  )}
+                </Link>
+              </li>
+            ))}
           </ul>
         )}
+        <p className="text-xs text-neutral-400 mt-3">
+          Назначить руководителем можно в разделе «Проекты».
+        </p>
       </section>
 
       <Dialog

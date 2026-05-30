@@ -33,6 +33,7 @@ export type WorkStatus = keyof typeof WORK_STATUSES;
 // ─── PAYMENT STATUSES ─────────────────────────────────────────
 export const PAYMENT_STATUSES = {
   planned: { label: "Запланировано", tone: "gray" as BadgeTone },
+  sent:    { label: "Отправлено",    tone: "yellow" as BadgeTone },
   paid:    { label: "Оплачено",      tone: "green" as BadgeTone },
 } as const;
 export type PaymentStatus = keyof typeof PAYMENT_STATUSES;

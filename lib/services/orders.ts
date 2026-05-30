@@ -20,6 +20,7 @@ export type OrderListRow = {
   projectName: string;
   clientId: string | null;
   clientName: string | null;
+  company: string | null;
   hasUnpaidCharges: boolean;
   createdAt: Date;
 };
@@ -28,7 +29,7 @@ export async function listOrders(): Promise<OrderListRow[]> {
   const orders = await prisma.order.findMany({
     orderBy: { orderNumber: "desc" },
     include: {
-      project: { include: { client: { select: { id: true, name: true } } } },
+      project: { include: { client: { select: { id: true, name: true, company: true } } } },
       charges: { select: { status: true } },
     },
   });
@@ -43,6 +44,7 @@ export async function listOrders(): Promise<OrderListRow[]> {
     projectName: o.project.name,
     clientId: o.project.client?.id ?? null,
     clientName: o.project.client?.name ?? null,
+    company: o.project.client?.company ?? null,
     hasUnpaidCharges: o.charges.some((c) => c.status !== "paid"),
     createdAt: o.createdAt,
   }));
