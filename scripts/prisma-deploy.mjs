@@ -16,4 +16,4 @@ if (!/^postgres(ql)?:\/\//i.test(url)) {
 }
 
 execSync("node scripts/set-prisma-provider.mjs", { stdio: "inherit", cwd: root });
-execSync("npx prisma migrate deploy", { stdio: "inherit", cwd: root });
+execSync("npx prisma db push --skip-generate", { stdio: "inherit", cwd: root });
