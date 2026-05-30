@@ -57,9 +57,11 @@ export function CashflowChart({ weeks, balanceEndDP, balanceEndBudget, currentIS
             width={64}
           />
           <Tooltip
-            formatter={(value: number, name: string) => [
-              value.toLocaleString("ru-RU", { maximumFractionDigits: 0 }),
-              name,
+            formatter={(value, name) => [
+              typeof value === "number"
+                ? value.toLocaleString("ru-RU", { maximumFractionDigits: 0 })
+                : String(value ?? ""),
+              name as string,
             ]}
             labelFormatter={(label) => {
               const entry = data.find((d) => d.week === label);
