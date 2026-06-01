@@ -12,7 +12,10 @@ export function sanitizePostgresUrl(url) {
 /** Для migrate / db push на Neon — direct endpoint, не pooler. */
 export function toDirectPostgresUrl(url) {
   if (!/^postgres(ql)?:\/\//i.test(url)) return url;
-  return sanitizePostgresUrl(url.replace(/-pooler\./i, "."));
+  let out = url.replace(/-pooler(?=[.-])/gi, "");
+  // ep-xxx-pooler.eu-central-1... (без точки после pooler)
+  out = out.replace(/-pooler(?=@)/gi, "");
+  return sanitizePostgresUrl(out);
 }
 
 export function getDatabaseUrl() {

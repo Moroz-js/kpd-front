@@ -6,7 +6,13 @@ import { getDatabaseUrl, isPostgresUrl } from "./database-url.mjs";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const schemaPath = join(root, "prisma", "schema.prisma");
 const url = getDatabaseUrl();
-const provider = isPostgresUrl(url) ? "postgresql" : "sqlite";
+// На Vercel всегда PostgreSQL (Neon), даже если в git schema.prisma = sqlite
+const provider =
+  process.env.VERCEL === "1" && process.env.DATABASE_URL
+    ? "postgresql"
+    : isPostgresUrl(url)
+      ? "postgresql"
+      : "sqlite";
 
 let schema = readFileSync(schemaPath, "utf8");
 const next = schema.replace(
