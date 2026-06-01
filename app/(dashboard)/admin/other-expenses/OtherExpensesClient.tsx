@@ -244,8 +244,10 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
 
   return (
     <div className="flex flex-col gap-4 h-[calc(100vh-3rem)] min-h-0">
+      <PageHeader title="Прочие траты" />
+
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 shrink-0">
         <Button size="sm" onClick={() => setCreateOpen(true)}>
           <Plus className="h-3.5 w-3.5 mr-1" /> Новая трата
         </Button>
@@ -343,7 +345,7 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
       )}
 
       {filtered.length > 0 && (
-        <div className="flex items-center gap-4 px-1 py-1 text-xs text-neutral-500">
+        <div className="flex items-center gap-4 px-1 py-1 text-xs text-neutral-500 shrink-0">
           <span>{filtered.length} записей</span>
           <span className="text-neutral-800 font-semibold tabular-nums">
             {formatMoney(filtered.reduce((s, r) => s + (r.amount ?? 0), 0))}
@@ -353,7 +355,7 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
 
       <Table
         className="min-w-[1600px]"
-        containerClassName="rounded-md border bg-white flex-1 min-h-0 overflow-auto"
+        containerClassName="rounded-md border bg-white flex-1 min-h-0 min-w-0 overflow-auto"
       >
           <TableHeader>
             <TableRow>

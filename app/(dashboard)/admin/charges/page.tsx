@@ -32,10 +32,5 @@ export default async function Page() {
     }),
   ]);
 
-  return (
-    <div className="p-6 space-y-4">
-      <h1 className="text-xl font-semibold">Начисления</h1>
-      <ChargesClient bankAccounts={bankAccounts} orders={orders} />
-    </div>
-  );
+  return <ChargesClient bankAccounts={bankAccounts} orders={orders} />;
 }

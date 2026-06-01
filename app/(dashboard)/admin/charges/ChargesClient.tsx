@@ -24,6 +24,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
+import { PageHeader } from "@/components/ui-custom/PageHeader";
 
 // ─── Типы ─────────────────────────────────────────────────────────────────────
 
@@ -297,8 +298,10 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
 
   return (
     <div className="flex flex-col gap-4 h-[calc(100vh-3rem)] min-h-0">
+      <PageHeader title="Начисления" />
+
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 shrink-0">
         <Button size="sm" onClick={() => setCreateOpen(true)}>
           <Plus className="h-3.5 w-3.5 mr-1" /> Новое начисление
         </Button>
@@ -354,12 +357,16 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
         </div>
       )}
 
+      <div className="flex-1 min-h-0 min-w-0 flex flex-col">
       {loading ? (
         <div className="text-xs text-neutral-400 py-8 text-center">Загрузка...</div>
       ) : filtered.length === 0 ? (
         <div className="text-xs text-neutral-400 py-8 text-center">Нет данных</div>
       ) : (
-        <Table containerClassName="rounded-md border bg-white flex-1 min-h-0 overflow-auto">
+        <Table
+          className="min-w-[1400px]"
+          containerClassName="rounded-md border bg-white flex-1 min-h-0 min-w-0 overflow-auto"
+        >
             <TableHeader>
               <TableRow>
                 <TableHead className="w-8">
@@ -459,6 +466,7 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
             </TableBody>
           </Table>
       )}
+      </div>
 
       {createOpen && (
         <ChargeFormDialog bankAccounts={bankAccounts} orders={orders}
