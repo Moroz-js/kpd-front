@@ -144,11 +144,8 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
         <h3 className="text-sm font-semibold text-neutral-800">Доступ к системе</h3>
         <div className="flex items-center justify-between">
           <div>
-            <span className="text-sm text-neutral-600">
-              Статус:{" "}
-              <strong className={hasAccess ? "text-green-700" : "text-red-600"}>
-                {hasAccess ? "Активен" : "Отозван"}
-              </strong>
+            <span className={`text-sm font-medium ${hasAccess ? "text-green-700" : "text-red-600"}`}>
+              {hasAccess ? "Доступ активен" : "Доступ отозван"}
             </span>
             {executor.user?.email && (
               <p className="text-xs text-neutral-400 mt-0.5">Логин: {executor.user.email}</p>
@@ -174,7 +171,7 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
         {executor.user && (
           <>
             <div className="space-y-1.5">
-              <Label>ФИО</Label>
+              <Label>Исполнитель <span className="font-normal text-neutral-400">(ФИО, название компании, сервиса и т.д.)</span></Label>
               <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
             </div>
             <div className="space-y-1.5">
@@ -191,10 +188,6 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
             placeholder="Телеграм, телефон и т.д."
           />
         </div>
-        <div className="space-y-1.5">
-          <Label>Реквизиты</Label>
-          <Input value={requisites} onChange={(e) => setRequisites(e.target.value)} placeholder="ИНН, расчётный счёт и т.д." />
-        </div>
         <div className="flex items-center gap-2 pt-1">
           <Checkbox
             id="isResponsible"
@@ -210,6 +203,10 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
       {/* Payment block */}
       <div className="border rounded-lg p-4 space-y-3">
         <h3 className="text-sm font-semibold text-neutral-800">Оплата</h3>
+        <div className="space-y-1.5">
+          <Label>Реквизиты</Label>
+          <Input value={requisites} onChange={(e) => setRequisites(e.target.value)} placeholder="ИНН, расчётный счёт и т.д." />
+        </div>
         <div className="space-y-1.5">
           <Label>Форма юридического лица</Label>
           <Input
@@ -240,11 +237,11 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
               <SelectValue>
                 {defaultBankAccountId
                   ? (bankAccounts.find((b) => b.id === defaultBankAccountId)?.name ?? "—")
-                  : "— Системный по умолчанию —"}
+                  : "— Не задан —"}
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">— Системный по умолчанию —</SelectItem>
+              <SelectItem value="">— Не задан —</SelectItem>
               {bankAccounts.map((b) => (
                 <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
               ))}

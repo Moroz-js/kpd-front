@@ -161,11 +161,6 @@ export function BankAccountsClient() {
                 <TableRow key={r.id}>
                   <TableCell className="font-medium">
                     {r.name}
-                    {r.isDefault && (
-                      <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200">
-                        по умолчанию
-                      </span>
-                    )}
                   </TableCell>
                   <TableCell>
                     <StatusBadge dict={ENTITY_STATUSES} value={r.status} />
@@ -326,23 +321,6 @@ function BankAccountEditDialog({
               onChange={(e) => setDetails(e.target.value)}
               placeholder="р/с 40802810…, БИК 04…"
             />
-          </div>
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="isDefault"
-              checked={isDefault}
-              disabled={!!row?.isDefault}
-              onCheckedChange={(c) => setIsDefault(!!c)}
-            />
-            <Label
-              htmlFor="isDefault"
-              className={`text-sm font-normal ${row?.isDefault ? "text-neutral-400" : "cursor-pointer"}`}
-            >
-              Счёт по умолчанию
-              {row?.isDefault && (
-                <span className="ml-1 text-xs text-neutral-400">(нельзя снять — назначьте другой)</span>
-              )}
-            </Label>
           </div>
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>

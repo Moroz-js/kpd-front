@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { EXECUTOR_COMPANY_STATUSES, RECIPIENT_TYPES } from "@/lib/statuses";
+import { EXECUTOR_COMPANY_STATUSES, EXECUTOR_TYPES, RECIPIENT_TYPES } from "@/lib/statuses";
 import type { ExecutorRow } from "./ExecutorsClient";
 
 type BankOption = { id: string; name: string; status: string };
@@ -61,6 +61,8 @@ export function ExecutorEditDialog({
   const [submitting, setSubmitting] = React.useState(false);
 
   const isPerson = row.type === "permanent" || row.type === "external-person";
+  const isService = row.type === "service";
+  const typeName = EXECUTOR_TYPES[row.type as keyof typeof EXECUTOR_TYPES] ?? row.type;
 
   function toggleWorkType(id: string) {
     setWorkTypeIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -108,9 +110,13 @@ export function ExecutorEditDialog({
         </DialogHeader>
 
         <form onSubmit={submit} className="space-y-4">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-neutral-500">Тип:</span>
+            <span className="text-xs font-medium text-neutral-700 bg-neutral-100 rounded px-2 py-0.5">{typeName}</span>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="name">Имя</Label>
+              <Label htmlFor="name">Исполнитель <span className="font-normal text-neutral-400">(ФИО, название компании, сервиса)</span></Label>
               <Input
                 id="name"
                 value={name}
@@ -214,11 +220,11 @@ export function ExecutorEditDialog({
                   <SelectValue>
                     {defaultBankAccountId
                       ? (bankAccounts.find((b) => b.id === defaultBankAccountId)?.name ?? defaultBankAccountId)
-                      : "— Системный по умолчанию —"}
+                      : "— Не задан —"}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none__">— Системный по умолчанию —</SelectItem>
+                  <SelectItem value="__none__">— Не задан —</SelectItem>
                   {bankAccounts
                     .filter((b) => b.status === "active" || b.id === defaultBankAccountId)
                     .map((b) => (
@@ -233,7 +239,7 @@ export function ExecutorEditDialog({
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            {row.type !== "service" && <div className="space-y-1.5">
+            {!isService && <div className="space-y-1.5">
               <Label htmlFor="recipientType">Тип получателя</Label>
               <Select
                 value={recipientType || "__none__"}
@@ -295,37 +301,41 @@ export function ExecutorEditDialog({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="contractFile">Договор (ссылка)</Label>
-              <Input
-                id="contractFile"
-                value={contractFile}
-                onChange={(e) => setContractFile(e.target.value)}
-                placeholder="https://..."
-              />
+          {!isService && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="contractFile">Договор (ссылка)</Label>
+                <Input
+                  id="contractFile"
+                  value={contractFile}
+                  onChange={(e) => setContractFile(e.target.value)}
+                  placeholder="https://..."
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="ndaFile">NDA (ссылка)</Label>
+                <Input
+                  id="ndaFile"
+                  value={ndaFile}
+                  onChange={(e) => setNdaFile(e.target.value)}
+                  placeholder="https://..."
+                />
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="ndaFile">NDA (ссылка)</Label>
-              <Input
-                id="ndaFile"
-                value={ndaFile}
-                onChange={(e) => setNdaFile(e.target.value)}
-                placeholder="https://..."
-              />
-            </div>
-          </div>
+          )}
 
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="inTgChat"
-              checked={inTgChat}
-              onCheckedChange={(c) => setInTgChat(!!c)}
-            />
-            <Label htmlFor="inTgChat" className="text-sm font-normal cursor-pointer">
-              Добавлен в чат «КПД: Контент-производители»
-            </Label>
-          </div>
+          {!isService && (
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="inTgChat"
+                checked={inTgChat}
+                onCheckedChange={(c) => setInTgChat(!!c)}
+              />
+              <Label htmlFor="inTgChat" className="text-sm font-normal cursor-pointer">
+                Добавлен в чат «КПД: Контент-производители»
+              </Label>
+            </div>
+          )}
 
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>

@@ -465,16 +465,16 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
       {createOpen && (
         <ChargeFormDialog bankAccounts={bankAccounts} orders={orders}
           onClose={() => setCreateOpen(false)}
-          onSaved={(row) => { setCreateOpen(false); setRows(prev => [row, ...prev]); toast.success("Начисление создано"); }} />
+          onSaved={() => { setCreateOpen(false); silentLoad(); toast.success("Начисление создано"); }} />
       )}
 
       {editTarget && (
         <ChargeFormDialog bankAccounts={bankAccounts} orders={orders}
           initial={editTarget}
           onClose={() => setEditTarget(null)}
-          onSaved={(updated) => {
+          onSaved={() => {
             setEditTarget(null);
-            setRows(prev => prev.map(r => r.id === updated.id ? { ...r, ...updated } : r));
+            silentLoad();
             toast.success("Сохранено");
           }} />
       )}
@@ -511,7 +511,7 @@ function ChargeFormDialog({
   orders: Order[];
   initial?: Charge;
   onClose: () => void;
-  onSaved: (row: Charge) => void;
+  onSaved: () => void;
 }) {
   const [bankAccountId, setBankAccountId] = useState(initial?.bankAccountId ?? "");
   const [orderId, setOrderId] = useState(initial?.orderId ?? "");
@@ -548,7 +548,7 @@ function ChargeFormDialog({
       });
       if (!r.ok) { const d = await r.json(); throw new Error(d.error ?? "Ошибка"); }
       const saved = await r.json();
-      onSaved(saved);
+      onSaved();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Ошибка");
     } finally {

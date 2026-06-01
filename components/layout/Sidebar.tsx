@@ -19,6 +19,7 @@ import {
   ShoppingCart,
   History,
   ClipboardList,
+  CheckSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -59,6 +60,7 @@ const NAV_CONFIG: Record<string, NavGroup[]> = {
         { label: "Клиенты", href: "/admin/clients", icon: Building2 },
         { label: "Банковские счета", href: "/admin/bank-accounts", icon: Wallet },
         { label: "Виды работ", href: "/admin/work-types", icon: Wrench },
+        { label: "Задачи", href: "/admin/tasks", icon: CheckSquare },
       ],
     },
     {

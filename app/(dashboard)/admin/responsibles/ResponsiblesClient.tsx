@@ -4,12 +4,12 @@ import * as React from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { Archive, ArchiveRestore, ExternalLink } from "lucide-react";
+import { Archive, ArchiveRestore } from "lucide-react";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import { ConfirmDialog } from "@/components/ui-custom/ConfirmDialog";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SortableHead } from "@/components/ui-custom/SortableHead";
 
@@ -62,7 +62,11 @@ export function ResponsiblesClient() {
 
   async function handleArchive(row: Row) {
     const res = await fetch(`/api/responsibles/${row.id}/archive`, { method: "POST" });
-    if (!res.ok) return toast.error("Не удалось архивировать");
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      toast.error(body?.error ?? "Не удалось архивировать");
+      return;
+    }
     toast.success(`«${row.fullName}» архивирован`);
     mutate();
   }
@@ -125,7 +129,7 @@ export function ResponsiblesClient() {
               </TableRow>
             ) : (
               rows.map((r) => (
-                <TableRow key={r.id} className={!r.isActive ? "opacity-60" : ""}>
+                <TableRow key={r.id} className={!r.isActive ? "bg-neutral-50 text-neutral-400" : ""}>
                   <TableCell>
                     <div className="font-medium">{r.fullName}</div>
                     <div className="text-xs text-neutral-500">{r.email}</div>
@@ -154,15 +158,6 @@ export function ResponsiblesClient() {
                     }
                   </TableCell>
                   <TableCell className="text-right whitespace-nowrap">
-                    <Link
-                      href={`/admin/responsibles/${r.id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title="Открыть карточку"
-                      className={buttonVariants({ variant: "ghost", size: "sm" })}
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </Link>
                     {r.isActive ? (
                       <Button size="sm" variant="ghost" onClick={() => setArchiveTarget(r)} title="Архивировать">
                         <Archive className="h-3.5 w-3.5" />

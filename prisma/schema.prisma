@@ -466,6 +466,7 @@ model ProjectVerificationResult {
   verificationId String
   projectId      String
   checked        Boolean             @default(false)
+  comment        String?
   updatedAt      DateTime            @updatedAt
   verification   ProjectVerification @relation(fields: [verificationId], references: [id], onDelete: Cascade)
   project        Project             @relation(fields: [projectId], references: [id])

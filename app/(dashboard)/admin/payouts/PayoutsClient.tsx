@@ -129,31 +129,33 @@ export function PayoutsClient() {
       .map((y) => ({ value: String(y), label: String(y) })),
     [allRows]
   );
-  const weekOptions = React.useMemo(
-    () => Array.from(new Set(allRows.map((r) => r.weekPlanFact).filter((v): v is number => v != null)))
-      .sort((a, b) => a - b).map((w) => ({ value: String(w), label: weekLabel(w) })),
-    [allRows]
-  );
+  const weekOptions = React.useMemo(() => {
+    const opts = Array.from(new Set(allRows.map((r) => r.weekPlanFact).filter((v): v is number => v != null)))
+      .sort((a, b) => a - b).map((w) => ({ value: String(w), label: weekLabel(w) }));
+    const hasEmpty = allRows.some((r) => r.weekPlanFact === null);
+    return hasEmpty ? [{ value: "__empty__", label: "Пусто" }, ...opts] : opts;
+  }, [allRows]);
   const executorOptions = React.useMemo(
     () => Array.from(new Map(allRows.map((r) => [r.executorId, r.executorName])).entries())
       .sort((a, b) => a[1].localeCompare(b[1], "ru")).map(([value, label]) => ({ value, label })),
     [allRows]
   );
-  const bankOptions = React.useMemo(
-    () => Array.from(new Map(
+  const bankOptions = React.useMemo(() => {
+    const opts = Array.from(new Map(
       allRows.filter((r) => r.bankAccountId).map((r) => [r.bankAccountId as string, r.bankAccountName ?? "—"])
-    ).entries()).map(([value, label]) => ({ value, label })),
-    [allRows]
-  );
+    ).entries()).sort((a, b) => a[1].localeCompare(b[1], "ru")).map(([value, label]) => ({ value, label }));
+    const hasEmpty = allRows.some((r) => !r.bankAccountId);
+    return hasEmpty ? [{ value: "__empty__", label: "Пусто" }, ...opts] : opts;
+  }, [allRows]);
 
   const rows = React.useMemo(() => {
     let list = allRows;
     if (periodYearFilter.length) list = list.filter((r) => periodYearFilter.includes(String(r.periodYear)));
     if (periodMonthFilter.length) list = list.filter((r) => periodMonthFilter.includes(String(r.periodMonth)));
-    if (weekFilter.length) list = list.filter((r) => weekFilter.includes(String(r.weekPlanFact ?? "")));
+    if (weekFilter.length) list = list.filter((r) => weekFilter.includes(r.weekPlanFact === null ? "__empty__" : String(r.weekPlanFact)));
     if (executorFilter.length) list = list.filter((r) => executorFilter.includes(r.executorId));
     if (statusFilter.length) list = list.filter((r) => statusFilter.includes(r.paymentStatus));
-    if (bankFilter.length) list = list.filter((r) => bankFilter.includes(r.bankAccountId ?? ""));
+    if (bankFilter.length) list = list.filter((r) => bankFilter.includes(r.bankAccountId ?? "__empty__"));
     if (smetaFilter.length) list = list.filter((r) => smetaFilter.includes(r.sourceType));
     return [...list].sort(compareRows);
   }, [allRows, periodYearFilter, periodMonthFilter, weekFilter, executorFilter, statusFilter, bankFilter, smetaFilter, sort]);
@@ -161,6 +163,11 @@ export function PayoutsClient() {
   const activeBanks = React.useMemo(
     () => (banks ?? []).filter((b) => b.status === "active"),
     [banks]
+  );
+
+  const selectedSum = React.useMemo(
+    () => rows.filter((r) => selectedIds.has(rowKey(r))).reduce((s, r) => s + r.amount, 0),
+    [rows, selectedIds]
   );
 
   // Aggregations by status
@@ -287,6 +294,7 @@ export function PayoutsClient() {
       {selectedIds.size > 0 && (
         <div className="flex flex-wrap items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200">
           <span className="text-xs font-medium text-blue-700">{selectedIds.size} выбрано</span>
+          <span className="text-sm font-bold tabular-nums text-blue-900">{formatMoney(selectedSum)}</span>
           <Select value={bulkStatus} onValueChange={(v) => v && setBulkStatus(v)}>
             <SelectTrigger className="h-7 w-44 text-xs">
               <SelectValue>{bulkStatus ? (PAYMENT_STATUSES[bulkStatus as keyof typeof PAYMENT_STATUSES]?.label ?? "Статус") : "Статус"}</SelectValue>
@@ -351,17 +359,17 @@ export function PayoutsClient() {
                   onCheckedChange={toggleAll}
                 />
               </TableHead>
-              <TableHead>Год план-факт</TableHead>
-              <SortableHead field="periodYear" sortBy={activeSortField()} sortDir={activeSortDir()} onSort={handleSort}>Год выполн.</SortableHead>
+              <TableHead className="w-20">Год план-факт</TableHead>
+              <SortableHead field="periodYear" sortBy={activeSortField()} sortDir={activeSortDir()} onSort={handleSort} className="w-20">Год выполн.</SortableHead>
               <SortableHead field="periodMonth" sortBy={activeSortField()} sortDir={activeSortDir()} onSort={handleSort}>Месяц</SortableHead>
               <SortableHead field="weekPlanFact" sortBy={activeSortField()} sortDir={activeSortDir()} onSort={handleSort}>Неделя</SortableHead>
               <SortableHead field="executorName" sortBy={activeSortField()} sortDir={activeSortDir()} onSort={handleSort}>Исполнитель</SortableHead>
               <TableHead>Комментарий</TableHead>
-              <SortableHead field="paymentStatus" sortBy={activeSortField()} sortDir={activeSortDir()} onSort={handleSort}>Статус</SortableHead>
+              <SortableHead field="paymentStatus" sortBy={activeSortField()} sortDir={activeSortDir()} onSort={handleSort}><span className="flex items-center gap-1">Статус <Pencil className="h-3 w-3 text-neutral-400" /></span></SortableHead>
               <SortableHead field="amount" sortBy={activeSortField()} sortDir={activeSortDir()} onSort={handleSort} className="text-right">Выплата</SortableHead>
-              <TableHead>Дата план</TableHead>
-              <TableHead>Дата оплаты</TableHead>
-              <SortableHead field="bankAccountName" sortBy={activeSortField()} sortDir={activeSortDir()} onSort={handleSort}>Источник оплаты</SortableHead>
+              <TableHead><span className="flex items-center gap-1">Дата оплаты план <Pencil className="h-3 w-3 text-neutral-400" /></span></TableHead>
+              <TableHead><span className="flex items-center gap-1">Дата оплаты факт <Pencil className="h-3 w-3 text-neutral-400" /></span></TableHead>
+              <SortableHead field="bankAccountName" sortBy={activeSortField()} sortDir={activeSortDir()} onSort={handleSort}><span className="flex items-center gap-1">Источник оплаты <Pencil className="h-3 w-3 text-neutral-400" /></span></SortableHead>
               <TableHead>Тип сметы</TableHead>
               <TableHead className="w-24" />
             </TableRow>
@@ -380,8 +388,8 @@ export function PayoutsClient() {
                     <TableCell>
                       <Checkbox checked={selectedIds.has(key)} onCheckedChange={() => toggleRow(key)} />
                     </TableCell>
-                    <TableCell className="tabular-nums">{r.yearPlanFact ?? "—"}</TableCell>
-                    <TableCell className="tabular-nums">{r.periodYear}</TableCell>
+                    <TableCell className="tabular-nums w-20">{r.yearPlanFact ?? "—"}</TableCell>
+                    <TableCell className="tabular-nums w-20">{r.periodYear}</TableCell>
                     <TableCell>{monthLabel(r.periodMonth)}</TableCell>
                     <TableCell>{r.weekPlanFact != null ? weekLabel(r.weekPlanFact) : "—"}</TableCell>
                     <TableCell>{r.executorName}</TableCell>

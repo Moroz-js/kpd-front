@@ -155,15 +155,13 @@ export function IssuedWorksClient() {
 
   const allRows = data ?? [];
 
-  const yearOptions = React.useMemo(
-    () =>
-      Array.from(
-        new Set(allRows.map((r) => r.yearPlanFact).filter((v): v is number => v != null))
-      )
-        .sort((a, b) => b - a)
-        .map((y) => ({ value: String(y), label: String(y) })),
-    [allRows]
-  );
+  const yearOptions = React.useMemo(() => {
+    const opts = Array.from(
+      new Set(allRows.map((r) => r.yearPlanFact).filter((v): v is number => v != null))
+    ).sort((a, b) => b - a).map((y) => ({ value: String(y), label: String(y) }));
+    const hasEmpty = allRows.some((r) => r.yearPlanFact === null);
+    return hasEmpty ? [{ value: "__empty__", label: "Пусто" }, ...opts] : opts;
+  }, [allRows]);
   const execYearOptions = React.useMemo(
     () =>
       Array.from(new Set(allRows.map((r) => r.executionYear)))
@@ -172,15 +170,13 @@ export function IssuedWorksClient() {
     [allRows]
   );
   const monthOptions = MONTHS;
-  const weekOptions = React.useMemo(
-    () =>
-      Array.from(
-        new Set(allRows.map((r) => r.weekPlanFact).filter((v): v is number => v != null))
-      )
-        .sort((a, b) => a - b)
-        .map((w) => ({ value: String(w), label: weekLabel(w) })),
-    [allRows]
-  );
+  const weekOptions = React.useMemo(() => {
+    const opts = Array.from(
+      new Set(allRows.map((r) => r.weekPlanFact).filter((v): v is number => v != null))
+    ).sort((a, b) => a - b).map((w) => ({ value: String(w), label: weekLabel(w) }));
+    const hasEmpty = allRows.some((r) => r.weekPlanFact === null);
+    return hasEmpty ? [{ value: "__empty__", label: "Пусто" }, ...opts] : opts;
+  }, [allRows]);
   const executorOptions = React.useMemo(
     () =>
       Array.from(new Map(allRows.map((r) => [r.executorId, r.executorName])).entries())
@@ -213,12 +209,12 @@ export function IssuedWorksClient() {
   const rows = React.useMemo(() => {
     let list = allRows;
     if (yearPlanFactFilter.length)
-      list = list.filter((r) => yearPlanFactFilter.includes(String(r.yearPlanFact ?? "")));
+      list = list.filter((r) => yearPlanFactFilter.includes(r.yearPlanFact === null ? "__empty__" : String(r.yearPlanFact)));
     if (executionYearFilter.length)
       list = list.filter((r) => executionYearFilter.includes(String(r.executionYear)));
     if (executionMonthFilter.length)
       list = list.filter((r) => executionMonthFilter.includes(String(r.executionMonth)));
-    if (weekFilter.length) list = list.filter((r) => weekFilter.includes(String(r.weekPlanFact ?? "")));
+    if (weekFilter.length) list = list.filter((r) => weekFilter.includes(r.weekPlanFact === null ? "__empty__" : String(r.weekPlanFact)));
     if (executorFilter.length) list = list.filter((r) => executorFilter.includes(r.executorId));
     if (projectFilter.length) list = list.filter((r) => projectFilter.includes(r.projectId));
     if (workTypeFilter.length) list = list.filter((r) => workTypeFilter.includes(r.workTypeId));
@@ -254,6 +250,12 @@ export function IssuedWorksClient() {
   function activeSortDir(): SortDir {
     return sort[0]?.dir ?? "desc";
   }
+
+  const displayRows = selectedIds.size > 0
+    ? rows.filter(r => selectedIds.has(rowId(r)))
+    : rows;
+  const displaySum = displayRows.reduce((s, r) => s + r.amount, 0);
+  const displayCount = displayRows.length;
 
   return (
     <>
@@ -319,11 +321,11 @@ export function IssuedWorksClient() {
         />
       </div>
 
-      {rows.length > 0 && (
+      {(rows.length > 0 || selectedIds.size > 0) && (
         <div className="flex items-center gap-4 px-1 py-1.5 text-xs text-neutral-500">
-          <span>{rows.length} записей</span>
+          <span>{displayCount} {selectedIds.size > 0 ? "выбрано" : "записей"}</span>
           <span className="text-neutral-800 font-semibold tabular-nums">
-            {formatMoney(rows.reduce((s, r) => s + r.amount, 0))}
+            {formatMoney(displaySum)}
           </span>
         </div>
       )}
@@ -365,6 +367,7 @@ export function IssuedWorksClient() {
                 sortBy={activeSortField()}
                 sortDir={activeSortDir()}
                 onSort={handleSort}
+                className="w-20"
               >
                 Год план-факт
               </SortableHead>
@@ -373,6 +376,7 @@ export function IssuedWorksClient() {
                 sortBy={activeSortField()}
                 sortDir={activeSortDir()}
                 onSort={handleSort}
+                className="w-20"
               >
                 Год выполн.
               </SortableHead>
@@ -436,8 +440,8 @@ export function IssuedWorksClient() {
                 Статус
               </SortableHead>
               <TableHead>Дата проверки</TableHead>
-              <TableHead>Дата оплаты</TableHead>
-              <TableHead className="border-r-2 border-neutral-300">Дата оплаты — план</TableHead>
+              <TableHead>Дата оплаты факт</TableHead>
+              <TableHead className="border-r-2 border-neutral-300">Дата оплаты план</TableHead>
               <TableHead>Тип проекта</TableHead>
               <TableHead>Сегмент работ</TableHead>
               <TableHead>Тип исполнителя</TableHead>
@@ -461,12 +465,12 @@ export function IssuedWorksClient() {
               </TableRow>
             ) : (
               rows.map((r) => (
-                <TableRow key={`${r.sourceType}:${r.sourceId}`} className={selectedIds.has(rowId(r)) ? "bg-blue-50" : ""}>
+                <TableRow key={`${r.sourceType}:${r.sourceId}`} className={`${selectedIds.has(rowId(r)) ? "bg-blue-50" : ""} ${r.workStatus === "archived" ? "bg-neutral-50 text-neutral-400" : ""}`.trim()}>
                   <TableCell>
                     <Checkbox checked={selectedIds.has(rowId(r))} onCheckedChange={() => toggleRow(r)} />
                   </TableCell>
-                  <TableCell className="text-sm tabular-nums">{r.yearPlanFact ?? "—"}</TableCell>
-                  <TableCell className="text-sm tabular-nums">{r.executionYear}</TableCell>
+                  <TableCell className="text-sm tabular-nums w-20">{r.yearPlanFact ?? "—"}</TableCell>
+                  <TableCell className="text-sm tabular-nums w-20">{r.executionYear}</TableCell>
                   <TableCell className="text-sm">{monthLabel(r.executionMonth)}</TableCell>
                   <TableCell className="border-r-2 border-neutral-300 text-sm">
                     {r.weekPlanFact != null ? weekLabel(r.weekPlanFact) : "—"}

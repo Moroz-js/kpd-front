@@ -74,7 +74,7 @@ export async function createOtherExpense(
       checkedAt: paidAt ? new Date() : null,
       comment: input.comment ?? null,
       workStatus: paidAt ? "paid" : "submitted",
-      paymentStatus: paidAt ? "paid" : "planned",
+      paymentStatus: paidAt ? "paid" : null,
       createdById: userId,
     },
     include: otherExpenseInclude,
@@ -111,6 +111,11 @@ export async function updateOtherExpense(
   if (newPaidAt && !existing.paidAt) {
     workStatus = "paid";
     paymentStatus = "paid";
+  }
+
+  // Каскад: workStatus → checked автоматически переводит paymentStatus в planned
+  if (workStatus === "checked" && !paymentStatus) {
+    paymentStatus = "planned";
   }
 
   // Возврат paymentStatus → planned вручную: сбросить paidAt
@@ -173,7 +178,7 @@ export async function checkOtherExpense(id: string, userId: string) {
     data: {
       workStatus: "checked",
       checkedAt: new Date(),
-      paymentStatus: existing.paymentStatus ?? "planned",
+      paymentStatus: "planned",
       paymentAmount: existing.paymentAmount ?? existing.amount,
     },
   });

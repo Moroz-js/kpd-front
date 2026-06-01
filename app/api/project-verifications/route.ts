@@ -12,16 +12,12 @@ export async function GET(_req: NextRequest) {
   const verifications = await prisma.projectVerification.findMany({
     orderBy: { date: "desc" },
     include: {
-      results: { select: { checked: true } },
+      results: {
+        include: { project: { select: { id: true, name: true } } },
+        orderBy: { project: { name: "asc" } },
+      },
     },
   });
-
-  const creatorIds = [...new Set(verifications.map(v => v.createdBy))];
-  const users = await prisma.user.findMany({
-    where: { id: { in: creatorIds } },
-    select: { id: true, fullName: true },
-  });
-  const userMap = new Map(users.map(u => [u.id, u.fullName]));
 
   return NextResponse.json(
     verifications.map(v => {
@@ -31,10 +27,15 @@ export async function GET(_req: NextRequest) {
         id: v.id,
         date: v.date.toISOString(),
         createdAt: v.createdAt.toISOString(),
-        createdByName: userMap.get(v.createdBy) ?? v.createdBy,
         totalProjects: total,
         checkedProjects: checked,
         progressPct: total === 0 ? 0 : Math.round((checked / total) * 100),
+        results: v.results.map(r => ({
+          projectId: r.projectId,
+          projectName: r.project.name,
+          checked: r.checked,
+          comment: r.comment ?? null,
+        })),
       };
     })
   );

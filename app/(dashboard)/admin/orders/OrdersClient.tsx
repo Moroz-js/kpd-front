@@ -234,7 +234,7 @@ export function OrdersClient() {
               </TableRow>
             ) : (
               rows.map((r) => (
-                <TableRow key={r.id} className={r.status === "archived" ? "opacity-60" : ""}>
+                <TableRow key={r.id} className={r.status === "archived" ? "bg-neutral-100 text-neutral-400" : ""}>
                   <TableCell className="font-medium tabular-nums">{r.orderNumber}</TableCell>
                   <TableCell>{r.description}</TableCell>
                   <TableCell className="text-sm">{r.clientName ?? "—"}</TableCell>

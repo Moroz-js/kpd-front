@@ -2,9 +2,8 @@
 
 import * as React from "react";
 import useSWR from "swr";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner" ;
-import { Plus, Pencil, Archive, ArchiveRestore, Check, X, KeyRound, RefreshCw } from "lucide-react";
+import { Plus, Pencil, Archive, ArchiveRestore, Check, X, KeyRound, RefreshCw, ExternalLink } from "lucide-react";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
@@ -76,7 +75,6 @@ type SortField = "name" | "responsibleName" | "lastPaidAt" | "workOpsCount";
 type SortDir = "asc" | "desc";
 
 export function ExecutorsClient() {
-  const router = useRouter();
   const { data, isLoading, mutate } = useSWR<Row[]>("/api/executors", fetcher);
   const { data: bankAccounts } = useSWR<BankAccountOption[]>("/api/bank-accounts", fetcher);
   const { data: workTypes } = useSWR<WorkTypeOption[]>("/api/work-types", fetcher);
@@ -109,9 +107,10 @@ export function ExecutorsClient() {
     const list = data ?? [];
     const set = new Set<string>();
     for (const r of list) for (const n of r.projectNames) set.add(n);
-    return Array.from(set)
+    const sorted = Array.from(set)
       .sort((a, b) => a.localeCompare(b, "ru"))
       .map((p) => ({ value: p, label: p }));
+    return [{ value: "__empty__", label: "Пусто" }, ...sorted];
   }, [data]);
 
   const rows = React.useMemo(() => {
@@ -128,11 +127,17 @@ export function ExecutorsClient() {
     }
 
     if (workTypeFilter.length) {
-      list = list.filter((r) => r.workTypeIds.some((id) => workTypeFilter.includes(id)));
+      list = list.filter((r) => {
+        if (workTypeFilter.includes("__empty__") && r.workTypeIds.length === 0) return true;
+        return r.workTypeIds.some((id) => workTypeFilter.includes(id));
+      });
     }
 
     if (projectFilter.length) {
-      list = list.filter((r) => r.projectNames.some((n) => projectFilter.includes(n)));
+      list = list.filter((r) => {
+        if (projectFilter.includes("__empty__") && r.projectNames.length === 0) return true;
+        return r.projectNames.some((n) => projectFilter.includes(n));
+      });
     }
 
     if (responsibleFilter.length) {
@@ -227,14 +232,18 @@ export function ExecutorsClient() {
 
   const responsibleOpts = React.useMemo(() => {
     if (!responsibles) return [];
-    const opts = responsibles.map((r) => ({ value: r.id, label: r.fullName }));
-    return [{ value: "__none__", label: "— Без ответственного —" }, ...opts];
+    const opts = [...responsibles]
+      .sort((a, b) => a.fullName.localeCompare(b.fullName, "ru"))
+      .map((r) => ({ value: r.id, label: r.fullName }));
+    return [{ value: "__none__", label: "Пусто" }, ...opts];
   }, [responsibles]);
 
   const bankOpts = React.useMemo(() => {
     if (!bankAccounts) return [];
-    const opts = bankAccounts.map((b) => ({ value: b.id, label: b.name }));
-    return [{ value: "__none__", label: "— Не задан —" }, ...opts];
+    const opts = [...bankAccounts]
+      .sort((a, b) => a.name.localeCompare(b.name, "ru"))
+      .map((b) => ({ value: b.id, label: b.name }));
+    return [{ value: "__none__", label: "Пусто" }, ...opts];
   }, [bankAccounts]);
 
   const workTypeOpts = React.useMemo(() => {
@@ -243,13 +252,13 @@ export function ExecutorsClient() {
       (a.segment ?? "").localeCompare(b.segment ?? "", "ru") ||
       a.name.localeCompare(b.name, "ru")
     );
-    return sorted.map((w) => ({ value: w.id, label: w.name, group: w.segment }));
+    return [{ value: "__empty__", label: "Пусто", group: "" }, ...sorted.map((w) => ({ value: w.id, label: w.name, group: w.segment }))];
   }, [workTypes]);
 
   const recipientOpts = React.useMemo(
     () => [
+      { value: "__none__", label: "Пусто" },
       ...RECIPIENT_TYPES.map((r) => ({ value: r, label: r })),
-      { value: "__none__", label: "— Не задан —" },
     ],
     []
   );
@@ -383,12 +392,12 @@ export function ExecutorsClient() {
               </TableRow>
             ) : (
               rows.map((r) => (
-                <TableRow key={r.id} className={r.status === "archived" ? "opacity-60" : ""}>
+                <TableRow key={r.id} className={r.status === "archived" ? "bg-neutral-100 text-neutral-400" : ""}>
                   <TableCell className="font-medium">
                     <button
                       type="button"
                       className="text-left hover:underline"
-                      onClick={() => router.push(`/admin/executors/${r.id}`)}
+                      onClick={() => setEditing(r)}
                     >
                       {r.name}
                     </button>
@@ -457,11 +466,21 @@ export function ExecutorsClient() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => router.push(`/admin/executors/${r.id}?tab=settings`)}
-                        title="Открыть настройки"
+                        onClick={() => setEditing(r)}
+                        title="Редактировать параметры"
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
+                      {r.userId && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => window.open(`/admin/executors/${r.id}`, "_blank")}
+                          title="Открыть личную смету"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="ghost"

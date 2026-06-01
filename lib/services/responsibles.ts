@@ -112,6 +112,7 @@ export async function updateResponsible(id: string, patch: UpdateResponsibleInpu
 export async function archiveResponsible(id: string, userId: string) {
   const user = await prisma.user.findUnique({ where: { id } });
   if (!user || user.role !== "responsible") throw new Error("Responsible not found");
+
   const updated = await prisma.user.update({ where: { id }, data: { isActive: false } });
   await logActivity({
     userId,

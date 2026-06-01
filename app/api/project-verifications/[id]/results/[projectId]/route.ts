@@ -4,7 +4,10 @@ import { getSessionUser } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
 import { prisma } from "@/lib/db";
 
-const schema = z.object({ checked: z.boolean() });
+const schema = z.object({
+  checked: z.boolean().optional(),
+  comment: z.string().nullable().optional(),
+});
 
 export async function PATCH(
   req: NextRequest,
@@ -19,9 +22,17 @@ export async function PATCH(
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Validation" }, { status: 422 });
 
+  const data: { checked?: boolean; comment?: string | null } = {};
+  if (parsed.data.checked !== undefined) data.checked = parsed.data.checked;
+  if (parsed.data.comment !== undefined) data.comment = parsed.data.comment;
+
+  if (Object.keys(data).length === 0) {
+    return NextResponse.json({ error: "No fields to update" }, { status: 422 });
+  }
+
   const result = await prisma.projectVerificationResult.updateMany({
     where: { verificationId, projectId },
-    data: { checked: parsed.data.checked },
+    data,
   });
 
   if (result.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });

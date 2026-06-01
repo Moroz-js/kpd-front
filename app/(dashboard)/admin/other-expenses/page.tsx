@@ -1,4 +1,4 @@
-﻿import { redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
 import { prisma } from "@/lib/db";
@@ -10,7 +10,7 @@ export default async function Page() {
 
   const [projects, executors, workTypes, responsibles, bankAccounts] = await Promise.all([
     prisma.project.findMany({ where: { status: "active" }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
-    prisma.executor.findMany({ where: { status: "active" }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.executor.findMany({ where: { status: "active", OR: [{ userId: null }, { accessRevokedAt: { not: null } }] }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.workType.findMany({ where: { status: "active" }, select: { id: true, name: true, segment: true }, orderBy: { name: "asc" } }),
     prisma.user.findMany({ where: { role: "responsible", isActive: true }, select: { id: true, fullName: true }, orderBy: { fullName: "asc" } }),
     prisma.bankAccount.findMany({ where: { status: "active" }, select: { id: true, name: true }, orderBy: { name: "asc" } }),

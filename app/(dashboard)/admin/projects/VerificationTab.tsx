@@ -1,13 +1,14 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
-import { Plus, Trash2, ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, Trash2, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -15,168 +16,101 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { ConfirmDialog } from "@/components/ui-custom/ConfirmDialog";
 
-type VerificationSummary = {
+type VerificationResult = {
+  projectId: string;
+  projectName: string;
+  checked: boolean;
+  comment: string | null;
+};
+
+type Verification = {
   id: string;
   date: string;
   createdAt: string;
-  createdByName: string;
   totalProjects: number;
   checkedProjects: number;
   progressPct: number;
-};
-
-type VerificationDetail = VerificationSummary & {
-  results: { projectId: string; projectName: string; checked: boolean }[];
+  results: VerificationResult[];
 };
 
 function formatRuDate(iso: string) {
-  return new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+  return new Date(iso).toLocaleDateString("ru-RU", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
 }
 
-function VerificationCard({
-  summary,
-  defaultExpanded,
-  onDeleted,
+function CommentCell({
+  verificationId,
+  projectId,
+  comment,
+  onSave,
 }: {
-  summary: VerificationSummary;
-  defaultExpanded: boolean;
-  onDeleted: () => void;
+  verificationId: string;
+  projectId: string;
+  comment: string | null;
+  onSave: (verificationId: string, projectId: string, comment: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
-  const [detail, setDetail] = useState<VerificationDetail | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [localResults, setLocalResults] = useState<{ projectId: string; projectName: string; checked: boolean }[]>([]);
-  const [checkedCount, setCheckedCount] = useState(summary.checkedProjects);
-  const total = summary.totalProjects;
-
-  const loadDetail = useCallback(async () => {
-    setLoading(true);
-    try {
-      const r = await fetch(`/api/project-verifications/${summary.id}`);
-      if (!r.ok) throw new Error();
-      const d: VerificationDetail = await r.json();
-      setDetail(d);
-      setLocalResults(d.results);
-      setCheckedCount(d.checkedProjects);
-    } catch {
-      toast.error("Не удалось загрузить детали проверки");
-    } finally {
-      setLoading(false);
-    }
-  }, [summary.id]);
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(comment ?? "");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    if (expanded && !detail) loadDetail();
-  }, [expanded, detail, loadDetail]);
+    if (open) setValue(comment ?? "");
+  }, [open, comment]);
 
-  async function handleToggle(projectId: string, checked: boolean) {
-    setLocalResults(prev => prev.map(r => r.projectId === projectId ? { ...r, checked } : r));
-    setCheckedCount(prev => prev + (checked ? 1 : -1));
-    try {
-      const r = await fetch(`/api/project-verifications/${summary.id}/results/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ checked }),
-      });
-      if (!r.ok) throw new Error();
-    } catch {
-      setLocalResults(prev => prev.map(r => r.projectId === projectId ? { ...r, checked: !checked } : r));
-      setCheckedCount(prev => prev + (checked ? -1 : 1));
-      toast.error("Не удалось обновить");
-    }
+  function handleSave() {
+    onSave(verificationId, projectId, value);
+    setOpen(false);
   }
-
-  async function handleDelete() {
-    try {
-      const r = await fetch(`/api/project-verifications/${summary.id}`, { method: "DELETE" });
-      if (!r.ok) throw new Error();
-      toast.success("Проверка удалена");
-      onDeleted();
-    } catch {
-      toast.error("Не удалось удалить");
-    }
-  }
-
-  const progressPct = total === 0 ? 0 : Math.round((checkedCount / total) * 100);
 
   return (
-    <div className="border border-neutral-200 rounded-lg bg-white">
-      <div className="px-4 py-3">
-        <div className="flex items-start gap-3">
-          <button
-            type="button"
-            onClick={() => setExpanded(v => !v)}
-            className="mt-0.5 text-neutral-400 hover:text-neutral-700"
-          >
-            {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-          </button>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div>
-                <span className="font-medium text-sm">{formatRuDate(summary.date)}</span>
-                <span className="text-xs text-neutral-500 ml-3">Создал: {summary.createdByName}</span>
-              </div>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setConfirmDelete(true)}
-                className="text-red-500 hover:text-red-700 hover:bg-red-50 h-7"
-              >
-                <Trash2 className="h-3.5 w-3.5 mr-1" /> Удалить
-              </Button>
-            </div>
-            <div className="mt-2 flex items-center gap-3">
-              <Progress value={progressPct} className="h-2 flex-1 max-w-xs" />
-              <span className="text-xs text-neutral-600 whitespace-nowrap">
-                {checkedCount} из {total} проверено ({progressPct}%)
-              </span>
-            </div>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          title={comment ? comment : "Добавить комментарий"}
+          className={`ml-1.5 rounded p-0.5 transition-colors ${
+            comment
+              ? "text-blue-500 hover:text-blue-700"
+              : "text-neutral-300 hover:text-neutral-500"
+          }`}
+        >
+          <MessageSquare className="h-3.5 w-3.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-3" side="top" align="center">
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-neutral-700">Комментарий</p>
+          <Textarea
+            ref={textareaRef}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="Введите комментарий..."
+            className="text-xs min-h-[72px] resize-none"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) handleSave();
+            }}
+          />
+          <div className="flex gap-2 justify-end">
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setOpen(false)}>
+              Отмена
+            </Button>
+            <Button size="sm" className="h-7 text-xs" onClick={handleSave}>
+              Сохранить
+            </Button>
           </div>
         </div>
-      </div>
-
-      {expanded && (
-        <div className="border-t border-neutral-100 px-4 py-3">
-          {loading ? (
-            <div className="text-xs text-neutral-400 py-2">Загрузка...</div>
-          ) : (
-            <div className="space-y-1.5">
-              {localResults.map(r => (
-                <div key={r.projectId} className="flex items-center gap-2.5">
-                  <Checkbox
-                    id={`pv-${summary.id}-${r.projectId}`}
-                    checked={r.checked}
-                    onCheckedChange={(v) => handleToggle(r.projectId, Boolean(v))}
-                  />
-                  <label
-                    htmlFor={`pv-${summary.id}-${r.projectId}`}
-                    className={`text-sm cursor-pointer ${r.checked ? "text-neutral-400 line-through" : "text-neutral-800"}`}
-                  >
-                    {r.projectName}
-                  </label>
-                </div>
-              ))}
-              {localResults.length === 0 && (
-                <div className="text-xs text-neutral-400">Нет проектов</div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      <ConfirmDialog
-        open={confirmDelete}
-        onOpenChange={setConfirmDelete}
-        title="Удалить проверку?"
-        description={`Удалить проверку за ${formatRuDate(summary.date)}? Все отметки будут потеряны.`}
-        confirmLabel="Удалить"
-        onConfirm={handleDelete}
-        destructive
-      />
-    </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -232,9 +166,10 @@ function CreateVerificationDialog({
 }
 
 export function VerificationTab() {
-  const [verifications, setVerifications] = useState<VerificationSummary[]>([]);
+  const [verifications, setVerifications] = useState<Verification[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -251,6 +186,96 @@ export function VerificationTab() {
 
   useEffect(() => { load(); }, [load]);
 
+  const allProjects = useMemo(() => {
+    const map = new Map<string, string>();
+    verifications.forEach(v => {
+      v.results.forEach(r => {
+        if (!map.has(r.projectId)) map.set(r.projectId, r.projectName);
+      });
+    });
+    return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1], "ru"));
+  }, [verifications]);
+
+  const lookup = useMemo(() => {
+    const m = new Map<string, Map<string, VerificationResult>>();
+    verifications.forEach(v => {
+      const inner = new Map<string, VerificationResult>();
+      v.results.forEach(r => inner.set(r.projectId, r));
+      m.set(v.id, inner);
+    });
+    return m;
+  }, [verifications]);
+
+  async function handleToggle(verificationId: string, projectId: string, checked: boolean) {
+    setVerifications(prev => prev.map(v => {
+      if (v.id !== verificationId) return v;
+      const newResults = v.results.map(r =>
+        r.projectId === projectId ? { ...r, checked } : r
+      );
+      const checkedCount = newResults.filter(r => r.checked).length;
+      return {
+        ...v,
+        results: newResults,
+        checkedProjects: checkedCount,
+        progressPct: v.totalProjects === 0 ? 0 : Math.round((checkedCount / v.totalProjects) * 100),
+      };
+    }));
+
+    try {
+      const r = await fetch(`/api/project-verifications/${verificationId}/results/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ checked }),
+      });
+      if (!r.ok) throw new Error();
+    } catch {
+      load();
+      toast.error("Не удалось обновить");
+    }
+  }
+
+  async function handleComment(verificationId: string, projectId: string, comment: string) {
+    setVerifications(prev => prev.map(v => {
+      if (v.id !== verificationId) return v;
+      return {
+        ...v,
+        results: v.results.map(r =>
+          r.projectId === projectId ? { ...r, comment: comment || null } : r
+        ),
+      };
+    }));
+
+    try {
+      const r = await fetch(`/api/project-verifications/${verificationId}/results/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comment: comment || null }),
+      });
+      if (!r.ok) throw new Error();
+    } catch {
+      load();
+      toast.error("Не удалось сохранить комментарий");
+    }
+  }
+
+  async function handleDelete(verificationId: string) {
+    try {
+      const r = await fetch(`/api/project-verifications/${verificationId}`, { method: "DELETE" });
+      if (!r.ok) throw new Error();
+      toast.success("Проверка удалена");
+      setConfirmDeleteId(null);
+      load();
+    } catch {
+      toast.error("Не удалось удалить");
+    }
+  }
+
+  const confirmDeleteVerification = verifications.find(v => v.id === confirmDeleteId);
+
+  if (loading) {
+    return <div className="text-sm text-neutral-400 text-center py-12">Загрузка...</div>;
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
@@ -259,9 +284,7 @@ export function VerificationTab() {
         </Button>
       </div>
 
-      {loading ? (
-        <div className="text-sm text-neutral-400 text-center py-12">Загрузка...</div>
-      ) : verifications.length === 0 ? (
+      {verifications.length === 0 ? (
         <div className="text-sm text-neutral-500 text-center py-12 space-y-3">
           <p>Проверок пока нет. Создайте первую, чтобы начать отслеживать статус проектов.</p>
           <Button size="sm" onClick={() => setCreateOpen(true)}>
@@ -269,15 +292,88 @@ export function VerificationTab() {
           </Button>
         </div>
       ) : (
-        <div className="space-y-3">
-          {verifications.map((v, i) => (
-            <VerificationCard
-              key={v.id}
-              summary={v}
-              defaultExpanded={i === 0}
-              onDeleted={load}
-            />
-          ))}
+        <div className="overflow-x-auto rounded-lg border border-neutral-200">
+          <table className="border-collapse text-xs w-full">
+            <thead>
+              <tr className="bg-neutral-50">
+                <th className="sticky left-0 z-20 bg-neutral-50 border-b border-r border-neutral-200 px-3 py-2 text-left font-medium text-neutral-600 uppercase tracking-wide min-w-[220px]">
+                  Проект
+                </th>
+                {verifications.map(v => (
+                  <th
+                    key={v.id}
+                    className="border-b border-r border-neutral-200 px-3 py-2 text-left font-medium text-neutral-600 min-w-[160px] last:border-r-0"
+                  >
+                    <div className="font-medium text-neutral-800 text-xs whitespace-nowrap">
+                      {formatRuDate(v.date)}
+                    </div>
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <Progress value={v.progressPct} className="h-1.5 flex-1" />
+                      <span className="text-neutral-500 whitespace-nowrap text-[11px]">
+                        {v.checkedProjects}/{v.totalProjects}
+                      </span>
+                    </div>
+                    <div className="mt-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteId(v.id)}
+                        className="text-[11px] text-red-400 hover:text-red-600 flex items-center gap-0.5 transition-colors"
+                      >
+                        <Trash2 className="h-3 w-3" /> Удалить
+                      </button>
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {allProjects.map(([projectId, projectName], rowIdx) => (
+                <tr
+                  key={projectId}
+                  className={rowIdx % 2 === 0 ? "bg-white" : "bg-neutral-50/50"}
+                >
+                  <td className="sticky left-0 z-10 border-r border-neutral-100 px-3 py-2 font-medium text-neutral-800 text-xs bg-inherit">
+                    {projectName}
+                  </td>
+                  {verifications.map(v => {
+                    const result = lookup.get(v.id)?.get(projectId);
+                    return (
+                      <td
+                        key={v.id}
+                        className="border-r border-neutral-100 px-3 py-2 last:border-r-0"
+                      >
+                        {result ? (
+                          <div className="flex items-center">
+                            <Checkbox
+                              id={`pv-${v.id}-${projectId}`}
+                              checked={result.checked}
+                              onCheckedChange={(c) => handleToggle(v.id, projectId, Boolean(c))}
+                              className="h-3.5 w-3.5"
+                            />
+                            <CommentCell
+                              verificationId={v.id}
+                              projectId={projectId}
+                              comment={result.comment}
+                              onSave={handleComment}
+                            />
+                          </div>
+                        ) : (
+                          <span className="text-neutral-300">—</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+              {allProjects.length === 0 && (
+                <tr>
+                  <td colSpan={verifications.length + 1} className="px-3 py-8 text-center text-neutral-400">
+                    Нет проектов
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -285,6 +381,18 @@ export function VerificationTab() {
         <CreateVerificationDialog
           onClose={() => setCreateOpen(false)}
           onCreated={() => { setCreateOpen(false); load(); }}
+        />
+      )}
+
+      {confirmDeleteId && confirmDeleteVerification && (
+        <ConfirmDialog
+          open={true}
+          onOpenChange={(o) => !o && setConfirmDeleteId(null)}
+          title="Удалить проверку?"
+          description={`Удалить проверку за ${formatRuDate(confirmDeleteVerification.date)}? Все отметки будут потеряны.`}
+          confirmLabel="Удалить"
+          onConfirm={() => handleDelete(confirmDeleteId)}
+          destructive
         />
       )}
     </div>

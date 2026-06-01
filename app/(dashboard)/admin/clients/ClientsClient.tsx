@@ -167,7 +167,7 @@ export function ClientsClient() {
               </TableRow>
             ) : (
               rows.map((r) => (
-                <TableRow key={r.id} className={r.status === "archived" ? "opacity-60" : ""}>
+                <TableRow key={r.id} className={r.status === "archived" ? "bg-neutral-100 text-neutral-400" : ""}>
                   <TableCell className="font-medium">{r.name}</TableCell>
                   <TableCell className="text-xs">
                     {r.projectNames.join(", ") || "—"}

@@ -292,7 +292,7 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
               </TableRow>
             ) : (
               rows.map((r) => (
-                <TableRow key={r.id} className={r.status === "archived" ? "opacity-60" : ""}>
+                <TableRow key={r.id} className={r.status === "archived" ? "bg-neutral-100 text-neutral-400" : ""}>
                   <TableCell className="font-medium">
                     <Link
                       href={detailHref(r.id)}

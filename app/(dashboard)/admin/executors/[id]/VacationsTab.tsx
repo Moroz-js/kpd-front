@@ -185,12 +185,6 @@ export function VacationsTab({ executorId, isAdmin, isOwner }: Props) {
 
   return (
     <div className="space-y-6">
-      {/* Общий календарь */}
-      <div>
-        <h3 className="text-sm font-semibold text-neutral-800 mb-2">Общий календарь отпусков</h3>
-        <SharedVacationCalendar />
-      </div>
-
       {/* Мои отпуска */}
       <div>
         <div className="flex items-center justify-between mb-3">
@@ -282,6 +276,12 @@ export function VacationsTab({ executorId, isAdmin, isOwner }: Props) {
             </table>
           </div>
         )}
+      </div>
+
+      {/* Общий календарь */}
+      <div>
+        <h3 className="text-sm font-semibold text-neutral-800 mb-2">Общий календарь отпусков</h3>
+        <SharedVacationCalendar />
       </div>
 
       {createOpen && (

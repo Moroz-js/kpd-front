@@ -88,7 +88,7 @@ export function MultiSelectFilter({
           </Button>
         }
       />
-      <PopoverContent className="w-56 p-1" align="start">
+      <PopoverContent className="w-72 p-1" align="start">
         <div className="max-h-72 overflow-y-auto">
           {options.length === 0 && (
             <div className="px-3 py-2 text-xs text-neutral-500">Нет вариантов</div>
