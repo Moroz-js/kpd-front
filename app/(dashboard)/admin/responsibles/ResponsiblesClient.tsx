@@ -78,7 +78,7 @@ export function ResponsiblesClient() {
   }
 
   return (
-    <>
+    <div className="flex flex-col h-[calc(100vh-3rem)] min-h-0">
       <PageHeader title="Ответственные" />
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -93,8 +93,7 @@ export function ResponsiblesClient() {
         />
       </div>
 
-      <div className="rounded-md border bg-white">
-        <Table>
+      <Table containerClassName="rounded-md border bg-white flex-1 min-h-0 overflow-auto">
           <TableHeader>
             <TableRow>
               <SortableHead field="fullName" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
@@ -178,7 +177,6 @@ export function ResponsiblesClient() {
             )}
           </TableBody>
         </Table>
-      </div>
 
       <ConfirmDialog
         open={!!archiveTarget}
@@ -201,7 +199,7 @@ export function ResponsiblesClient() {
           if (unarchiveTarget) await handleUnarchive(unarchiveTarget);
         }}
       />
-    </>
+    </div>
   );
 }
 

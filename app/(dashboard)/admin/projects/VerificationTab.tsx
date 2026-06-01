@@ -274,7 +274,7 @@ export function VerificationTab() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4 h-full min-h-0">
       <div className="flex justify-end">
         <Button size="sm" onClick={() => setCreateOpen(true)}>
           <Plus className="h-3.5 w-3.5 mr-1" /> Создать проверку
@@ -289,7 +289,7 @@ export function VerificationTab() {
           </Button>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-neutral-200">
+        <div className="overflow-auto rounded-lg border border-neutral-200 flex-1 min-h-0">
           <table className="border-collapse text-xs w-full">
             <thead>
               <tr className="bg-neutral-50">

@@ -163,7 +163,7 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
     isAdmin ? `/admin/projects/${id}` : `/responsible/projects/${id}`;
 
   return (
-    <>
+    <div className="flex flex-col h-[calc(100vh-3rem)] min-h-0">
       <PageHeader
         title="Проекты"
         actions={
@@ -196,7 +196,11 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
         </div>
       )}
 
-      {isAdmin && activeTab === "verification" && <VerificationTab />}
+      {isAdmin && activeTab === "verification" && (
+        <div className="flex-1 min-h-0 flex flex-col">
+          <VerificationTab />
+        </div>
+      )}
 
       {(!isAdmin || activeTab === "projects") && (
       <>
@@ -227,8 +231,7 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
         />
       </div>
 
-      <div className="rounded-md border bg-white">
-        <Table>
+      <Table containerClassName="rounded-md border bg-white flex-1 min-h-0 overflow-auto">
           <TableHeader>
             <TableRow>
               <SortableHead field="name" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
@@ -353,7 +356,6 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
             )}
           </TableBody>
         </Table>
-      </div>
       </>
       )}
 
@@ -392,7 +394,7 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
           if (unarchiveTarget) await handleUnarchive(unarchiveTarget);
         }}
       />
-    </>
+    </div>
   );
 }
 

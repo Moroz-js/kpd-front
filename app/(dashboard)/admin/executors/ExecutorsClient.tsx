@@ -273,7 +273,7 @@ export function ExecutorsClient() {
   );
 
   return (
-    <>
+    <div className="flex flex-col h-[calc(100vh-3rem)] min-h-0">
       <PageHeader
         title="Исполнители"
         actions={
@@ -332,8 +332,10 @@ export function ExecutorsClient() {
         />
       </div>
 
-      <div className="rounded-md border bg-white overflow-x-auto">
-        <Table className="min-w-[1600px]">
+      <Table
+        className="min-w-[1600px]"
+        containerClassName="rounded-md border bg-white flex-1 min-h-0 overflow-auto"
+      >
           <TableHeader>
             <TableRow>
               <SortableHead field="name" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
@@ -516,7 +518,6 @@ export function ExecutorsClient() {
             )}
           </TableBody>
         </Table>
-      </div>
 
       {wizardOpen && (
         <ExecutorWizard
@@ -582,7 +583,7 @@ export function ExecutorsClient() {
           if (unarchiveTarget) await handleUnarchive(unarchiveTarget);
         }}
       />
-    </>
+    </div>
   );
 }
 

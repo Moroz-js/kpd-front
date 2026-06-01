@@ -134,7 +134,7 @@ export function OrdersClient() {
   }
 
   return (
-    <>
+    <div className="flex flex-col h-[calc(100vh-3rem)] min-h-0">
       <PageHeader
         title="Заказы"
         actions={
@@ -171,8 +171,7 @@ export function OrdersClient() {
         />
       </div>
 
-      <div className="rounded-md border bg-white">
-        <Table>
+      <Table containerClassName="rounded-md border bg-white flex-1 min-h-0 overflow-auto">
           <TableHeader>
             <TableRow>
               <SortableHead
@@ -272,7 +271,6 @@ export function OrdersClient() {
             )}
           </TableBody>
         </Table>
-      </div>
 
       {editing && projects && (
         <OrderEditDialog
@@ -311,7 +309,7 @@ export function OrdersClient() {
           if (unarchiveTarget) await handleUnarchive(unarchiveTarget);
         }}
       />
-    </>
+    </div>
   );
 }
 

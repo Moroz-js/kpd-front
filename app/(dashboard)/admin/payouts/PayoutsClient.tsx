@@ -277,7 +277,7 @@ export function PayoutsClient() {
   function activeSortDir(): SortDir { return sort[0]?.dir ?? "desc"; }
 
   return (
-    <>
+    <div className="flex flex-col h-[calc(100vh-3rem)] min-h-0">
       <PageHeader title="Выплаты" />
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -349,8 +349,10 @@ export function PayoutsClient() {
         </div>
       )}
 
-      <div className="rounded-md border bg-white overflow-x-auto">
-        <Table className="min-w-[1500px]">
+      <Table
+        className="min-w-[1500px]"
+        containerClassName="rounded-md border bg-white flex-1 min-h-0 overflow-auto"
+      >
           <TableHeader>
             <TableRow>
               <TableHead className="w-8">
@@ -507,7 +509,6 @@ export function PayoutsClient() {
             )}
           </TableBody>
         </Table>
-      </div>
 
       {paying && (
         <MarkPaidDialog
@@ -541,7 +542,7 @@ export function PayoutsClient() {
         destructive
         onConfirm={async () => { if (deleting) await handleDelete(deleting); }}
       />
-    </>
+    </div>
   );
 }
 

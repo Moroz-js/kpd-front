@@ -243,7 +243,7 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4 h-[calc(100vh-3rem)] min-h-0">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" onClick={() => setCreateOpen(true)}>
@@ -351,8 +351,10 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
         </div>
       )}
 
-      <div className="rounded-md border bg-white overflow-x-auto">
-        <Table className="min-w-[1600px]">
+      <Table
+        className="min-w-[1600px]"
+        containerClassName="rounded-md border bg-white flex-1 min-h-0 overflow-auto"
+      >
           <TableHeader>
             <TableRow>
               <TableHead className="w-8">
@@ -434,7 +436,6 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
             ))}
           </TableBody>
         </Table>
-      </div>
 
       {/* Диалоги */}
       {createOpen && (

@@ -89,7 +89,7 @@ export function TasksClient() {
   const statusOptions = Object.entries(TASK_STATUSES).map(([value, { label }]) => ({ value, label }));
 
   return (
-    <>
+    <div className="flex flex-col h-[calc(100vh-3rem)] min-h-0">
       <PageHeader title="Задачи" />
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -109,8 +109,10 @@ export function TasksClient() {
 
       <div className="text-xs text-neutral-500 mb-2">{rows.length} задач</div>
 
-      <div className="rounded-md border bg-white overflow-x-auto">
-        <Table className="min-w-[900px]">
+      <Table
+        className="min-w-[900px]"
+        containerClassName="rounded-md border bg-white flex-1 min-h-0 overflow-auto"
+      >
           <TableHeader>
             <TableRow>
               <SortableHead field="executorName" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
@@ -196,7 +198,6 @@ export function TasksClient() {
             )}
           </TableBody>
         </Table>
-      </div>
 
       <ConfirmDialog
         open={!!deleteTarget}
@@ -207,6 +208,6 @@ export function TasksClient() {
         destructive
         onConfirm={() => { if (deleteTarget) handleDelete(deleteTarget); }}
       />
-    </>
+    </div>
   );
 }

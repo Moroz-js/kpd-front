@@ -258,7 +258,7 @@ export function IssuedWorksClient() {
   const displayCount = displayRows.length;
 
   return (
-    <>
+    <div className="flex flex-col h-[calc(100vh-3rem)] min-h-0">
       <PageHeader title="Выставленные работы" />
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -355,8 +355,10 @@ export function IssuedWorksClient() {
         </div>
       )}
 
-      <div className="rounded-md border bg-white overflow-x-auto">
-        <Table className="min-w-[1700px]">
+      <Table
+        className="min-w-[1700px]"
+        containerClassName="rounded-md border bg-white flex-1 min-h-0 overflow-auto"
+      >
           <TableHeader>
             <TableRow>
               <TableHead className="w-8">
@@ -515,7 +517,6 @@ export function IssuedWorksClient() {
             )}
           </TableBody>
         </Table>
-      </div>
 
       {editing && (
         <IssuedWorkEditDialog
@@ -530,6 +531,6 @@ export function IssuedWorksClient() {
           }}
         />
       )}
-    </>
+    </div>
   );
 }

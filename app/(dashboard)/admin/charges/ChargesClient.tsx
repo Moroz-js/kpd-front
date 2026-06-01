@@ -296,7 +296,7 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4 h-[calc(100vh-3rem)] min-h-0">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" onClick={() => setCreateOpen(true)}>
@@ -359,8 +359,7 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
       ) : filtered.length === 0 ? (
         <div className="text-xs text-neutral-400 py-8 text-center">Нет данных</div>
       ) : (
-        <div className="rounded-md border bg-white overflow-x-auto">
-          <Table>
+        <Table containerClassName="rounded-md border bg-white flex-1 min-h-0 overflow-auto">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-8">
@@ -459,7 +458,6 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
               })}
             </TableBody>
           </Table>
-        </div>
       )}
 
       {createOpen && (

@@ -4,11 +4,15 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+function Table({
+  className,
+  containerClassName,
+  ...props
+}: React.ComponentProps<"table"> & { containerClassName?: string }) {
   return (
     <div
       data-slot="table-container"
-      className="relative w-full overflow-x-auto"
+      className={cn("relative w-full overflow-x-auto", containerClassName)}
     >
       <table
         data-slot="table"
@@ -70,7 +74,7 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
     <th
       data-slot="table-head"
       className={cn(
-        "h-8 px-2 text-left align-middle text-xs font-medium text-neutral-600 uppercase tracking-wide bg-neutral-100 whitespace-nowrap [&:has([role=checkbox])]:pr-0",
+        "h-8 px-2 text-left align-middle text-xs font-medium text-neutral-600 uppercase tracking-wide bg-neutral-100 whitespace-nowrap sticky top-0 z-10 [&:has([role=checkbox])]:pr-0",
         className
       )}
       {...props}
