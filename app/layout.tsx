@@ -20,7 +20,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ru" className={`${geist.variable} h-full antialiased`}>
-      <body className="min-h-full font-sans">
+      <body className="h-full font-sans overflow-hidden">
         {children}
         <Toaster position="top-right" />
       </body>
