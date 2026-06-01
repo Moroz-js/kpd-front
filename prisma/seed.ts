@@ -574,7 +574,6 @@ async function seedWorksAndPayments() {
     const months2026: MonthSpec[] = [
       { year: 2026, month: 1, works: [
           { task: "Монтаж корпоративного ролика Q1",     amount: 55_000 },
-          { task: "SMM-ведение январь",                  amount: 25_000 },
       ]},
       { year: 2026, month: 2, works: [
           { task: "Монтаж серии shorts (5 шт.)",         amount: 40_000 },
@@ -825,7 +824,7 @@ async function seedOtherExpenses() {
     responsibleUserId: string; createdById: string;
     executionYear: number; executionMonth: number;
     description: string; amount: number;
-    workStatus: string; paymentStatus: string;
+    workStatus: string; paymentStatus: string | null;
     bankAccountId?: string | null;
     paymentAmount?: number; plannedPayAt?: Date; paidAt?: Date;
     checkedAt?: Date; preferredPayMethod?: string;
@@ -840,7 +839,7 @@ async function seedOtherExpenses() {
     resp: { id: string } | null,
     createdBy: { id: string } | null,
     desc: string, amount: number,
-    wStatus: string, pStatus: string,
+    wStatus: string, pStatus: string | null,
     extra?: Partial<OE>,
   ): OE | null => {
     if (!proj || !exec || !wt || !resp || !createdBy) return null;
@@ -882,9 +881,9 @@ async function seedOtherExpenses() {
     mkOE(2026, 4,  pContent, midjourney, wtSmm, ivanov, ivanov,   "Подписка Midjourney — апрель 2026",    3_000,   "checked", "planned", { paymentAmount: 3_000, plannedPayAt: md(2026, 5, 1), preferredPayMethod: "4DEV" }),
     mkOE(2026, 4,  pPortal,  rogaKopyta, wtIt,  sokolova, admin,  "Поддержка портала — апрель 2026",     80_000,  "checked", "planned", { paymentAmount: 80_000, plannedPayAt: md(2026, 5, 5) }),
     mkOE(2026, 4,  pDigital, mediaStart, wtSmm, sokolova, sokolova, "Контекстная реклама — апрель",      90_000,  "checked", "planned", { paymentAmount: 90_000, plannedPayAt: md(2026, 5, 10) }),
-    mkOE(2026, 5,  pSmm,     mediaStart, wtSmm, ivanov, ivanov,   "Реклама ВКонтакте — май 2026",        70_000,  "submitted", "planned"),
-    mkOE(2026, 5,  pContent, figma,      wtIt,  sokolova, admin,  "Figma (team) — май 2026",             15_000,  "submitted", "planned"),
-    mkOE(2026, 5,  pVideo,   midjourney, wtVideo, petrov, admin,  "Стоковые материалы для видео",         12_000,  "submitted", "planned"),
+    mkOE(2026, 5,  pSmm,     mediaStart, wtSmm, ivanov, ivanov,   "Реклама ВКонтакте — май 2026",        70_000,  "submitted", null),
+    mkOE(2026, 5,  pContent, figma,      wtIt,  sokolova, admin,  "Figma (team) — май 2026",             15_000,  "submitted", null),
+    mkOE(2026, 5,  pVideo,   midjourney, wtVideo, petrov, admin,  "Стоковые материалы для видео",         12_000,  "submitted", null),
   ].filter((r): r is OE => r !== null));
 
   for (const row of rows) {
