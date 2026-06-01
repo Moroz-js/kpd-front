@@ -275,7 +275,7 @@ model OtherExpense {
   paidAt               DateTime?
   checkedAt            DateTime?
   workStatus           String       @default("submitted") // submitted | checked | paid | rework
-  paymentStatus        String       @default("planned") // planned | paid
+  paymentStatus        String?      // planned | paid | null (null = ожидает проверки)
   preferredPayMethod   String?
   comment              String?
   createdById          String

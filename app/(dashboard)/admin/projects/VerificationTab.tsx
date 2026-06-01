@@ -74,18 +74,15 @@ function CommentCell({
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          title={comment ? comment : "Добавить комментарий"}
-          className={`ml-1.5 rounded p-0.5 transition-colors ${
-            comment
-              ? "text-blue-500 hover:text-blue-700"
-              : "text-neutral-300 hover:text-neutral-500"
-          }`}
-        >
-          <MessageSquare className="h-3.5 w-3.5" />
-        </button>
+      <PopoverTrigger
+        title={comment ? comment : "Добавить комментарий"}
+        className={`ml-1.5 rounded p-0.5 transition-colors border-0 bg-transparent cursor-pointer ${
+          comment
+            ? "text-blue-500 hover:text-blue-700"
+            : "text-neutral-300 hover:text-neutral-500"
+        }`}
+      >
+        <MessageSquare className="h-3.5 w-3.5" />
       </PopoverTrigger>
       <PopoverContent className="w-64 p-3" side="top" align="center">
         <div className="space-y-2">

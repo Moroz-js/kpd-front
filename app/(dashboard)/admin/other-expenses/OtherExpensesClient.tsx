@@ -687,7 +687,7 @@ function OtherExpenseFormDialog({
           )}
           <div className="space-y-1.5">
             <Label>Статус работы</Label>
-            <Select value={workStatus || "__none__"} onValueChange={(v) => setWorkStatus(v === "__none__" ? "" : v)}>
+            <Select value={workStatus || "__none__"} onValueChange={(v) => setWorkStatus(v === "__none__" ? "" : (v ?? ""))}>
               <SelectTrigger>
                 <SelectValue>{workStatus ? (WORK_STATUSES[workStatus as keyof typeof WORK_STATUSES]?.label ?? workStatus) : "— По умолчанию —"}</SelectValue>
               </SelectTrigger>

@@ -23,7 +23,7 @@ export type PayoutRow = {
   executorName: string;
 
   amount: number;
-  paymentStatus: string;
+  paymentStatus: string | null;
   plannedPayAt: Date | null;
   paidAt: Date | null;
   bankAccountId: string | null;
@@ -120,7 +120,7 @@ function applyFilter(rows: PayoutRow[], f: PayoutsFilter): PayoutRow[] {
     if (f.periodMonth?.length && !f.periodMonth.includes(r.periodMonth)) return false;
     if (f.weekPlanFact?.length && (r.weekPlanFact == null || !f.weekPlanFact.includes(r.weekPlanFact))) return false;
     if (f.executorId?.length && !f.executorId.includes(r.executorId)) return false;
-    if (f.paymentStatus?.length && !f.paymentStatus.includes(r.paymentStatus)) return false;
+    if (f.paymentStatus?.length && !f.paymentStatus.includes(r.paymentStatus ?? "")) return false;
     if (f.bankAccountId?.length && r.bankAccountId && !f.bankAccountId.includes(r.bankAccountId)) return false;
     if (f.sourceType?.length && !f.sourceType.includes(r.sourceType)) return false;
     return true;
