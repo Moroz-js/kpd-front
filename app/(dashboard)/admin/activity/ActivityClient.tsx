@@ -104,7 +104,7 @@ export function ActivityClient() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4 h-[calc(100vh-3rem)] min-h-0">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">История действий</h1>
         <Select
@@ -121,12 +121,12 @@ export function ActivityClient() {
         </Select>
       </div>
 
-      <div className="rounded-lg border border-neutral-200 bg-white overflow-hidden">
+      <div className="rounded-lg border border-neutral-200 bg-white overflow-auto flex-1 min-h-0">
         {!data && <div className="p-6 text-sm text-neutral-500">Загрузка…</div>}
         {data && data.items.length === 0 && <div className="p-6 text-sm text-neutral-400 text-center">Нет записей</div>}
         {data && data.items.length > 0 && (
           <table className="w-full border-collapse text-sm">
-            <thead>
+            <thead className="sticky top-0 z-10">
               <tr className="bg-neutral-50 border-b border-neutral-200">
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-neutral-500 w-36">Время</th>
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-neutral-500 w-36">Пользователь</th>

@@ -101,7 +101,7 @@ export function WorkTypesClient() {
   }
 
   return (
-    <>
+    <div className="flex flex-col h-[calc(100vh-3rem)] min-h-0">
       <PageHeader
         title="Виды работ"
         actions={
@@ -147,8 +147,7 @@ export function WorkTypesClient() {
         />
       </div>
 
-      <div className="rounded-md border bg-white">
-        <Table>
+      <Table containerClassName="rounded-md border bg-white flex-1 min-h-0 overflow-auto">
           <TableHeader>
             <TableRow>
               <SortableHead field="name" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
@@ -230,7 +229,6 @@ export function WorkTypesClient() {
             )}
           </TableBody>
         </Table>
-      </div>
 
       {editing && (
         <WorkTypeEditDialog
@@ -264,7 +262,7 @@ export function WorkTypesClient() {
           if (unarchiveTarget) await handleUnarchive(unarchiveTarget);
         }}
       />
-    </>
+    </div>
   );
 }
 
