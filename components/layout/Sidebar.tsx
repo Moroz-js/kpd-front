@@ -119,7 +119,7 @@ export function Sidebar({ role, fullName, hasProjects = true }: SidebarProps) {
       : rawGroups;
 
   return (
-    <aside className="fixed left-0 top-0 h-full w-60 bg-white border-r border-neutral-200 flex flex-col z-10">
+    <aside className="flex-shrink-0 w-60 h-full bg-white border-r border-neutral-200 flex flex-col z-10 overflow-y-auto">
       <div className="px-4 py-5 border-b border-neutral-200">
         <span className="text-xl font-bold text-neutral-800">КПД</span>
       </div>
