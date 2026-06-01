@@ -1,12 +1,12 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { getDatabaseUrl } from "./load-env.mjs";
+import { getDatabaseUrl, isPostgresUrl } from "./database-url.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const schemaPath = join(root, "prisma", "schema.prisma");
 const url = getDatabaseUrl();
-const provider = /^postgres(ql)?:\/\//i.test(url) ? "postgresql" : "sqlite";
+const provider = isPostgresUrl(url) ? "postgresql" : "sqlite";
 
 let schema = readFileSync(schemaPath, "utf8");
 const next = schema.replace(

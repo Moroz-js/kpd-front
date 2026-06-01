@@ -5,18 +5,20 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-/** Как Prisma: сначала .env, затем .env.local с перезаписью */
+/** .env не перезаписывает process.env (Vercel / shell). .env.local — локальные override. */
 export function loadEnv() {
-  for (const file of [".env", ".env.local"]) {
+  const baseFiles = [".env"];
+  if (process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production") {
+    baseFiles.push(".env.production");
+  }
+  for (const file of baseFiles) {
     const path = join(root, file);
     if (existsSync(path)) {
-      config({ path, override: file === ".env.local" });
+      config({ path, override: false });
     }
   }
-}
-
-export function getDatabaseUrl() {
-  loadEnv();
-  const raw = process.env.DATABASE_URL?.trim() ?? "file:./kpd.db";
-  return raw.replace(/^["']|["']$/g, "");
+  const localPath = join(root, ".env.local");
+  if (existsSync(localPath)) {
+    config({ path: localPath, override: true });
+  }
 }
