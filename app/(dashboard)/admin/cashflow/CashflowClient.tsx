@@ -256,7 +256,7 @@ export function CashflowClient() {
             </button>
           </div>
         )}
-        <div className="overflow-auto" style={{ maxHeight: "calc(100vh - 200px)" }}>
+        <div className="overflow-x-auto">
           <table className="min-w-max border-collapse text-sm">
             <thead className="sticky top-0 z-20">
               <tr className="bg-neutral-50 border-b border-neutral-100">
