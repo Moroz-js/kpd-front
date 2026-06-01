@@ -23,9 +23,9 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="h-screen bg-neutral-50 overflow-hidden">
+    <div className="h-screen bg-neutral-50">
       <Sidebar role={role} fullName={fullName} hasProjects={hasProjects} />
-      <main className="ml-60 h-screen overflow-y-auto">
+      <main className="fixed top-0 left-60 right-0 bottom-0 overflow-y-auto bg-neutral-50">
         <div className="p-6">{children}</div>
       </main>
     </div>
