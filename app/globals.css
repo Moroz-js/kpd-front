@@ -98,9 +98,17 @@
   * {
     @apply border-border outline-ring/50;
   }
-  html, body {
-    @apply bg-background text-foreground font-sans;
-    height: 100%;
-    overflow: hidden;
+  body {
+    @apply bg-background text-foreground;
   }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* Outside any layer — highest priority */
+html, body {
+  height: 100% !important;
+  overflow: hidden !important;
+  max-height: 100vh !important;
 }

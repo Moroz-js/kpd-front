@@ -19,8 +19,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ru" className={`${geist.variable} h-full antialiased`}>
-      <body className="h-full font-sans overflow-hidden">
+    <html lang="ru" className={`${geist.variable} antialiased`} style={{ height: "100%", overflow: "hidden" }}>
+      <body className="font-sans" style={{ height: "100%", overflow: "hidden", maxHeight: "100vh" }}>
         {children}
         <Toaster position="top-right" />
       </body>

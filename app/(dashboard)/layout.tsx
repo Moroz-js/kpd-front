@@ -23,10 +23,10 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="h-screen bg-neutral-50">
+    <div className="h-screen overflow-hidden bg-neutral-50">
       <Sidebar role={role} fullName={fullName} hasProjects={hasProjects} />
-      <main className="fixed top-0 left-60 right-0 bottom-0 overflow-y-auto overflow-x-hidden bg-neutral-50">
-        <div className="p-6">{children}</div>
+      <main className="fixed top-0 left-60 right-0 bottom-0 overflow-y-auto bg-neutral-50" style={{ overflowX: "hidden" }}>
+        <div className="p-6 w-full max-w-full min-w-0 box-border">{children}</div>
       </main>
     </div>
   );
