@@ -359,9 +359,25 @@ export function PayoutsClient() {
                   onCheckedChange={() => toggleAll(orderedRowIds)}
                 />
               </TableHead>
-              <TableHead className="w-12 max-w-12 px-0.5 text-center" title="Год план-факт">Год ПФ</TableHead>
-              <SortableHead field="periodYear" sortBy={activeSortField()} sortDir={activeSortDir()} onSort={handleSort} className="w-12 max-w-12 px-0.5 text-center">
-                <span title="Год выполнения">Год вып.</span>
+              <TableHead className="w-12 max-w-12 px-1 text-left align-middle whitespace-normal">
+                <span className="block text-[10px] leading-tight font-medium tracking-tight normal-case text-left">
+                  Год
+                  <br />
+                  план-факт
+                </span>
+              </TableHead>
+              <SortableHead
+                field="periodYear"
+                sortBy={activeSortField()}
+                sortDir={activeSortDir()}
+                onSort={handleSort}
+                className="w-16 max-w-16 px-1 text-left !whitespace-normal"
+              >
+                <span className="block text-[10px] leading-tight font-medium tracking-tight normal-case text-left">
+                  Год
+                  <br />
+                  выполнения
+                </span>
               </SortableHead>
               <SortableHead field="periodMonth" sortBy={activeSortField()} sortDir={activeSortDir()} onSort={handleSort} className="w-11 max-w-11 px-0.5">Месяц</SortableHead>
               <SortableHead field="weekPlanFact" sortBy={activeSortField()} sortDir={activeSortDir()} onSort={handleSort}>Неделя</SortableHead>
@@ -395,8 +411,8 @@ export function PayoutsClient() {
                         onSelect={handleRowSelect}
                       />
                     </TableCell>
-                    <TableCell className="text-xs tabular-nums w-12 max-w-12 px-0.5 text-center">{r.yearPlanFact ?? "—"}</TableCell>
-                    <TableCell className="text-xs tabular-nums w-12 max-w-12 px-0.5 text-center">{r.periodYear}</TableCell>
+                    <TableCell className="text-xs tabular-nums w-12 max-w-12 px-1 text-left">{r.yearPlanFact ?? "—"}</TableCell>
+                    <TableCell className="text-xs tabular-nums w-16 max-w-16 px-1 text-left">{r.periodYear}</TableCell>
                     <TableCell className="text-xs w-11 max-w-11 px-0.5 whitespace-nowrap">{monthLabel(r.periodMonth)}</TableCell>
                     <TableCell>{r.weekPlanFact != null ? weekLabel(r.weekPlanFact) : "—"}</TableCell>
                     <TableCell>{r.executorName}</TableCell>

@@ -370,18 +370,26 @@ export function IssuedWorksClient() {
                 sortBy={activeSortField()}
                 sortDir={activeSortDir()}
                 onSort={handleSort}
-                className="w-12 max-w-12 px-0.5 text-center"
+                className="w-12 max-w-12 px-1 text-left !whitespace-normal"
               >
-                <span title="Год план-факт">Год ПФ</span>
+                <span className="block text-[10px] leading-tight font-medium tracking-tight normal-case text-left">
+                  Год
+                  <br />
+                  план-факт
+                </span>
               </SortableHead>
               <SortableHead
                 field="executionYear"
                 sortBy={activeSortField()}
                 sortDir={activeSortDir()}
                 onSort={handleSort}
-                className="w-12 max-w-12 px-0.5 text-center"
+                className="w-16 max-w-16 px-1 text-left !whitespace-normal"
               >
-                <span title="Год выполнения">Год вып.</span>
+                <span className="block text-[10px] leading-tight font-medium tracking-tight normal-case text-left">
+                  Год
+                  <br />
+                  выполнения
+                </span>
               </SortableHead>
               <SortableHead
                 field="executionMonth"
@@ -478,8 +486,8 @@ export function IssuedWorksClient() {
                       onSelect={handleRowSelect}
                     />
                   </TableCell>
-                  <TableCell className="text-xs tabular-nums w-12 max-w-12 px-0.5 text-center">{r.yearPlanFact ?? "—"}</TableCell>
-                  <TableCell className="text-xs tabular-nums w-12 max-w-12 px-0.5 text-center">{r.executionYear}</TableCell>
+                  <TableCell className="text-xs tabular-nums w-12 max-w-12 px-1 text-left">{r.yearPlanFact ?? "—"}</TableCell>
+                  <TableCell className="text-xs tabular-nums w-16 max-w-16 px-1 text-left">{r.executionYear}</TableCell>
                   <TableCell className="text-xs w-11 max-w-11 px-0.5 whitespace-nowrap">{monthLabel(r.executionMonth)}</TableCell>
                   <TableCell className="border-r-2 border-neutral-300 text-sm">
                     {r.weekPlanFact != null ? weekLabel(r.weekPlanFact) : "—"}
