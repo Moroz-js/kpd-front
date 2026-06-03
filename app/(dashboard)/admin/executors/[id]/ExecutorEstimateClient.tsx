@@ -29,6 +29,7 @@ type ExecutorDetail = {
   specialties: string | null;
   entityForm: string | null;
   isResponsible: boolean;
+  responsibleActive: boolean;
   onboardingSeeded: boolean;
   user: { id: string; email: string; fullName: string; isActive: boolean } | null;
   executorWorkTypes: { workType: WorkType }[];
