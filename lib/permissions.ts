@@ -14,6 +14,8 @@ export type SessionLike = {
   id: string;
   role: string;
   executorId?: string | null;
+  isResponsible?: boolean;
+  responsibleActive?: boolean;
 };
 
 export type ProjectLike = { responsibleUserId: string | null };
@@ -26,7 +28,13 @@ export function isAdmin(user: SessionLike | null | undefined): boolean {
 }
 
 export function isResponsible(user: SessionLike | null | undefined): boolean {
-  return user?.role === "responsible";
+  if (!user) return false;
+  if (user.role === "responsible") return user.responsibleActive !== false;
+  return (
+    user.role === "executor" &&
+    user.isResponsible === true &&
+    user.responsibleActive !== false
+  );
 }
 
 export function isExecutor(user: SessionLike | null | undefined): boolean {

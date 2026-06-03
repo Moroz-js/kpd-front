@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
+import { checkOtherExpense } from "@/lib/services/other-expenses";
 import { updateIssuedWork } from "@/lib/services/issuedWorks";
 
 function parseId(id: string): { sourceType: "personal" | "other-expense"; sourceId: string } | null {
@@ -22,12 +23,10 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   if (!parsedId) return NextResponse.json({ error: "Bad id" }, { status: 400 });
 
   try {
-    const updated = await updateIssuedWork(
-      parsedId.sourceType,
-      parsedId.sourceId,
-      { workStatus: "checked" },
-      me.id
-    );
+    const updated =
+      parsedId.sourceType === "other-expense"
+        ? await checkOtherExpense(parsedId.sourceId, me.id)
+        : await updateIssuedWork(parsedId.sourceType, parsedId.sourceId, { workStatus: "checked" }, me.id);
     return NextResponse.json(updated);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error";

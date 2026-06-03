@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
 import { updateIssuedWork } from "@/lib/services/issuedWorks";
+import { WORK_STATUSES_SETTABLE } from "@/lib/statuses";
 
 const patchSchema = z.object({
   projectId: z.string().optional(),
@@ -11,7 +12,7 @@ const patchSchema = z.object({
   executionMonth: z.number().int().min(1).max(12).optional(),
   executionYear: z.number().int().optional(),
   executorId: z.string().optional(),
-  workStatus: z.enum(["submitted", "checked", "paid", "rework"]).optional(),
+  workStatus: z.enum(WORK_STATUSES_SETTABLE).optional(),
 });
 
 /** Composite id format: `${sourceType}:${sourceId}` (e.g. "personal:cl123" or "other-expense:cl456"). */
@@ -58,26 +59,20 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
         { status: 400 }
       );
     }
-  } else if (patch.plannedPayAt !== undefined) {
-    return NextResponse.json(
-      { error: "Дата оплаты план у Прочей траты редактируется только в источнике" },
-      { status: 400 }
-    );
   }
 
   try {
+    const { plannedPayAt, ...rest } = patch;
+    const issuedPatch = {
+      ...rest,
+      ...(plannedPayAt !== undefined && {
+        plannedPayAt: plannedPayAt ? new Date(plannedPayAt) : null,
+      }),
+    };
     const updated = await updateIssuedWork(
       parsedId.sourceType,
       parsedId.sourceId,
-      {
-        ...patch,
-        plannedPayAt:
-          patch.plannedPayAt === undefined
-            ? undefined
-            : patch.plannedPayAt
-              ? new Date(patch.plannedPayAt)
-              : null,
-      },
+      issuedPatch,
       me.id
     );
     return NextResponse.json(updated);

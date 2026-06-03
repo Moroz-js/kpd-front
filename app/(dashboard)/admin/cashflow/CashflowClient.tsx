@@ -6,8 +6,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { getISOWeeksInYear } from "@/lib/iso-weeks";
+import { getISOWeek, getISOWeekYear, getISOWeeksInYear } from "@/lib/iso-weeks";
 import { CashflowChart } from "./CashflowChart";
+import { CashflowCommentCell } from "@/components/ui-custom/CashflowCommentCell";
+import {
+  cashflowCommentMapKey,
+  cashflowHighlightCellClass,
+  type CashflowCellMeta,
+} from "@/lib/cashflow-comments";
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
@@ -74,10 +80,12 @@ type SummaryDef = {
   isEditable?: boolean;
   highlight?: boolean;
   signed?: boolean;
+  /** Подпись слева, цифры курсивом (строка «Баланс на начало») */
+  balanceStartRow?: boolean;
 };
 
 const SUMMARY_DEFS: SummaryDef[] = [
-  { key: "balanceStart", label: "Баланс на начало", isEditable: true },
+  { key: "balanceStart", label: "Баланс на начало", isEditable: true, balanceStartRow: true },
   { key: "incomeFact", label: "Приход (факт)" },
   { key: "incomePlanOnly", label: "Приход (план)" },
   { key: "incomePlanFact", label: "Приход (план+факт)" },
@@ -145,23 +153,43 @@ export function CashflowClient() {
     },
   });
 
+  const { data: cellMeta, mutate: mutateCellMeta } = useSWR<Record<string, CashflowCellMeta>>(
+    `/api/cashflow/comments?year=${year}`,
+    fetcher
+  );
+
+  async function saveCellMeta(
+    rowKey: string,
+    week: number,
+    payload: { text: string; highlight: string | null }
+  ) {
+    const res = await fetch("/api/cashflow/comments", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ year, week, rowKey, ...payload }),
+    });
+    if (!res.ok) {
+      toast.error("Не удалось сохранить");
+      return;
+    }
+    await mutateCellMeta();
+  }
+
+  function getCellMeta(rowKey: string, week: number): CashflowCellMeta | undefined {
+    return cellMeta?.[cashflowCommentMapKey(rowKey, week)];
+  }
+
   const now = new Date();
-  // Compute current ISO week inline
-  const currentISOWeek = (() => {
-    const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-    const dayNum = d.getUTCDay() || 7;
-    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-    return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
-  })();
+  const currentISOWeek = getISOWeek(now);
+  const currentISOYear = getISOWeekYear(now);
 
   const [showOldWeeks, setShowOldWeeks] = useState(false);
 
   const weeks = (data && !("error" in data)) ? data.weeks : [];
   const visibleWeeks = React.useMemo(() => {
-    if (!weeks.length || showOldWeeks || year !== currentYear) return weeks;
+    if (!weeks.length || showOldWeeks || year !== currentISOYear) return weeks;
     return weeks.filter((wh) => wh.week >= currentISOWeek - 2);
-  }, [weeks, showOldWeeks, year, currentYear, currentISOWeek]);
+  }, [weeks, showOldWeeks, year, currentISOYear, currentISOWeek]);
 
   const visibleWeekIndices = React.useMemo(
     () => visibleWeeks.map((vw) => weeks.findIndex((w) => w.week === vw.week)),
@@ -175,12 +203,67 @@ export function CashflowClient() {
 
   const numCls = "px-2 py-1 text-right text-xs tabular-nums whitespace-nowrap border-r border-neutral-100 last:border-0";
   const tdCls = numCls;
-  const thCls = "px-2 py-1 text-center text-xs font-medium text-neutral-500 border-r border-neutral-100 whitespace-nowrap";
+  const compactTdCls =
+    "px-2 py-0.5 text-right text-[11px] leading-snug tabular-nums whitespace-nowrap border-r border-neutral-100 last:border-0";
+  const thCls =
+    "px-2 py-0.5 text-center text-xs leading-snug font-medium text-neutral-500 border-r border-neutral-100 whitespace-nowrap";
   const stickyLbl = "sticky left-0 z-10 bg-white px-3 py-1 text-xs border-r border-neutral-200 whitespace-nowrap min-w-[200px] max-w-[240px] shadow-[1px_0_0_0_#e5e7eb]";
+  const compactLbl =
+    "sticky left-0 z-10 bg-white px-2.5 py-0.5 text-[11px] leading-snug border-r border-neutral-200 whitespace-nowrap min-w-[200px] max-w-[240px] shadow-[1px_0_0_0_#e5e7eb]";
   const stickyHdr = "sticky left-0 z-[15] bg-neutral-50 border-r border-neutral-200 shadow-[1px_0_0_0_#e5e7eb] px-3 py-1 text-xs font-semibold text-neutral-500 tracking-wide uppercase whitespace-nowrap min-w-[200px]";
-  const isFuture = (wIdx: number) => weeks[wIdx]?.week > currentISOWeek && year === currentYear;
-  const isCurrent = (wIdx: number) => weeks[wIdx]?.week === currentISOWeek && year === currentYear;
-  const isPast = (wIdx: number) => weeks[wIdx]?.week < currentISOWeek && year === currentYear;
+  const compactHdr =
+    "sticky left-0 z-[15] bg-neutral-50 border-r border-neutral-200 shadow-[1px_0_0_0_#e5e7eb] px-2.5 py-0.5 text-[11px] font-semibold text-neutral-500 tracking-wide uppercase whitespace-nowrap min-w-[200px]";
+  const isFuture = (wIdx: number) =>
+    year > currentISOYear ||
+    (year === currentISOYear && (weeks[wIdx]?.week ?? 0) > currentISOWeek);
+  const isCurrent = (wIdx: number) =>
+    year === currentISOYear && weeks[wIdx]?.week === currentISOWeek;
+  const isPast = (wIdx: number) =>
+    year < currentISOYear ||
+    (year === currentISOYear && (weeks[wIdx]?.week ?? 0) < currentISOWeek);
+
+  function weekCellClass(idx: number, extra?: string, compact?: boolean) {
+    return cn(
+      compact ? compactTdCls : tdCls,
+      isCurrent(idx)
+        ? compact
+          ? "bg-blue-50/70 font-medium"
+          : "bg-blue-50/70 font-semibold"
+        : isPast(idx)
+          ? "text-neutral-400 bg-neutral-50/30"
+          : isFuture(idx)
+            ? "bg-neutral-800/5 text-neutral-700"
+            : "",
+      extra
+    );
+  }
+
+  function renderWeekCell(
+    rowKey: string,
+    idx: number,
+    content: React.ReactNode,
+    extraTdClass?: string,
+    compact?: boolean
+  ) {
+    const week = weeks[idx]?.week;
+    if (week == null) return null;
+    const meta = getCellMeta(rowKey, week);
+    const highlightClass = cashflowHighlightCellClass(meta?.highlight);
+    return (
+      <td
+        key={idx}
+        className={weekCellClass(idx, cn(extraTdClass, highlightClass), compact)}
+      >
+        <CashflowCommentCell
+          meta={meta}
+          compact={compact}
+          onSave={(payload) => saveCellMeta(rowKey, week, payload)}
+        >
+          {content}
+        </CashflowCommentCell>
+      </td>
+    );
+  }
 
   // Recompute month groups from visible weeks
   const visibleMonthGroups: { label: string; count: number }[] = [];
@@ -237,7 +320,9 @@ export function CashflowClient() {
           weeks={weeks}
           balanceEndDP={summary.balanceEndDP}
           balanceEndBudget={summary.balanceEndBudget}
+          projects={[...(externalProjects ?? projects), ...(internalProjects ?? [])]}
           currentISOWeek={currentISOWeek}
+          currentISOYear={currentISOYear}
           year={year}
         />
       )}
@@ -260,49 +345,72 @@ export function CashflowClient() {
           <table className="min-w-max border-collapse text-sm">
             <thead className="sticky top-0 z-20">
               <tr className="bg-neutral-50 border-b border-neutral-100">
-                <th className={cn(stickyLbl, "z-30 font-semibold text-neutral-600 bg-neutral-50")} rowSpan={2}>Показатель / Проект</th>
+                <th className={cn(compactLbl, "z-30 font-medium text-neutral-600 bg-neutral-50 py-0.5")}>
+                  Показатель / Проект
+                </th>
                 {visibleMonthGroups.map((mg, i) => (
-                  <th key={i} colSpan={mg.count} className="px-2 py-1 text-center text-xs font-medium text-neutral-500 border-r border-neutral-100 bg-neutral-50">
+                  <th key={i} colSpan={mg.count} className={cn(thCls, "bg-neutral-50")}>
                     {mg.label}
                   </th>
                 ))}
                 <th className={cn(thCls, "bg-neutral-100 font-semibold")}>Итого</th>
               </tr>
               <tr className="bg-neutral-50 border-b border-neutral-200">
-                <th className={cn(stickyLbl, "z-30 bg-neutral-50 text-[10px] text-neutral-400 font-normal italic")} />
+                <th className={cn(stickyLbl, "z-30 text-left font-semibold text-neutral-600 bg-neutral-50")}>
+                  Неделя
+                </th>
                 {visibleWeeks.map((wh, vi) => {
-                  const realIdx = visibleWeekIndices[vi];
+                  const realIdx = visibleWeekIndices[vi]!;
                   return (
                     <th key={wh.week} className={cn(
                       thCls,
-                      isCurrent(realIdx) ? "!bg-blue-50 font-semibold" : isPast(realIdx) ? "text-neutral-400 bg-neutral-50/30" : "bg-neutral-50"
+                      isCurrent(realIdx) ? "!bg-blue-50 font-semibold text-neutral-900" : isPast(realIdx) ? "text-neutral-400 bg-neutral-50/30" : "bg-neutral-50"
                     )}>
                       {wh.week}
                     </th>
                   );
                 })}
-                <th className={cn(thCls, "bg-neutral-100")}>Неделя</th>
+                <th className={cn(thCls, "bg-neutral-100")} />
               </tr>
             </thead>
             <tbody>
               <tr className="bg-neutral-50 border-b border-neutral-200">
-                <td className={stickyHdr}>Сводка</td>
-                <td colSpan={visibleWeeks.length + 1} className="bg-neutral-50" />
+                <td className={compactHdr}>Сводка</td>
+                <td colSpan={visibleWeeks.length + 1} className="bg-neutral-50 py-0" />
               </tr>
               {SUMMARY_DEFS.map(def => {
                 const arr = summary[def.key];
                 const total = rowTotal(arr);
+                const valueCls = def.balanceStartRow ? "italic" : undefined;
                 return (
-                  <tr key={def.key} className={cn("border-b border-neutral-100 hover:bg-neutral-50", def.highlight ? "font-semibold bg-neutral-50/50" : "")}>
-                    <td className={cn(stickyLbl, "text-right", def.highlight ? "font-semibold bg-neutral-50" : "font-normal italic text-neutral-500")}>{def.label}</td>
-                    {visibleWeekIndices.map((idx) => (
-                      <td key={idx} className={cn(tdCls,
-                        isCurrent(idx) ? "bg-blue-50/70 font-semibold" : isPast(idx) ? "text-neutral-400 bg-neutral-50/30" : isFuture(idx) ? "bg-neutral-800/5 text-neutral-700" : "",
-                      )}>
-                        {"signed" in def && def.signed ? fmtSign(arr[idx] ?? 0) : fmt(arr[idx] ?? 0)}
-                      </td>
-                    ))}
-                    <td className={cn(tdCls, "bg-neutral-50")}>
+                  <tr
+                    key={def.key}
+                    className={cn(
+                      "border-b border-neutral-100 hover:bg-neutral-50",
+                      def.highlight ? "bg-neutral-50/50" : ""
+                    )}
+                  >
+                    <td
+                      className={cn(
+                        compactLbl,
+                        def.balanceStartRow ? "text-left font-normal italic text-neutral-600" : "text-right",
+                        def.highlight ? "font-medium bg-neutral-50 text-neutral-800" : "font-normal italic text-neutral-500"
+                      )}
+                    >
+                      {def.label}
+                    </td>
+                    {visibleWeekIndices.map((idx) =>
+                      renderWeekCell(
+                        `summary:${def.key}`,
+                        idx,
+                        <span className={valueCls}>
+                          {"signed" in def && def.signed ? fmtSign(arr[idx] ?? 0) : fmt(arr[idx] ?? 0)}
+                        </span>,
+                        cn(valueCls, def.highlight && "font-medium"),
+                        true
+                      )
+                    )}
+                    <td className={cn(compactTdCls, "bg-neutral-50", valueCls, def.highlight && "font-medium")}>
                       {"signed" in def && def.signed ? fmtSign(total) : fmt(total)}
                     </td>
                   </tr>
@@ -314,16 +422,27 @@ export function CashflowClient() {
                 const total = rowTotal(arr);
                 return (
                   <tr key={`agg-${def.key}`} className="border-b border-neutral-100 hover:bg-neutral-50">
-                    <td className={cn(stickyLbl, "text-right", def.bold ? "font-semibold bg-neutral-50" : "font-normal italic text-neutral-500")}>{def.label}</td>
-                    {visibleWeekIndices.map((idx) => (
-                      <td key={idx} className={cn(tdCls,
-                        isCurrent(idx) ? "bg-blue-50/70" : isPast(idx) ? "text-neutral-400 bg-neutral-50/30" : isFuture(idx) ? "bg-neutral-800/5 text-neutral-700" : "",
-                        def.bold ? "font-semibold" : ""
-                      )}>
-                        {fmt(arr[idx] ?? 0)}
-                      </td>
-                    ))}
-                    <td className={cn(tdCls, "bg-neutral-50", def.bold ? "font-semibold" : "")}>{fmt(total)}</td>
+                    <td
+                      className={cn(
+                        compactLbl,
+                        "text-right",
+                        def.bold ? "font-medium bg-neutral-50 text-neutral-800" : "font-normal italic text-neutral-500"
+                      )}
+                    >
+                      {def.label}
+                    </td>
+                    {visibleWeekIndices.map((idx) =>
+                      renderWeekCell(
+                        `aggregate:${def.key}`,
+                        idx,
+                        fmt(arr[idx] ?? 0),
+                        def.bold ? "font-medium" : "",
+                        true
+                      )
+                    )}
+                    <td className={cn(compactTdCls, "bg-neutral-50", def.bold ? "font-medium" : "")}>
+                      {fmt(total)}
+                    </td>
                   </tr>
                 );
               })}
@@ -343,7 +462,7 @@ export function CashflowClient() {
 
                 return (
                   <React.Fragment key={blockKey}>
-                    <tr aria-hidden><td colSpan={visibleWeeks.length + 2} className="h-2 bg-neutral-50/60 p-0 border-0" /></tr>
+                    <tr aria-hidden><td colSpan={visibleWeeks.length + 2} className="h-1 bg-neutral-50/60 p-0 border-0" /></tr>
                     <tr className="bg-neutral-50 border-t-2 border-b border-neutral-200">
                       <td className={stickyHdr}>{blockLabels[blockKey]}</td>
                       <td colSpan={visibleWeeks.length + 1} className="bg-neutral-50" />
@@ -354,11 +473,13 @@ export function CashflowClient() {
                       return (
                         <tr key={`${blockKey}-${p.id}`} className="border-b border-neutral-100 hover:bg-neutral-50">
                           <td className={cn(stickyLbl, "font-normal")}>{p.name}</td>
-                          {visibleWeekIndices.map((idx) => (
-                            <td key={idx} className={cn(tdCls, isCurrent(idx) ? "bg-blue-50/70 font-semibold" : isPast(idx) ? "text-neutral-400 bg-neutral-50/30" : isFuture(idx) ? "bg-neutral-800/5 text-neutral-700" : "")}>
-                              {blockKey === "cf" ? fmtSign(arr[idx] ?? 0) : fmt(arr[idx] ?? 0)}
-                            </td>
-                          ))}
+                          {visibleWeekIndices.map((idx) =>
+                            renderWeekCell(
+                              `project:${p.id}:${blockKey}`,
+                              idx,
+                              blockKey === "cf" ? fmtSign(arr[idx] ?? 0) : fmt(arr[idx] ?? 0)
+                            )
+                          )}
                           <td className={cn(tdCls, "bg-neutral-50 font-medium")}>
                             {blockKey === "cf" ? fmtSign(last) : fmt(rowTotal(arr))}
                           </td>
@@ -376,11 +497,14 @@ export function CashflowClient() {
                       return (
                         <tr key={`${blockKey}-${p.id}`} className="border-b border-neutral-100 hover:bg-neutral-50">
                           <td className={cn(stickyLbl, "font-normal text-neutral-500")}>{p.name}</td>
-                          {visibleWeekIndices.map((idx) => (
-                            <td key={idx} className={cn(tdCls, "text-neutral-500", isCurrent(idx) ? "bg-blue-50/70 font-semibold" : isPast(idx) ? "text-neutral-300 bg-neutral-50/30" : isFuture(idx) ? "bg-neutral-800/5 text-neutral-600" : "")}>
-                              {blockKey === "cf" ? fmtSign(arr[idx] ?? 0) : fmt(arr[idx] ?? 0)}
-                            </td>
-                          ))}
+                          {visibleWeekIndices.map((idx) =>
+                            renderWeekCell(
+                              `project:${p.id}:${blockKey}`,
+                              idx,
+                              blockKey === "cf" ? fmtSign(arr[idx] ?? 0) : fmt(arr[idx] ?? 0),
+                              "text-neutral-500"
+                            )
+                          )}
                           <td className={cn(tdCls, "bg-neutral-50 font-medium text-neutral-500")}>
                             {blockKey === "cf" ? fmtSign(last) : fmt(rowTotal(arr))}
                           </td>

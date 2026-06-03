@@ -21,12 +21,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { WorkTypesMultiSelect } from "@/components/ui-custom/WorkTypesMultiSelect";
 import { EXECUTOR_COMPANY_STATUSES, EXECUTOR_TYPES, RECIPIENT_TYPES } from "@/lib/statuses";
 import type { ExecutorRow } from "./ExecutorsClient";
 
 type BankOption = { id: string; name: string; status: string };
 type ResponsibleOption = { id: string; fullName: string; isActive: boolean };
-type WorkTypeOption = { id: string; name: string; status: string };
+type WorkTypeOption = { id: string; name: string; status: string; segment?: string };
 
 export function ExecutorEditDialog({
   row,
@@ -64,9 +65,13 @@ export function ExecutorEditDialog({
   const isService = row.type === "service";
   const typeName = EXECUTOR_TYPES[row.type as keyof typeof EXECUTOR_TYPES] ?? row.type;
 
-  function toggleWorkType(id: string) {
-    setWorkTypeIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  }
+  const workTypeOptions = React.useMemo(
+    () =>
+      workTypes
+        .filter((w) => w.status === "active" || workTypeIds.includes(w.id))
+        .map((w) => ({ id: w.id, name: w.name, segment: w.segment, status: w.status })),
+    [workTypes, workTypeIds]
+  );
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -153,32 +158,15 @@ export function ExecutorEditDialog({
 
           <div className="space-y-1.5">
             <Label>Виды работ</Label>
-            <div className="flex flex-wrap gap-2 rounded-md border border-neutral-200 p-2 max-h-32 overflow-y-auto">
-              {workTypes
-                .filter((w) => w.status === "active" || workTypeIds.includes(w.id))
-                .map((w) => {
-                  const selected = workTypeIds.includes(w.id);
-                  return (
-                    <button
-                      key={w.id}
-                      type="button"
-                      onClick={() => toggleWorkType(w.id)}
-                      className={
-                        "rounded-md px-2 py-1 text-xs border transition-colors " +
-                        (selected
-                          ? "border-neutral-500 bg-neutral-100"
-                          : "border-neutral-200 bg-white hover:bg-neutral-50")
-                      }
-                    >
-                      {w.name}
-                      {w.status === "archived" && <span className="text-neutral-400"> (архив)</span>}
-                    </button>
-                  );
-                })}
-              {workTypes.length === 0 && (
-                <span className="text-sm text-neutral-500">Сначала создайте виды работ</span>
-              )}
-            </div>
+            {workTypes.length === 0 ? (
+              <span className="text-sm text-neutral-500">Сначала создайте виды работ</span>
+            ) : (
+              <WorkTypesMultiSelect
+                options={workTypeOptions}
+                value={workTypeIds}
+                onChange={setWorkTypeIds}
+              />
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">

@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import { ConfirmDialog } from "@/components/ui-custom/ConfirmDialog";
-import { ENTITY_STATUSES } from "@/lib/statuses";
+import { CLIENT_DEPARTMENTS, ENTITY_STATUSES } from "@/lib/statuses";
 import { formatMoney, formatDate } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -16,6 +16,7 @@ import { SortableHead } from "@/components/ui-custom/SortableHead";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DepartmentCombobox } from "@/components/ui-custom/DepartmentCombobox";
 
 type Row = {
   id: string;
@@ -58,9 +59,20 @@ export function ClientsClient() {
   const [archiveTarget, setArchiveTarget] = React.useState<Row | null>(null);
   const [unarchiveTarget, setUnarchiveTarget] = React.useState<Row | null>(null);
 
-  const departmentOptions = React.useMemo(() => {
+  const departmentUsage = React.useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const r of data ?? []) {
+      if (!r.department) continue;
+      counts[r.department] = (counts[r.department] ?? 0) + 1;
+    }
+    return counts;
+  }, [data]);
+
+  const existingDepartments = React.useMemo(() => {
     const list = data ?? [];
-    return Array.from(new Set(list.map((r) => r.department).filter(Boolean))).sort();
+    return Array.from(new Set(list.map((r) => r.department).filter(Boolean))).sort((a, b) =>
+      a.localeCompare(b, "ru")
+    );
   }, [data]);
 
   const companyOptions = React.useMemo(() => {
@@ -202,7 +214,8 @@ export function ClientsClient() {
       {editing && (
         <ClientEditDialog
           row={editing === "new" ? null : editing}
-          allDepartments={departmentOptions}
+          existingDepartments={existingDepartments}
+          departmentUsage={departmentUsage}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
@@ -238,23 +251,57 @@ export function ClientsClient() {
 
 function ClientEditDialog({
   row,
-  allDepartments,
+  existingDepartments,
+  departmentUsage,
   onClose,
   onSaved,
 }: {
   row: Row | null;
-  allDepartments: string[];
+  existingDepartments: string[];
+  departmentUsage: Record<string, number>;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [company, setCompany] = React.useState(row?.company ?? "");
   const [department, setDepartment] = React.useState(row?.department ?? "");
+  const [extraDepartments, setExtraDepartments] = React.useState<string[]>([]);
+  const [hiddenDepartments, setHiddenDepartments] = React.useState<Set<string>>(() => new Set());
   const [submitting, setSubmitting] = React.useState(false);
+
+  const departmentOptions = React.useMemo(() => {
+    const set = new Set<string>([
+      ...CLIENT_DEPARTMENTS,
+      ...existingDepartments,
+      ...extraDepartments,
+    ]);
+    if (row?.department) set.add(row.department);
+    return Array.from(set)
+      .filter((d) => !hiddenDepartments.has(d))
+      .sort((a, b) => a.localeCompare(b, "ru"));
+  }, [existingDepartments, extraDepartments, hiddenDepartments, row?.department]);
 
   React.useEffect(() => {
     setCompany(row?.company ?? "");
     setDepartment(row?.department ?? "");
+    setExtraDepartments([]);
+    setHiddenDepartments(new Set());
   }, [row]);
+
+  function handleAddDepartment(name: string) {
+    setExtraDepartments((prev) => (prev.includes(name) ? prev : [...prev, name]));
+    setDepartment(name);
+  }
+
+  function handleRemoveDepartment(name: string) {
+    const usage = departmentUsage[name] ?? 0;
+    if (usage > 0) {
+      toast.error("Нельзя удалить: департамент привязан к клиентам. Смените департамент у клиентов.");
+      return;
+    }
+    setHiddenDepartments((prev) => new Set([...prev, name]));
+    setExtraDepartments((prev) => prev.filter((d) => d !== name));
+    if (department === name) setDepartment("");
+  }
 
   const preview = department.trim() && company.trim() ? `${department.trim()} – ${company.trim()}` : "";
 
@@ -287,20 +334,14 @@ function ClientEditDialog({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="department">Департамент</Label>
-            <Input
+            <DepartmentCombobox
               id="department"
-              list="dept-options"
               value={department}
-              onChange={(e) => setDepartment(e.target.value)}
-              placeholder="Например: Контент – PR"
-              autoFocus
-              required
+              onValueChange={setDepartment}
+              options={departmentOptions}
+              onAddOption={handleAddDepartment}
+              onRemoveOption={handleRemoveDepartment}
             />
-            <datalist id="dept-options">
-              {allDepartments.map((d) => (
-                <option key={d} value={d} />
-              ))}
-            </datalist>
           </div>
           <div className="space-y-2">
             <Label htmlFor="company">Компания</Label>

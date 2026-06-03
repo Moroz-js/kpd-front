@@ -57,6 +57,7 @@ const FIELD_LABELS: Record<string, string> = {
   periodYear: "Год периода",
   preferredPayMethod: "Способ оплаты",
   isResponsible: "Ответственный по проектам",
+  responsibleActive: "Статус ответственного",
   isDefault: "По умолчанию",
   currency: "Валюта",
   accountNumber: "Номер счёта",

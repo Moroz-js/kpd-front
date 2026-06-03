@@ -8,7 +8,12 @@ import Link from "next/link";
 import { buttonVariants, Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { weekLabel, getISOWeeksInYear } from "@/lib/iso-weeks";
+import {
+  weekLabel,
+  getISOWeeksInYear,
+  getISOWeek,
+  firstVisibleDashboardWeek,
+} from "@/lib/iso-weeks";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -311,19 +316,13 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
   );
 
   const weeksCount = data?.weeks.length ?? getISOWeeksInYear(year);
-  const currentISOWeek = (() => {
-    const now = new Date();
-    const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-    const dayNum = d.getUTCDay() || 7;
-    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-    return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
-  })();
+  const currentISOWeek = getISOWeek(new Date());
 
   const visibleWeeks = React.useMemo(() => {
     if (!data) return [];
     if (showOldWeeks || year !== currentYear) return data.weeks;
-    return data.weeks.filter((wh) => wh.week >= currentISOWeek - 2);
+    const fromWeek = firstVisibleDashboardWeek(currentISOWeek);
+    return data.weeks.filter((wh) => wh.week >= fromWeek);
   }, [data, showOldWeeks, year, currentYear, currentISOWeek]);
 
   const visibleWeekIndices = React.useMemo(

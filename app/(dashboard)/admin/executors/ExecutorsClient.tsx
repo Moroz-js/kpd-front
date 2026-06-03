@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import useSWR from "swr";
 import { toast } from "sonner" ;
-import { Plus, Pencil, Archive, ArchiveRestore, Check, X, KeyRound, RefreshCw, ExternalLink } from "lucide-react";
+import { Plus, Pencil, Archive, ArchiveRestore, Check, X, KeyRound, RefreshCw, ExternalLink, Search } from "lucide-react";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
@@ -29,7 +30,10 @@ import {
 } from "@/components/ui/table";
 import { SortableHead } from "@/components/ui-custom/SortableHead";
 import { ExecutorWizard } from "./ExecutorWizard";
-import { ExecutorEditDialog } from "./ExecutorEditDialog";
+
+function hasPersonalSmeta(row: { type: string; userId: string | null }): boolean {
+  return row.type !== "service" && !!row.userId;
+}
 
 type Row = {
   id: string;
@@ -88,13 +92,13 @@ export function ExecutorsClient() {
   const [recipientFilter, setRecipientFilter] = React.useState<string[]>([]);
   const [accessFilter, setAccessFilter] = React.useState<string[]>([]);
   const [statusFilter, setStatusFilter] = React.useState<string[]>(["active"]);
+  const [nameSearch, setNameSearch] = React.useState("");
   const [sort, setSort] = React.useState<{ field: SortField; dir: SortDir }>({
     field: "name",
     dir: "asc",
   });
 
   const [wizardOpen, setWizardOpen] = React.useState(false);
-  const [editing, setEditing] = React.useState<Row | null>(null);
   const [resetPasswordTarget, setResetPasswordTarget] = React.useState<Row | null>(null);
   const [archiveTarget, setArchiveTarget] = React.useState<Row | null>(null);
   const [archivePrecheck, setArchivePrecheck] = React.useState<{
@@ -115,6 +119,9 @@ export function ExecutorsClient() {
 
   const rows = React.useMemo(() => {
     let list = data ?? [];
+
+    const q = nameSearch.trim().toLowerCase();
+    if (q) list = list.filter((r) => r.name.toLowerCase().includes(q));
 
     if (typeFilter.length) {
       const flatTypes = new Set<string>();
@@ -172,6 +179,7 @@ export function ExecutorsClient() {
     return list;
   }, [
     data,
+    nameSearch,
     typeFilter,
     workTypeFilter,
     projectFilter,
@@ -284,6 +292,15 @@ export function ExecutorsClient() {
       />
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="relative w-56">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-neutral-400 pointer-events-none" />
+          <Input
+            value={nameSearch}
+            onChange={(e) => setNameSearch(e.target.value)}
+            placeholder="Поиск по названию..."
+            className="h-8 pl-8 text-xs"
+          />
+        </div>
         <MultiSelectFilter label="Тип" options={typeFilterOpts} value={typeFilter} onChange={setTypeFilter} />
         <MultiSelectFilter
           label="Виды работ"
@@ -396,13 +413,29 @@ export function ExecutorsClient() {
               rows.map((r) => (
                 <TableRow key={r.id} className={r.status === "archived" ? "bg-neutral-100 text-neutral-400" : ""}>
                   <TableCell className="font-medium">
-                    <button
-                      type="button"
-                      className="text-left hover:underline"
-                      onClick={() => setEditing(r)}
-                    >
-                      {r.name}
-                    </button>
+                    <div className="flex items-center gap-1 min-w-0">
+                      {hasPersonalSmeta(r) ? (
+                        <>
+                          <Link
+                            href={`/admin/executors/${r.id}`}
+                            className="truncate hover:underline text-neutral-900"
+                          >
+                            {r.name}
+                          </Link>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 w-6 p-0 shrink-0"
+                            title="Открыть смету в новом окне"
+                            onClick={() => window.open(`/admin/executors/${r.id}`, "_blank")}
+                          >
+                            <ExternalLink className="h-3.5 w-3.5 text-neutral-500" />
+                          </Button>
+                        </>
+                      ) : (
+                        <span className="truncate">{r.name}</span>
+                      )}
+                    </div>
                     {r.email && <div className="text-xs text-neutral-500">{r.email}</div>}
                   </TableCell>
                   <TableCell>
@@ -435,7 +468,7 @@ export function ExecutorsClient() {
                     )}
                   </TableCell>
                   <TableCell className="border-r-2 border-neutral-300">
-                    {r.email ? (
+                    {r.email && r.type !== "service" ? (
                       <button
                         type="button"
                         onClick={() => toggleAccess(r)}
@@ -468,21 +501,13 @@ export function ExecutorsClient() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => setEditing(r)}
-                        title="Редактировать параметры"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      {r.userId && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => window.open(`/admin/executors/${r.id}`, "_blank")}
-                          title="Открыть личную смету"
-                        >
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </Button>
-                      )}
+                        title="Настройки"
+                        render={
+                          <Link href={`/admin/executors/${r.id}?tab=settings`}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Link>
+                        }
+                      />
                       <Button
                         size="sm"
                         variant="ghost"
@@ -526,20 +551,6 @@ export function ExecutorsClient() {
           onClose={() => setWizardOpen(false)}
           onCreated={() => {
             setWizardOpen(false);
-            mutate();
-          }}
-        />
-      )}
-
-      {editing && bankAccounts && responsibles && workTypes && (
-        <ExecutorEditDialog
-          row={editing}
-          bankAccounts={bankAccounts}
-          responsibles={responsibles}
-          workTypes={workTypes}
-          onClose={() => setEditing(null)}
-          onSaved={() => {
-            setEditing(null);
             mutate();
           }}
         />

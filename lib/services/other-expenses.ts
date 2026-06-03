@@ -1,5 +1,10 @@
 import { prisma } from "@/lib/db";
 import { logActivity } from "@/lib/audit/log";
+import { nearestPaymentDate } from "@/lib/iso-weeks";
+import {
+  hasOtherExpensePayment,
+  workStatusFromPaymentStatus,
+} from "@/lib/other-expense-payment";
 
 // ─── Типы ─────────────────────────────────────────────────────────────────────
 
@@ -23,7 +28,7 @@ export type CreateOtherExpenseInput = {
 export type UpdateOtherExpenseInput = Partial<Omit<CreateOtherExpenseInput, "responsibleUserId">> & {
   responsibleUserId?: string;
   workStatus?: string;
-  paymentStatus?: string;
+  paymentStatus?: string | null;
 };
 
 // ─── List ─────────────────────────────────────────────────────────────────────
@@ -49,6 +54,78 @@ const otherExpenseInclude = {
   bankAccount: { select: { id: true, name: true } },
 } as const;
 
+type Existing = Awaited<ReturnType<typeof prisma.otherExpense.findUniqueOrThrow>>;
+
+function assertCanChangeWorkStatus(existing: Existing, patch: UpdateOtherExpenseInput) {
+  if (patch.workStatus === undefined) return;
+  if (hasOtherExpensePayment(existing.paymentStatus)) {
+    throw new Error("Статус работы нельзя менять после создания выплаты");
+  }
+}
+
+function applyPaymentCascade(
+  existing: Existing,
+  state: {
+    workStatus: string;
+    paymentStatus: string | null;
+    paymentAmount: number | null;
+    plannedPayAt: Date | null;
+    paidAt: Date | null;
+    checkedAt: Date | null;
+  },
+  patch: UpdateOtherExpenseInput
+) {
+  if (patch.plannedPayAt !== undefined) {
+    state.plannedPayAt = patch.plannedPayAt ? new Date(patch.plannedPayAt) : null;
+  }
+
+  if (patch.paymentAmount !== undefined) {
+    state.paymentAmount = patch.paymentAmount;
+  }
+
+  if (patch.amount !== undefined && state.paymentAmount != null) {
+    state.paymentAmount = patch.amount;
+  }
+
+  if (patch.paymentStatus !== undefined) {
+    state.paymentStatus = patch.paymentStatus;
+    if (patch.paymentStatus === null) {
+      return;
+    }
+    state.workStatus = workStatusFromPaymentStatus(patch.paymentStatus);
+    if (patch.paymentStatus === "planned" && existing.paymentStatus === "paid") {
+      state.paidAt = null;
+    }
+    if (patch.paymentStatus === "paid" && !state.paidAt) {
+      state.paidAt = existing.paidAt ?? new Date();
+    }
+  }
+
+  if (patch.paidAt !== undefined) {
+    const nextPaidAt = patch.paidAt ? new Date(patch.paidAt) : null;
+    state.paidAt = nextPaidAt;
+
+    if (!hasOtherExpensePayment(state.paymentStatus)) return;
+
+    if (nextPaidAt) {
+      if (state.paymentStatus !== "paid") {
+        state.paymentStatus = "sent";
+      }
+      state.workStatus = "paid";
+    } else if (existing.paidAt) {
+      state.paymentStatus = "planned";
+      state.workStatus = "checked";
+    }
+  }
+
+  if (patch.workStatus !== undefined) {
+    state.workStatus = patch.workStatus;
+    if (patch.workStatus === "checked" && !state.checkedAt) {
+      state.checkedAt = new Date();
+    }
+  }
+}
+
 // ─── Create ───────────────────────────────────────────────────────────────────
 
 export async function createOtherExpense(
@@ -67,7 +144,7 @@ export async function createOtherExpense(
       executionMonth: input.executionMonth,
       description: input.description,
       amount: input.amount,
-      paymentAmount: input.paymentAmount ?? (paidAt ? input.amount : null),
+      paymentAmount: paidAt ? (input.paymentAmount ?? input.amount) : null,
       preferredPayMethod: input.preferredPayMethod ?? null,
       plannedPayAt: input.plannedPayAt ? new Date(input.plannedPayAt) : null,
       paidAt,
@@ -99,36 +176,18 @@ export async function updateOtherExpense(
   userId: string
 ) {
   const existing = await prisma.otherExpense.findUniqueOrThrow({ where: { id } });
+  assertCanChangeWorkStatus(existing, patch);
 
-  // Каскад: если заполняется paidAt → paid статусы
-  let workStatus = patch.workStatus ?? existing.workStatus;
-  let paymentStatus = patch.paymentStatus ?? existing.paymentStatus;
+  const state = {
+    workStatus: existing.workStatus,
+    paymentStatus: existing.paymentStatus,
+    paymentAmount: existing.paymentAmount,
+    plannedPayAt: existing.plannedPayAt,
+    paidAt: existing.paidAt,
+    checkedAt: existing.checkedAt,
+  };
 
-  const newPaidAt = patch.paidAt !== undefined
-    ? (patch.paidAt ? new Date(patch.paidAt) : null)
-    : existing.paidAt;
-
-  if (newPaidAt && !existing.paidAt) {
-    workStatus = "paid";
-    paymentStatus = "paid";
-  }
-
-  // Каскад: workStatus → checked автоматически переводит paymentStatus в planned
-  if (workStatus === "checked" && !paymentStatus) {
-    paymentStatus = "planned";
-  }
-
-  // Возврат paymentStatus → planned вручную: сбросить paidAt
-  if (patch.paymentStatus === "planned" && existing.paymentStatus === "paid") {
-    workStatus = "checked";
-    paymentStatus = "planned";
-  }
-
-  // Откат: admin убрал paidAt у paid записи
-  if (!newPaidAt && existing.paidAt && existing.paymentStatus === "paid" && paymentStatus !== "planned") {
-    workStatus = "checked";
-    paymentStatus = "planned";
-  }
+  applyPaymentCascade(existing, state, patch);
 
   const updated = await prisma.otherExpense.update({
     where: { id },
@@ -143,13 +202,14 @@ export async function updateOtherExpense(
       ...(patch.executionMonth !== undefined && { executionMonth: patch.executionMonth }),
       ...(patch.description !== undefined && { description: patch.description }),
       ...(patch.amount !== undefined && { amount: patch.amount }),
-      ...(patch.paymentAmount !== undefined && { paymentAmount: patch.paymentAmount }),
       ...(patch.preferredPayMethod !== undefined && { preferredPayMethod: patch.preferredPayMethod }),
-      ...(patch.plannedPayAt !== undefined && { plannedPayAt: patch.plannedPayAt ? new Date(patch.plannedPayAt) : null }),
       ...(patch.comment !== undefined && { comment: patch.comment }),
-      paidAt: paymentStatus === "planned" && existing.paymentStatus === "paid" ? null : newPaidAt,
-      workStatus,
-      paymentStatus,
+      workStatus: state.workStatus,
+      paymentStatus: state.paymentStatus,
+      paymentAmount: state.paymentAmount,
+      plannedPayAt: state.plannedPayAt,
+      paidAt: state.paidAt,
+      checkedAt: state.checkedAt,
     },
   });
 
@@ -172,14 +232,21 @@ export async function checkOtherExpense(id: string, userId: string) {
   if (existing.workStatus === "checked" || existing.workStatus === "paid") {
     throw new Error("Работа уже проверена или оплачена");
   }
+  if (hasOtherExpensePayment(existing.paymentStatus)) {
+    throw new Error("Выплата уже создана");
+  }
+
+  const plannedPayAt = nearestPaymentDate();
 
   const updated = await prisma.otherExpense.update({
     where: { id },
+    include: otherExpenseInclude,
     data: {
       workStatus: "checked",
       checkedAt: new Date(),
       paymentStatus: "planned",
-      paymentAmount: existing.paymentAmount ?? existing.amount,
+      paymentAmount: existing.amount,
+      plannedPayAt,
     },
   });
 
@@ -189,7 +256,39 @@ export async function checkOtherExpense(id: string, userId: string) {
     entityType: "OtherExpense",
     entityId: id,
     entityLabel: existing.description,
-    changes: { workStatus: { from: existing.workStatus, to: "checked" } },
+    changes: {
+      workStatus: { from: existing.workStatus, to: "checked" },
+      paymentStatus: { from: existing.paymentStatus, to: "planned" },
+    },
+  });
+
+  return updated;
+}
+
+// ─── Clear payment (выплаты: удаление) ───────────────────────────────────────
+
+export async function clearOtherExpensePayment(id: string, userId: string) {
+  const existing = await prisma.otherExpense.findUniqueOrThrow({ where: { id } });
+
+  const updated = await prisma.otherExpense.update({
+    where: { id },
+    include: otherExpenseInclude,
+    data: {
+      paymentAmount: null,
+      plannedPayAt: null,
+      paidAt: null,
+      bankAccountId: null,
+      paymentStatus: null,
+      workStatus: existing.workStatus === "paid" ? "checked" : existing.workStatus,
+    },
+  });
+
+  await logActivity({
+    userId,
+    action: "delete",
+    entityType: "OtherExpense",
+    entityId: id,
+    entityLabel: `Прочие траты · ${existing.description.slice(0, 40)} (очищена выплата)`,
   });
 
   return updated;

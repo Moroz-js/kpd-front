@@ -9,6 +9,7 @@ import { PivotTab } from "./PivotTab";
 import { VacationsTab } from "./VacationsTab";
 import { TasksTab } from "./TasksTab";
 import { SettingsTab } from "./SettingsTab";
+import { EXECUTOR_TYPES } from "@/lib/statuses";
 
 type WorkType = { id: string; name: string };
 type Project = { id: string; name: string; status: string };
@@ -17,6 +18,7 @@ type BankAccount = { id: string; name: string };
 type ExecutorDetail = {
   id: string;
   name: string;
+  type: string;
   status: string;
   accessRevokedAt: string | null;
   contacts: string | null;
@@ -121,6 +123,15 @@ export function ExecutorEstimateClient({
     }
   }, [executorId, loadExecutor]);
 
+  const isService = executor?.type === "service";
+  const hasPersonalSmeta = !!executor?.user && !isService;
+  const settingsOnly = !hasPersonalSmeta;
+
+  useEffect(() => {
+    if (!executor || !settingsOnly) return;
+    if (isAdmin) setActiveTab("settings");
+  }, [executor, settingsOnly, isAdmin]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64 text-sm text-neutral-400">
@@ -137,10 +148,11 @@ export function ExecutorEstimateClient({
     );
   }
 
-  const visibleTabs: { id: TabId; label: string }[] = [
-    ...TABS,
-    ...(isAdmin ? [{ id: "settings" as TabId, label: "Настройки" }] : []),
-  ];
+  const visibleTabs: { id: TabId; label: string }[] = settingsOnly
+    ? isAdmin
+      ? [{ id: "settings" as TabId, label: "Настройки" }]
+      : []
+    : [...TABS, ...(isAdmin ? [{ id: "settings" as TabId, label: "Настройки" }] : [])];
 
   return (
     <div className="space-y-4">
@@ -157,17 +169,13 @@ export function ExecutorEstimateClient({
           <div>
             <h1 className="text-xl font-semibold text-neutral-900">{executor.name}</h1>
             <p className="text-sm text-neutral-500">
-              {executor.user?.email ?? "—"}
-              {!executor.accessRevokedAt ? (
-                <span className="ml-2 text-green-600 text-xs">● Доступ активен</span>
-              ) : (
-                <span className="ml-2 text-red-500 text-xs">● Доступ отозван</span>
-              )}
+              {EXECUTOR_TYPES[executor.type as keyof typeof EXECUTOR_TYPES] ?? executor.type}
+              {executor.user?.email ? ` · ${executor.user.email}` : ""}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {openTaskCount > 0 && (
+          {hasPersonalSmeta && openTaskCount > 0 && (
             <button
               onClick={() => setActiveTab("tasks")}
               className="inline-flex items-center gap-1.5 rounded-full bg-orange-100 border border-orange-200 px-3 py-1 text-xs font-medium text-orange-800 hover:bg-orange-200 transition-colors"
@@ -179,6 +187,12 @@ export function ExecutorEstimateClient({
         </div>
       </div>
 
+      {visibleTabs.length === 0 ? (
+        <p className="text-sm text-neutral-500 py-8">
+          У этого исполнителя нет личной сметы — доступны только настройки.
+        </p>
+      ) : (
+        <>
       {/* Tab bar */}
       <div className="border-b border-neutral-200">
         <nav className="flex gap-0 overflow-x-auto">
@@ -205,7 +219,7 @@ export function ExecutorEstimateClient({
 
       {/* Tab content */}
       <div>
-        {activeTab === "works" && (
+        {hasPersonalSmeta && activeTab === "works" && (
           <WorksTab
             executorId={executorId}
             isAdmin={isAdmin}
@@ -213,12 +227,12 @@ export function ExecutorEstimateClient({
             bankAccounts={bankAccounts}
           />
         )}
-        {activeTab === "paid" && <PivotTab executorId={executorId} type="paid" />}
-        {activeTab === "debt" && <PivotTab executorId={executorId} type="debt" />}
-        {activeTab === "vacations" && (
+        {hasPersonalSmeta && activeTab === "paid" && <PivotTab executorId={executorId} type="paid" />}
+        {hasPersonalSmeta && activeTab === "debt" && <PivotTab executorId={executorId} type="debt" />}
+        {hasPersonalSmeta && activeTab === "vacations" && (
           <VacationsTab executorId={executorId} isAdmin={isAdmin} isOwner={isOwner} />
         )}
-        {activeTab === "tasks" && (
+        {hasPersonalSmeta && activeTab === "tasks" && (
           <TasksTab
             executorId={executorId}
             isAdmin={isAdmin}
@@ -236,6 +250,8 @@ export function ExecutorEstimateClient({
           />
         )}
       </div>
+        </>
+      )}
     </div>
   );
 }

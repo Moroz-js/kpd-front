@@ -108,6 +108,29 @@ function StatusBadge({ status, type }: { status: string; type: "work" | "payment
 
 type AllPaymentRow = PaymentRow & { periodYear: number; periodMonth: number };
 
+function EditableColHead({
+  children,
+  className,
+  showPencil,
+  align = "left",
+}: {
+  children: React.ReactNode;
+  className: string;
+  showPencil?: boolean;
+  align?: "left" | "right";
+}) {
+  return (
+    <th className={className}>
+      <span
+        className={`inline-flex items-center gap-1 ${align === "right" ? "justify-end w-full" : ""}`}
+      >
+        {children}
+        {showPencil && <Pencil className="h-3 w-3 shrink-0 text-neutral-400" aria-hidden />}
+      </span>
+    </th>
+  );
+}
+
 export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) {
   const [works, setWorks] = useState<WorkRow[]>([]);
   const [allPayments, setAllPayments] = useState<AllPaymentRow[]>([]);
@@ -310,11 +333,40 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
     setWorks((prev) =>
       prev.map((w) => w.id === workId ? { ...w, plannedPayAt: date } : w)
     );
-    await fetch(`/api/executors/${executorId}/works/${workId}`, {
+    const r = await fetch(`/api/executors/${executorId}/works/${workId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ plannedPayAt: date }),
     });
+    if (!r.ok) throw new Error();
+  }
+
+  async function patchWorkAmount(workId: string, amount: number) {
+    setWorks((prev) =>
+      prev.map((w) => {
+        if (w.id !== workId) return w;
+        const next = { ...w, amount };
+        if (w.payment) {
+          const linked = prev.filter((x) => x.payment?.id === w.payment!.id);
+          const paymentAmount = linked.reduce(
+            (s, x) => s + (x.id === workId ? amount : x.amount),
+            0
+          );
+          next.payment = { ...w.payment, amount: paymentAmount };
+        }
+        return next;
+      })
+    );
+    const r = await fetch(`/api/executors/${executorId}/works/${workId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount }),
+    });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      throw new Error((d as { error?: string }).error ?? "Ошибка");
+    }
+    silentLoad();
   }
 
   async function patchPaymentPlannedDate(paymentId: string, date: string | null) {
@@ -495,20 +547,30 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
                     <th className={`${th} min-w-[100px]`}>Вид работ</th>
                     <th className={`${th} min-w-[55px]`}>Отчёт</th>
                     <th className={`${th} min-w-[55px]`}>Ссылка</th>
+                    <th className={`${th} min-w-[72px]`}>Заполн. ТЗ</th>
+                    <th className={`${th} min-w-[72px]`}>Заполн. акт</th>
                     <th className={`${thr} min-w-[55px]`}>Объём</th>
                     <th className={`${thr} min-w-[65px]`}>Ставка</th>
-                    <th className={`${thr} min-w-[80px]`}>Сумма</th>
-                    <th className={`${th} min-w-[95px]`}>Дата план (р)</th>
+                    <EditableColHead className={`${thr} min-w-[80px]`} showPencil={isAdmin} align="right">
+                      Сумма
+                    </EditableColHead>
+                    <EditableColHead className={`${th} min-w-[95px]`} showPencil={isAdmin}>
+                      Дата план (р)
+                    </EditableColHead>
                     <th className={`${th} min-w-[110px]`}>Статус работы</th>
-                    <th className={`${th} min-w-[85px]`}>Проверена</th>
                   </>}
                   {showPayments && <>
                     <th className={`${thr} min-w-[80px]`}>Выплата</th>
                     <th className={`${th} min-w-[85px]`}>Дата оплаты</th>
-                    <th className={`${th} min-w-[95px]`}>Дата план (в)</th>
+                    <EditableColHead className={`${th} min-w-[95px]`} showPencil={isAdmin}>
+                      Дата план (в)
+                    </EditableColHead>
                     <th className={`${th} min-w-[110px]`}>Статус выплаты</th>
                     <th className={`${th} min-w-[90px]`}>Счёт</th>
                   </>}
+                  {showWorks && (
+                    <th className={`${th} min-w-[85px]`}>Проверена</th>
+                  )}
                   <th className={`${th} w-16`}></th>
                 </tr>
               </thead>
@@ -549,9 +611,29 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
                           <td className={`${td} text-neutral-600`}>{w.workType.name}</td>
                           <td className={td}>{w.report ? <a href={w.report} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">отчёт</a> : <span className="text-neutral-300">—</span>}</td>
                           <td className={td}>{w.link ? <a href={w.link} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">ссылка</a> : <span className="text-neutral-300">—</span>}</td>
+                          <td className={td}>
+                            {w.filledTechTask ? (
+                              <a href={w.filledTechTask} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">ТЗ</a>
+                            ) : (
+                              <span className="text-neutral-300">—</span>
+                            )}
+                          </td>
+                          <td className={td}>
+                            {w.filledAct ? (
+                              <a href={w.filledAct} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">акт</a>
+                            ) : (
+                              <span className="text-neutral-300">—</span>
+                            )}
+                          </td>
                           <td className={`${td} text-right text-neutral-600`}>{w.volume ?? "—"}</td>
                           <td className={`${td} text-right text-neutral-600`}>{w.rate ? formatMoney(w.rate) : "—"}</td>
-                          <td className={`${td} text-right font-medium`}>{formatMoney(w.amount)}</td>
+                          <td className={`${td} text-right font-medium`}>
+                            <InlineAmountInput
+                              value={w.amount}
+                              disabled={!canEdit}
+                              onSave={(n) => patchWorkAmount(w.id, n)}
+                            />
+                          </td>
                           <td className={td}>
                             <InlineDateInput
                               value={w.plannedPayAt ? new Date(w.plannedPayAt).toISOString().slice(0, 10) : ""}
@@ -560,7 +642,6 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
                             />
                           </td>
                           <td className={td}><StatusBadge status={w.workStatus} type="work" /></td>
-                          <td className={`${td} text-neutral-500`}>{formatDate(w.checkedAt)}</td>
                         </>}
                         {showPayments && <>
                           <td className={dim}>—</td>
@@ -569,6 +650,9 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
                           <td className={dim}>—</td>
                           <td className={dim}>—</td>
                         </>}
+                        {showWorks && (
+                          <td className={`${td} text-neutral-500`}>{formatDate(w.checkedAt)}</td>
+                        )}
                         <td className={td}>
                           <div className="flex gap-1 items-center">
                             {isAdmin && w.workStatus !== "checked" && w.workStatus !== "paid" && (
@@ -594,7 +678,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
                         <td className={dim}>—</td><td className={dim}>—</td><td className={dim}>—</td>
                         <td className={dim}>—</td><td className={dim}>—</td><td className={dim}>—</td>
                         <td className={dim}>—</td><td className={dim}>—</td><td className={dim}>—</td>
-                        <td className={dim}>—</td><td className={dim}>—</td>
+                        <td className={dim}>—</td><td className={dim}>—</td><td className={dim}>—</td>
                       </>}
                       {showPayments && <>
                         <td className={`${td} text-right font-semibold text-green-800`}>{formatMoney(p.amount)}</td>
@@ -609,6 +693,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
                         <td className={td}><StatusBadge status={p.paymentStatus} type="payment" /></td>
                         <td className={`${td} text-neutral-600 text-[11px]`}>{p.bankAccount?.name ?? "—"}</td>
                       </>}
+                      {showWorks && <td className={dim}>—</td>}
                       <td className={td}>
                         {isAdmin && (
                           <div className="flex gap-1 items-center">
@@ -756,6 +841,91 @@ function DateInput({
           focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer ${className ?? ""}`}
       />
     </div>
+  );
+}
+
+// ─── Inline Amount Input ──────────────────────────────────────────────────
+
+function InlineAmountInput({
+  value,
+  disabled,
+  onSave,
+}: {
+  value: number;
+  disabled?: boolean;
+  onSave: (val: number) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [localVal, setLocalVal] = useState(String(value));
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!editing) setLocalVal(String(value));
+  }, [value, editing]);
+
+  useEffect(() => {
+    if (editing && inputRef.current) inputRef.current.focus();
+  }, [editing]);
+
+  async function commit() {
+    setEditing(false);
+    const parsed = parseFloat(localVal.replace(",", "."));
+    if (Number.isNaN(parsed) || parsed < 0) {
+      setLocalVal(String(value));
+      toast.error("Введите корректную сумму");
+      return;
+    }
+    if (parsed === value) return;
+    setSaving(true);
+    try {
+      await onSave(parsed);
+    } catch (e) {
+      setLocalVal(String(value));
+      toast.error(e instanceof Error ? e.message : "Не удалось сохранить сумму");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (disabled) {
+    return <span className="text-xs tabular-nums">{formatMoney(value)}</span>;
+  }
+
+  if (editing || saving) {
+    return (
+      <input
+        ref={inputRef}
+        type="number"
+        min={0}
+        step="0.01"
+        className="w-full min-w-[4.5rem] max-w-[6rem] ml-auto text-xs text-right border border-neutral-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
+        value={localVal}
+        onChange={(e) => setLocalVal(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+          if (e.key === "Escape") {
+            setEditing(false);
+            setLocalVal(String(value));
+          }
+        }}
+        disabled={saving}
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className="text-xs tabular-nums w-full text-right hover:text-blue-600 hover:underline cursor-pointer"
+      onClick={() => {
+        setLocalVal(String(value));
+        setEditing(true);
+      }}
+    >
+      {formatMoney(value)}
+    </button>
   );
 }
 

@@ -13,6 +13,11 @@ export default auth((req) => {
   const { pathname } = req.nextUrl;
   const user = req.auth?.user as Record<string, unknown> | undefined;
   const role = user?.role as string | undefined;
+  const isPm =
+    role === "responsible" ||
+    (role === "executor" &&
+      user?.isResponsible === true &&
+      user?.responsibleActive !== false);
 
   // Корень / login
   if (pathname === "/login" || pathname === "/") {
@@ -20,7 +25,7 @@ export default auth((req) => {
       const redirectPath =
         role === "admin"
           ? "/admin/projects"
-          : role === "responsible"
+          : isPm
           ? "/responsible/projects"
           : "/me";
       return NextResponse.redirect(new URL(redirectPath, req.url));
@@ -36,7 +41,7 @@ export default auth((req) => {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
-  if (pathname.startsWith("/responsible") && role !== "responsible") {
+  if (pathname.startsWith("/responsible") && !isPm) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 

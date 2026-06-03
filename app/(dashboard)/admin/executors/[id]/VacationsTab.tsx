@@ -24,7 +24,23 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatDate } from "@/lib/format";
+import {
+  getISOWeek,
+  getISOWeekYear,
+  getISOWeeksInYear,
+  isoWeekMonthGroups,
+  isoWeeksOfYear,
+  weekLabel,
+} from "@/lib/iso-weeks";
 import { VACATION_STATUSES, BADGE_TONE_CLASS } from "@/lib/statuses";
+import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type VacationRow = {
   id: string;
@@ -63,72 +79,130 @@ function VacationStatusBadge({ status }: { status: string }) {
 }
 
 function SharedVacationCalendar() {
-  const year = new Date().getFullYear();
+  const currentYear = new Date().getFullYear();
+  const [year, setYear] = useState(currentYear);
   const [rows, setRows] = useState<CalendarRow[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const allWeeks = React.useMemo(() => isoWeeksOfYear(year), [year]);
+  const monthGroups = React.useMemo(() => isoWeekMonthGroups(year), [year]);
+  const currentWeek =
+    getISOWeekYear(new Date()) === year ? getISOWeek(new Date()) : null;
+
+  const yearOptions = React.useMemo(
+    () => [currentYear - 1, currentYear, currentYear + 1],
+    [currentYear]
+  );
+
   useEffect(() => {
+    setLoading(true);
     fetch(`/api/vacations?year=${year}`)
       .then((r) => r.json())
       .then(setRows)
-      .catch(() => {})
+      .catch(() => setRows([]))
       .finally(() => setLoading(false));
   }, [year]);
 
-  const allWeeks = Array.from({ length: 52 }, (_, i) => i + 1);
-  const monthLabels: { week: number; label: string }[] = [];
-  // Approximate month start weeks
-  const approxMonthWeeks = [1, 5, 9, 14, 18, 22, 27, 31, 36, 40, 44, 49];
-  const monthNames = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"];
-  approxMonthWeeks.forEach((w, i) => monthLabels.push({ week: w, label: monthNames[i] }));
-
-  if (loading) return <div className="text-xs text-neutral-400 py-4 text-center">Загрузка...</div>;
-  if (rows.length === 0) return <div className="text-xs text-neutral-400 py-2">Нет согласованных отпусков на {year} год.</div>;
+  const thWeek =
+    "border-b border-neutral-200 px-0.5 py-1 text-center font-medium text-neutral-600 min-w-[22px] tabular-nums";
+  const tdWeek = "border-b border-neutral-100 px-0 py-0 min-w-[22px] h-6";
 
   return (
-    <div className="overflow-x-auto rounded-md border bg-white">
-      <table className="border-collapse text-xs" style={{ minWidth: "max-content" }}>
-        <thead>
-          <tr className="bg-neutral-50">
-            <th className="sticky left-0 z-10 bg-neutral-50 border-b border-r border-neutral-200 px-3 py-1.5 text-left font-medium text-neutral-600 min-w-[140px]">
-              Исполнитель
-            </th>
-            {allWeeks.map((w) => {
-              const ml = monthLabels.find((m) => m.week === w);
-              return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-neutral-500">Год</span>
+        <Select value={String(year)} onValueChange={(v) => v && setYear(Number(v))}>
+          <SelectTrigger className="h-7 w-[88px] text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {yearOptions.map((y) => (
+              <SelectItem key={y} value={String(y)}>
+                {y}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <span className="text-xs text-neutral-400">
+          {getISOWeeksInYear(year)} ISO-недель
+        </span>
+      </div>
+
+      {loading ? (
+        <div className="text-xs text-neutral-400 py-4 text-center">Загрузка...</div>
+      ) : rows.length === 0 ? (
+        <div className="text-xs text-neutral-400 py-2">
+          Нет согласованных отпусков на {year} год.
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-md border bg-white">
+          <table className="border-collapse text-xs" style={{ minWidth: "max-content" }}>
+            <thead className="sticky top-0 z-20">
+              <tr className="bg-neutral-50 border-b border-neutral-100">
                 <th
-                  key={w}
-                  className="border-b border-neutral-200 px-0.5 py-1.5 text-center font-normal text-neutral-400 min-w-[18px]"
-                  title={`Нед. ${w}`}
+                  className="sticky left-0 z-30 bg-neutral-50 border-b border-r border-neutral-200 px-3 py-1 text-left font-medium text-neutral-600 min-w-[140px]"
+                  rowSpan={2}
                 >
-                  {ml ? <span className="font-medium text-neutral-600">{ml.label}</span> : ""}
+                  Исполнитель
                 </th>
-              );
-            })}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => {
-            const weekSet = new Set(row.weeks);
-            return (
-              <tr key={row.executorId} className="hover:bg-neutral-50 border-b border-neutral-100 last:border-0">
-                <td className="sticky left-0 z-10 bg-white hover:bg-neutral-50 border-r border-neutral-200 px-3 py-1 font-medium whitespace-nowrap">
-                  {row.executorName}
-                </td>
-                {allWeeks.map((w) => (
-                  <td
-                    key={w}
-                    className={`py-1 px-0 text-center ${weekSet.has(w) ? "bg-orange-200" : ""}`}
-                    title={weekSet.has(w) ? `${row.executorName}, нед. ${w}` : undefined}
+                {monthGroups.map((mg) => (
+                  <th
+                    key={mg.label + mg.weeks[0]}
+                    colSpan={mg.weeks.length}
+                    className="border-b border-r border-neutral-100 px-1 py-1 text-center text-[10px] font-medium text-neutral-500"
                   >
-                    {weekSet.has(w) && <span className="inline-block w-3 h-3 rounded-sm bg-orange-400 opacity-80" />}
-                  </td>
+                    {mg.label}
+                  </th>
                 ))}
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
+              <tr className="bg-neutral-50 border-b border-neutral-200">
+                {allWeeks.map((w) => (
+                  <th
+                    key={w}
+                    className={cn(
+                      thWeek,
+                      w === currentWeek && "bg-blue-50 text-blue-800"
+                    )}
+                    title={weekLabel(w)}
+                  >
+                    {w}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const weekSet = new Set(row.weeks);
+                return (
+                  <tr
+                    key={row.executorId}
+                    className="hover:bg-neutral-50 border-b border-neutral-100 last:border-0"
+                  >
+                    <td className="sticky left-0 z-10 bg-white hover:bg-neutral-50 border-r border-neutral-200 px-3 py-1.5 font-medium whitespace-nowrap">
+                      {row.executorName}
+                    </td>
+                    {allWeeks.map((w) => (
+                      <td
+                        key={w}
+                        className={cn(
+                          tdWeek,
+                          w === currentWeek && !weekSet.has(w) && "bg-blue-50/40",
+                          weekSet.has(w) && "bg-orange-200"
+                        )}
+                        title={
+                          weekSet.has(w)
+                            ? `${row.executorName}, ${weekLabel(w)}`
+                            : weekLabel(w)
+                        }
+                      />
+                    ))}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -280,7 +354,7 @@ export function VacationsTab({ executorId, isAdmin, isOwner }: Props) {
 
       {/* Общий календарь */}
       <div>
-        <h3 className="text-sm font-semibold text-neutral-800 mb-2">Общий календарь отпусков</h3>
+        <h3 className="text-sm font-semibold text-neutral-800 mb-2">Общий график отпусков</h3>
         <SharedVacationCalendar />
       </div>
 

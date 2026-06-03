@@ -1,25 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-
-function isoWeek(date: Date): number {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-}
-
-function weeksInRange(start: Date, end: Date): number[] {
-  const weeks = new Set<number>();
-  const cur = new Date(start);
-  while (cur <= end) {
-    weeks.add(isoWeek(cur));
-    cur.setDate(cur.getDate() + 7);
-  }
-  weeks.add(isoWeek(end));
-  return Array.from(weeks).sort((a, b) => a - b);
-}
+import { isoWeeksInDateRange } from "@/lib/iso-weeks";
 
 export async function GET(req: NextRequest) {
   const user = await getSessionUser();
@@ -27,16 +9,14 @@ export async function GET(req: NextRequest) {
 
   const year = parseInt(req.nextUrl.searchParams.get("year") ?? String(new Date().getFullYear()));
   const yearStart = new Date(year, 0, 1);
-  const yearEnd = new Date(year, 11, 31);
+  const yearEnd = new Date(year, 11, 31, 23, 59, 59, 999);
 
   const entries = await prisma.vacationEntry.findMany({
     where: {
       status: "approved",
       OR: [
-        { startAt: { gte: yearStart, lte: yearEnd } },
-        { endAt: { gte: yearStart, lte: yearEnd } },
-        { secondStartAt: { gte: yearStart, lte: yearEnd } },
-        { secondEndAt: { gte: yearStart, lte: yearEnd } },
+        { startAt: { lte: yearEnd }, endAt: { gte: yearStart } },
+        { secondStartAt: { lte: yearEnd }, secondEndAt: { gte: yearStart } },
       ],
     },
     include: {
@@ -58,7 +38,7 @@ export async function GET(req: NextRequest) {
     ];
     for (const [s, end] of periods) {
       if (!s || !end) continue;
-      for (const w of weeksInRange(new Date(s), new Date(end))) {
+      for (const w of isoWeeksInDateRange(new Date(s), new Date(end), year)) {
         row.weeks.add(w);
       }
     }

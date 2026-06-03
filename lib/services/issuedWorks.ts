@@ -13,6 +13,13 @@
 import { prisma } from "@/lib/db";
 import { logActivity, diff } from "@/lib/audit/log";
 import type { IssuedWorkSource } from "@/lib/views/issuedWorks";
+import { updateOtherExpense } from "@/lib/services/other-expenses";
+import { hasOtherExpensePayment } from "@/lib/other-expense-payment";
+function assertSettableWorkStatus(workStatus: string | undefined) {
+  if (workStatus === "paid") {
+    throw new Error("Статус «Оплачено» проставляется только при выплате");
+  }
+}
 
 export type IssuedWorkPatch = {
   projectId?: string;
@@ -39,6 +46,11 @@ export async function updateIssuedWork(
 async function updatePersonal(workId: string, patch: IssuedWorkPatch, userId: string) {
   const before = await prisma.work.findUnique({ where: { id: workId } });
   if (!before) throw new Error("Work not found");
+
+  assertSettableWorkStatus(patch.workStatus);
+  if (patch.workStatus !== undefined && before.workStatus === "paid") {
+    throw new Error("Статус оплаченной работы меняется только через выплату");
+  }
 
   // §3.7 разрешённые: project, workType, plannedPayAt, status
   const data: Record<string, unknown> = {};
@@ -86,7 +98,30 @@ async function updateOther(otherId: string, patch: IssuedWorkPatch, userId: stri
   const before = await prisma.otherExpense.findUnique({ where: { id: otherId } });
   if (!before) throw new Error("OtherExpense not found");
 
-  // §3.8 разрешённые: project, workType, executionMonth, executionYear, executor, status
+  assertSettableWorkStatus(patch.workStatus);
+  if (patch.workStatus !== undefined && hasOtherExpensePayment(before.paymentStatus)) {
+    throw new Error("Статус работы нельзя менять после создания выплаты");
+  }
+  if (patch.workStatus !== undefined && before.workStatus === "paid") {
+    throw new Error("Статус оплаченной работы меняется только через выплату");
+  }
+
+  if (patch.plannedPayAt !== undefined) {
+    return updateOtherExpense(
+      otherId,
+      {
+        plannedPayAt: patch.plannedPayAt ? patch.plannedPayAt.toISOString() : null,
+        ...(patch.projectId !== undefined && { projectId: patch.projectId }),
+        ...(patch.workTypeId !== undefined && { workTypeId: patch.workTypeId }),
+        ...(patch.executionMonth !== undefined && { executionMonth: patch.executionMonth }),
+        ...(patch.executionYear !== undefined && { executionYear: patch.executionYear }),
+        ...(patch.executorId !== undefined && { executorId: patch.executorId }),
+        ...(patch.workStatus !== undefined && { workStatus: patch.workStatus }),
+      },
+      userId
+    );
+  }
+
   const data: Record<string, unknown> = {};
   if (patch.projectId !== undefined) data.projectId = patch.projectId;
   if (patch.workTypeId !== undefined) data.workTypeId = patch.workTypeId;

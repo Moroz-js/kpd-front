@@ -84,3 +84,42 @@ export function isoWeekDays(year: number, week: number): Date[] {
   const start = isoWeekStart(year, week);
   return Array.from({ length: 7 }, (_, i) => addDays(start, i));
 }
+
+/** Сколько прошлых ISO-недель оставлять видимыми на дашборде проекта (плюс текущая и будущие). */
+export const PROJECT_DASHBOARD_WEEKS_BACK = 4;
+
+/** Первая видимая неделя года при свёрнутых «старых» неделях. */
+export function firstVisibleDashboardWeek(currentWeek: number): number {
+  return Math.max(1, currentWeek - PROJECT_DASHBOARD_WEEKS_BACK);
+}
+
+const MONTH_SHORT = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"] as const;
+
+/** Группы ISO-недель по месяцу начала недели (для шапки таблиц). */
+export function isoWeekMonthGroups(year: number): { label: string; weeks: number[] }[] {
+  const groups: { label: string; weeks: number[] }[] = [];
+  for (const w of isoWeeksOfYear(year)) {
+    const label = MONTH_SHORT[isoWeekToMonth(year, w) - 1];
+    const last = groups[groups.length - 1];
+    if (last?.label === label) last.weeks.push(w);
+    else groups.push({ label, weeks: [w] });
+  }
+  return groups;
+}
+
+/** ISO-недели, пересекающиеся с диапазоном дат (опционально только для filterYear). */
+export function isoWeeksInDateRange(start: Date, end: Date, filterYear?: number): number[] {
+  const weeks = new Set<number>();
+  const cur = new Date(start);
+  cur.setHours(0, 0, 0, 0);
+  const endD = new Date(end);
+  endD.setHours(0, 0, 0, 0);
+  while (cur <= endD) {
+    const y = getISOWeekYear(cur);
+    if (filterYear === undefined || y === filterYear) {
+      weeks.add(getISOWeek(cur));
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  return Array.from(weeks).sort((a, b) => a - b);
+}

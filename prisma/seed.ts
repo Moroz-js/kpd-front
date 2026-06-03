@@ -2,7 +2,7 @@
  * Seed для kpd-demo — большой набор реалистичных данных.
  *
  * Содержит:
- *  - 5 пользователей-менеджеров, 10 исполнителей с логином
+ *  - 3 активных ответственных (исполнители с isResponsible) + 1 архивный PM, 10+ исполнителей с логином
  *  - 9 клиентов (7 активных + 2 архивных)
  *  - 12 проектов (9 активных + 3 архивных)
  *  - 20 заказов
@@ -102,20 +102,137 @@ async function seedMonths(
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function seedUsers(hash: string) {
-  const users = [
-    { email: "admin@kpd.local",             fullName: "Админ Админов",      role: "admin",        isActive: true  },
-    { email: "manager.ivanov@kpd.local",    fullName: "Иванов Сергей",      role: "responsible",  isActive: true  },
-    { email: "manager.petrov@kpd.local",    fullName: "Петров Андрей",      role: "responsible",  isActive: true  },
-    { email: "manager.sokolova@kpd.local",  fullName: "Соколова Марина",    role: "responsible",  isActive: true  },
-    { email: "manager.archived@kpd.local",  fullName: "Сидоров Олег",       role: "responsible",  isActive: false },
-  ];
-  for (const u of users) {
-    await prisma.user.upsert({
-      where: { email: u.email },
-      update: {},
-      create: { email: u.email, password: hash, fullName: u.fullName, role: u.role, isActive: u.isActive },
+  await prisma.user.upsert({
+    where: { email: "admin@kpd.local" },
+    update: { fullName: "Админ Админов", role: "admin", isActive: true },
+    create: {
+      email: "admin@kpd.local",
+      password: hash,
+      fullName: "Админ Админов",
+      role: "admin",
+      isActive: true,
+    },
+  });
+}
+
+/** Ответственные = исполнители с isResponsible; статус PM ≠ статус исполнителя. */
+async function seedResponsibleManagers(hash: string) {
+  const opsAcc = await prisma.bankAccount.findFirst({ where: { isDefault: true } });
+  const wtMgmt = await prisma.workType.findFirst({ where: { name: "Руководство проектом" } });
+  const wtStrategy = await prisma.workType.findFirst({ where: { name: "Стратегия" } });
+
+  const managers = [
+    {
+      email: "manager.ivanov@kpd.local",
+      name: "Иванов Сергей",
+      companyStatus: "core",
+      responsibleActive: true,
+      inTgChat: true,
+    },
+    {
+      email: "manager.petrov@kpd.local",
+      name: "Петров Андрей",
+      companyStatus: "core",
+      responsibleActive: true,
+      inTgChat: true,
+    },
+    {
+      email: "manager.sokolova@kpd.local",
+      name: "Соколова Марина",
+      companyStatus: "orbit",
+      responsibleActive: true,
+      inTgChat: false,
+    },
+    {
+      email: "manager.archived@kpd.local",
+      name: "Сидоров Олег",
+      companyStatus: "orbit",
+      responsibleActive: false,
+      inTgChat: false,
+    },
+  ] as const;
+
+  for (const m of managers) {
+    const user = await prisma.user.upsert({
+      where: { email: m.email },
+      update: { fullName: m.name, role: "executor", isActive: true },
+      create: {
+        email: m.email,
+        password: hash,
+        fullName: m.name,
+        role: "executor",
+        isActive: true,
+      },
+    });
+
+    const existingByUser = await prisma.executor.findFirst({ where: { userId: user.id } });
+    const existingByName = await prisma.executor.findFirst({ where: { name: m.name } });
+
+    const exec = existingByUser ?? existingByName;
+    const executor = exec
+      ? await prisma.executor.update({
+          where: { id: exec.id },
+          data: {
+            userId: user.id,
+            name: m.name,
+            type: "permanent",
+            companyStatus: m.companyStatus,
+            recipientType: "З/П в РФ налог 30%",
+            isResponsible: true,
+            responsibleActive: m.responsibleActive,
+            status: "active",
+            accessRevokedAt: null,
+            defaultBankAccountId: opsAcc?.id ?? null,
+            inTgChat: m.inTgChat,
+            specialty: "Руководитель проектов",
+          },
+        })
+      : await prisma.executor.create({
+          data: {
+            userId: user.id,
+            name: m.name,
+            type: "permanent",
+            companyStatus: m.companyStatus,
+            recipientType: "З/П в РФ налог 30%",
+            isResponsible: true,
+            responsibleActive: m.responsibleActive,
+            status: "active",
+            defaultBankAccountId: opsAcc?.id ?? null,
+            inTgChat: m.inTgChat,
+            specialty: "Руководитель проектов",
+            onboardingSeeded: true,
+          },
+        });
+
+    for (const wt of [wtMgmt, wtStrategy].filter(Boolean)) {
+      await prisma.executorWorkType.upsert({
+        where: { executorId_workTypeId: { executorId: executor.id, workTypeId: wt!.id } },
+        update: {},
+        create: { executorId: executor.id, workTypeId: wt!.id },
+      });
+    }
+  }
+
+  // Убрать устаревших «чистых» responsible без исполнителя
+  const legacy = await prisma.user.findMany({
+    where: { role: "responsible", executor: null },
+  });
+  for (const u of legacy) {
+    await prisma.user.update({
+      where: { id: u.id },
+      data: { role: "executor", isActive: false },
     });
   }
+
+  console.log(`[seed] responsible managers: ${managers.length} (executor + isResponsible)`);
+}
+
+async function loadResponsibleUsers() {
+  return Promise.all([
+    prisma.user.findUnique({ where: { email: "manager.ivanov@kpd.local" } }),
+    prisma.user.findUnique({ where: { email: "manager.petrov@kpd.local" } }),
+    prisma.user.findUnique({ where: { email: "manager.sokolova@kpd.local" } }),
+  ]);
 }
 
 async function seedBankAccounts() {
@@ -185,11 +302,7 @@ async function seedClients() {
 }
 
 async function seedProjects() {
-  const [ivanov, petrov, sokolova] = await Promise.all([
-    prisma.user.findUnique({ where: { email: "manager.ivanov@kpd.local"   } }),
-    prisma.user.findUnique({ where: { email: "manager.petrov@kpd.local"   } }),
-    prisma.user.findUnique({ where: { email: "manager.sokolova@kpd.local" } }),
-  ]);
+  const [ivanov, petrov, sokolova] = await loadResponsibleUsers();
   const clients = await prisma.client.findMany();
   const cl = (dept: string, company: string) =>
     clients.find(c => c.name === `${dept} – ${company}`);
@@ -249,10 +362,8 @@ async function seedOrders() {
 }
 
 async function seedExecutors(hash: string) {
-  const [ivanov, petrov, sokolova, opsAcc] = await Promise.all([
-    prisma.user.findUnique({ where: { email: "manager.ivanov@kpd.local"   } }),
-    prisma.user.findUnique({ where: { email: "manager.petrov@kpd.local"   } }),
-    prisma.user.findUnique({ where: { email: "manager.sokolova@kpd.local" } }),
+  const [[ivanov, petrov, sokolova], opsAcc] = await Promise.all([
+    loadResponsibleUsers(),
     prisma.bankAccount.findFirst({ where: { isDefault: true } }),
   ]);
   const wts = await prisma.workType.findMany({ where: { status: "active" } });
@@ -1101,6 +1212,7 @@ async function main() {
   await seedUsers(hash);
   await seedBankAccounts();
   await seedWorkTypes();
+  await seedResponsibleManagers(hash);
   await seedClients();
   await seedProjects();
   await seedOrders();
@@ -1127,8 +1239,8 @@ async function main() {
   console.log(`[seed]  Строк плана:  ${plan}`);
   console.log("[seed] ──────────────────────────────────");
   console.log(`[seed]  admin@kpd.local / ${SEED_PASSWORD}`);
-  console.log(`[seed]  manager.ivanov@kpd.local / ${SEED_PASSWORD}`);
-  console.log(`[seed]  manager.sokolova@kpd.local / ${SEED_PASSWORD}`);
+  console.log(`[seed]  PM (исполнитель+isResponsible): manager.ivanov@, manager.petrov@, manager.sokolova@ / ${SEED_PASSWORD}`);
+  console.log(`[seed]  PM в архиве (responsibleActive=false): manager.archived@kpd.local / ${SEED_PASSWORD}`);
   console.log(`[seed]  executor.smirnov@kpd.local / ${SEED_PASSWORD}`);
   console.log("[seed] done.");
 }

@@ -9,7 +9,7 @@ const bulkSchema = z.object({
   ids: z.array(z.string()).min(1),
   patch: z.object({
     workStatus: z.enum(["submitted", "checked", "paid", "rework"]).optional(),
-    paymentStatus: z.enum(["planned", "paid"]).optional(),
+    paymentStatus: z.enum(["planned", "sent", "paid"]).optional(),
     plannedPayAt: z.string().nullable().optional(),
     paidAt: z.string().nullable().optional(),
     bankAccountId: z.string().nullable().optional(),

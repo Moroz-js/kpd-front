@@ -24,14 +24,23 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       },
     },
   });
-  if (!user || user.role !== "responsible") {
+  const exec = user
+    ? await prisma.executor.findUnique({
+        where: { userId: user.id },
+        select: { isResponsible: true, responsibleActive: true },
+      })
+    : null;
+  const isPm =
+    user &&
+    (user.role === "responsible" || exec?.isResponsible === true);
+  if (!user || !isPm) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   return NextResponse.json({
     id: user.id,
     fullName: user.fullName,
     email: user.email,
-    isActive: user.isActive,
+    isActive: exec?.isResponsible ? exec.responsibleActive : user.isActive,
     projects: user.responsibleProjects,
   });
 }

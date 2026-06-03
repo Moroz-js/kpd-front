@@ -13,7 +13,9 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -21,10 +23,13 @@ import { formatMoney, formatDate, formatDateShort } from "@/lib/format";
 import { getISOWeek, getISOWeekYear, weekLabel } from "@/lib/iso-weeks";
 import { CHARGE_STATUSES, BADGE_TONE_CLASS } from "@/lib/statuses";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { BulkSelectTableBody } from "@/components/ui-custom/BulkSelectTableBody";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
+import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
+import { useTableRowSelection } from "@/lib/useTableRowSelection";
 
 // ─── Типы ─────────────────────────────────────────────────────────────────────
 
@@ -142,35 +147,70 @@ function InlineDateCell({ value, onSave }: { value: string; onSave: (v: string) 
   );
 }
 
-function InlineTextCell({ value, onSave }: { value: string; onSave: (v: string) => void }) {
-  const [editing, setEditing] = useState(false);
-  const [v, setV] = useState(value);
+function InlinePurposeCell({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(value);
 
-  if (!editing) {
-    return (
-      <span
-        className="inline-flex items-center gap-1 cursor-pointer hover:bg-neutral-100 rounded px-1 py-0.5 text-neutral-600 group max-w-[160px] truncate"
-        onClick={() => setEditing(true)}
-        title={v}
-      >
-        <span className="truncate">{v || <span className="text-neutral-300">—</span>}</span>
-        <Pencil className="h-3 w-3 shrink-0 text-neutral-300 group-hover:text-neutral-500 flex-none" />
-      </span>
-    );
+  useEffect(() => {
+    if (open) setDraft(value);
+  }, [open, value]);
+
+  function handleSave() {
+    setOpen(false);
+    if (draft !== value) onSave(draft);
   }
+
   return (
-    <input
-      autoFocus
-      type="text"
-      value={v}
-      onChange={(e) => setV(e.target.value)}
-      onBlur={() => { setEditing(false); onSave(v); }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") { setEditing(false); onSave(v); }
-        if (e.key === "Escape") { setEditing(false); setV(value); }
-      }}
-      className="border border-blue-300 rounded px-1 py-0.5 text-xs outline-none w-40"
-    />
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            className="inline-flex max-w-[220px] items-start gap-1 rounded px-1 py-0.5 text-left text-xs text-neutral-600 hover:bg-neutral-100 group"
+          />
+        }
+      >
+        <span className="line-clamp-2 min-w-0 flex-1 break-words">
+          {value || <span className="text-neutral-300">— задать —</span>}
+        </span>
+        <Pencil className="mt-0.5 h-3 w-3 shrink-0 text-neutral-300 group-hover:text-neutral-500" />
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-3" align="start" side="bottom">
+        <div className="space-y-2">
+          <Label className="text-xs text-neutral-600">Назначение платежа</Label>
+          <Textarea
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={5}
+            className="min-h-[120px] resize-y text-xs"
+            placeholder="Текст назначения..."
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                setDraft(value);
+                setOpen(false);
+              }
+            }}
+          />
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setDraft(value);
+                setOpen(false);
+              }}
+            >
+              Отмена
+            </Button>
+            <Button type="button" size="sm" onClick={handleSave}>
+              Сохранить
+            </Button>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -189,7 +229,6 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
   const [fStatus, setFStatus] = useState<string[]>([]);
   const [fClient, setFClient] = useState<string[]>([]);
 
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState("");
 
   const fetchData = useCallback(async () => {
@@ -218,6 +257,9 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
     }
     return true;
   });
+
+  const orderedRowIds = React.useMemo(() => filtered.map((r) => r.id), [filtered]);
+  const { selectedIds, handleRowSelect, toggleAll, clearSelection } = useTableRowSelection(orderedRowIds);
 
   const clientOptions = React.useMemo(() => {
     const map = new Map<string, string>();
@@ -259,14 +301,6 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
     setRows(prev => prev.map(r => r.id === id ? { ...r, paymentPurpose: paymentPurpose || null } : r));
   }
 
-  function toggleRow(id: string) {
-    setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  }
-  function toggleAll() {
-    if (selectedIds.size === filtered.length) setSelectedIds(new Set());
-    else setSelectedIds(new Set(filtered.map(r => r.id)));
-  }
-
   async function handleBulkApply() {
     if (!bulkStatus) return toast.error("Выберите статус");
     const ids = Array.from(selectedIds);
@@ -279,7 +313,7 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
     const { updated } = await res.json() as { updated: number };
     toast.success(`Обновлено ${updated} начислений`);
     setRows(prev => prev.map(r => selectedIds.has(r.id) ? { ...r, status: bulkStatus } : r));
-    setSelectedIds(new Set());
+    clearSelection();
     setBulkStatus("");
   }
 
@@ -351,7 +385,7 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
           <Button size="sm" className="h-7" onClick={handleBulkApply} disabled={!bulkStatus}>
             Применить
           </Button>
-          <Button size="sm" variant="ghost" className="h-7 text-neutral-500" onClick={() => setSelectedIds(new Set())}>
+          <Button size="sm" variant="ghost" className="h-7 text-neutral-500" onClick={() => clearSelection()}>
             Сбросить
           </Button>
         </div>
@@ -372,7 +406,7 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
                 <TableHead className="w-8">
                   <Checkbox
                     checked={filtered.length > 0 && selectedIds.size === filtered.length}
-                    onCheckedChange={toggleAll}
+                    onCheckedChange={() => toggleAll(orderedRowIds)}
                   />
                 </TableHead>
                 <TableHead>Банк. счёт</TableHead>
@@ -389,12 +423,12 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
                 <TableHead>Опл. факт</TableHead>
                 <TableHead>Статус</TableHead>
                 <TableHead>Проект</TableHead>
-                <TableHead style={{ minWidth: 160 }}>Назначение</TableHead>
+                <TableHead className="min-w-[220px]">Назначение</TableHead>
                 <TableHead className="w-10" />
               </TableRow>
             </TableHeader>
-            <TableBody>
-              {filtered.map((row) => {
+            <BulkSelectTableBody>
+              {filtered.map((row, rowIndex) => {
                 const pd = planDate(row);
                 const weekPF = payWeekPF(row);
                 const yearPF = payYearPF(row);
@@ -404,14 +438,16 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
                 return (
                   <TableRow key={row.id} className={selectedIds.has(row.id) ? "bg-blue-50/50" : ""}>
                     <TableCell>
-                      <Checkbox
+                      <RowSelectCheckbox
                         checked={selectedIds.has(row.id)}
-                        onCheckedChange={() => toggleRow(row.id)}
+                        rowIndex={rowIndex}
+                        rowId={row.id}
+                        onSelect={handleRowSelect}
                       />
                     </TableCell>
                     <TableCell>{row.bankAccount?.name ?? "—"}</TableCell>
                     <TableCell>{row.invoiceNumber || "—"}</TableCell>
-                    <TableCell>{row.order ? `№${row.order.orderNumber}` : "—"}</TableCell>
+                    <TableCell>{row.order ? row.order.orderNumber : "—"}</TableCell>
                     <TableCell>{row.chargeNumber}</TableCell>
                     <TableCell className="text-right tabular-nums font-semibold text-sm">{row.amount ? formatMoney(row.amount) : "—"}</TableCell>
                     <TableCell>{formatDateShort(row.issuedPlanAt)}</TableCell>
@@ -444,8 +480,8 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
                       </Select>
                     </TableCell>
                     <TableCell>{row.order?.project?.name ?? "—"}</TableCell>
-                    <TableCell>
-                      <InlineTextCell
+                    <TableCell className="align-top max-w-[280px]">
+                      <InlinePurposeCell
                         value={row.paymentPurpose ?? ""}
                         onSave={(v) => patchInlinePurpose(row.id, v)}
                       />
@@ -463,7 +499,7 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
                   </TableRow>
                 );
               })}
-            </TableBody>
+            </BulkSelectTableBody>
           </Table>
       )}
       </div>
@@ -630,7 +666,13 @@ function ChargeFormDialog({
           </div>
           <div className="space-y-1.5 col-span-2">
             <Label>Назначение платежа</Label>
-            <Input value={paymentPurpose} onChange={(e) => setPaymentPurpose(e.target.value)} placeholder="Текст назначения..." />
+            <Textarea
+              value={paymentPurpose}
+              onChange={(e) => setPaymentPurpose(e.target.value)}
+              placeholder="Текст назначения..."
+              rows={4}
+              className="min-h-[100px] resize-y"
+            />
           </div>
         </div>
         <DialogFooter>

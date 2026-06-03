@@ -2,7 +2,7 @@ import { execSync } from "node:child_process";
 import { existsSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { getDatabaseUrl } from "./load-env.mjs";
+import { getDatabaseUrl } from "./database-url.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const url = getDatabaseUrl();

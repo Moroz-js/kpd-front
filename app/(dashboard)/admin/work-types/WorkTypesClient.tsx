@@ -340,6 +340,24 @@ function WorkTypeEditDialog({
               </SelectContent>
             </Select>
           </div>
+          {row && (row.projectTypes.length > 0 || row.estimateSources.length > 0) && (
+            <div className="rounded-md bg-neutral-50 border border-neutral-200 px-3 py-2 text-xs space-y-1">
+              {row.projectTypes.length > 0 && (
+                <div>
+                  <span className="text-neutral-500">Типы проектов: </span>
+                  {row.projectTypes
+                    .map((t) => PROJECT_TYPES[t as keyof typeof PROJECT_TYPES] ?? t)
+                    .join(", ")}
+                </div>
+              )}
+              {row.estimateSources.length > 0 && (
+                <div>
+                  <span className="text-neutral-500">Типы смет: </span>
+                  {row.estimateSources.map((s) => SOURCE_LABEL[s] ?? s).join(", ")}
+                </div>
+              )}
+            </div>
+          )}
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>
               Отмена

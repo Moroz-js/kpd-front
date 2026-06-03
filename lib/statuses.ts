@@ -30,6 +30,10 @@ export const WORK_STATUSES = {
 } as const;
 export type WorkStatus = keyof typeof WORK_STATUSES;
 
+/** Статусы работы, доступные для ручной смены (без «Оплачено» — только из выплаты). */
+export const WORK_STATUSES_SETTABLE = ["submitted", "checked", "rework"] as const;
+export type WorkStatusSettable = (typeof WORK_STATUSES_SETTABLE)[number];
+
 // ─── PAYMENT STATUSES ─────────────────────────────────────────
 export const PAYMENT_STATUSES = {
   planned: { label: "Запланировано", tone: "gray" as BadgeTone },
@@ -140,6 +144,17 @@ export const PROJECT_TYPES = {
   internal: "Внутренний",
   client:   "Клиентский",
 } as const;
+
+// ─── CLIENT DEPARTMENTS (TDNB-21) ─────────────────────────────
+export const CLIENT_DEPARTMENTS = [
+  "PR",
+  "Intercom",
+  "Непроектные расходы",
+  "СБ",
+  "Общепроектные расходы",
+  "Маркетинг",
+  "SM",
+] as const;
 
 // ─── PALETTE FOR ACTIVITY LOG ACTIONS ─────────────────────────
 export const ACTIVITY_ACTIONS: Record<string, string> = {

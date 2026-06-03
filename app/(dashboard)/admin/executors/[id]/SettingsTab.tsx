@@ -13,27 +13,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { WorkTypesMultiSelect } from "@/components/ui-custom/WorkTypesMultiSelect";
 import { RECIPIENT_TYPES, WORK_TYPE_SEGMENTS } from "@/lib/statuses";
 
 type BankAccount = { id: string; name: string };
-type WorkType = { id: string; name: string };
+type WorkType = { id: string; name: string; segment?: string };
 type Project = { id: string; name: string; status: string };
 
-type ExecutorDetail = {
+  type ExecutorDetail = {
   id: string;
   name: string;
+  type: string;
   status: string;
   accessRevokedAt: string | null;
   contacts: string | null;
   requisites: string | null;
   recipientType: string | null;
   defaultBankAccountId: string | null;
-  oldEstimateUrl: string | null;
   specialties: string | null;
   entityForm: string | null;
   isResponsible: boolean;
+  responsibleActive: boolean;
   onboardingSeeded: boolean;
   user: { id: string; email: string; fullName: string; isActive: boolean } | null;
   executorWorkTypes: { workType: WorkType }[];
@@ -49,13 +50,13 @@ type Props = {
 };
 
 export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, onChanged }: Props) {
+  const isService = executor.type === "service";
   const [fullName, setFullName] = useState(executor.user?.fullName ?? executor.name);
   const [email, setEmail] = useState(executor.user?.email ?? "");
   const [contacts, setContacts] = useState(executor.contacts ?? "");
   const [requisites, setRequisites] = useState(executor.requisites ?? "");
   const [recipientType, setRecipientType] = useState(executor.recipientType ?? "");
   const [defaultBankAccountId, setDefaultBankAccountId] = useState(executor.defaultBankAccountId ?? "");
-  const [oldEstimateUrl, setOldEstimateUrl] = useState(executor.oldEstimateUrl ?? "");
   const [entityForm, setEntityForm] = useState(executor.entityForm ?? "");
   const [selectedSpecialties, setSelectedSpecialties] = useState<string[]>(() => {
     try { return JSON.parse(executor.specialties ?? "[]"); } catch { return []; }
@@ -64,6 +65,7 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
     executor.executorWorkTypes.map((ewt) => ewt.workType.id)
   );
   const [isResponsible, setIsResponsible] = useState(executor.isResponsible ?? false);
+  const executorArchived = executor.status === "archived";
   const [saving, setSaving] = useState(false);
 
   // Access toggle
@@ -93,18 +95,21 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          name: fullName.trim(),
           contacts: contacts || null,
           requisites: requisites || null,
           recipientType: recipientType || null,
           defaultBankAccountId: defaultBankAccountId || null,
-          oldEstimateUrl: oldEstimateUrl || null,
           entityForm: entityForm || null,
           specialties: JSON.stringify(selectedSpecialties),
           isResponsible,
           workTypeIds: selectedWorkTypeIds,
         }),
       });
-      if (!r.ok) throw new Error();
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error((body as { error?: string }).error ?? "Ошибка сохранения");
+      }
 
       // Update user fields if exists
       if (executor.user) {
@@ -120,15 +125,10 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
       onChanged();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Ошибка");
+      setIsResponsible(executor.isResponsible ?? false);
     } finally {
       setSaving(false);
     }
-  }
-
-  function toggleWorkType(id: string) {
-    setSelectedWorkTypeIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
   }
 
   function toggleSpecialty(s: string) {
@@ -139,46 +139,47 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
 
   return (
     <div className="space-y-6 max-w-xl">
-      {/* Access block */}
-      <div className="border rounded-lg p-4 space-y-3">
-        <h3 className="text-sm font-semibold text-neutral-800">Доступ к системе</h3>
-        <div className="flex items-center justify-between">
-          <div>
-            <span className={`text-sm font-medium ${hasAccess ? "text-green-700" : "text-red-600"}`}>
-              {hasAccess ? "Доступ активен" : "Доступ отозван"}
-            </span>
-            {executor.user?.email && (
-              <p className="text-xs text-neutral-400 mt-0.5">Логин: {executor.user.email}</p>
+      {!isService && (
+        <div className="border rounded-lg p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-neutral-800">Доступ к системе</h3>
+          <div className="flex items-center justify-between">
+            <div>
+              <span className={`text-sm font-medium ${hasAccess ? "text-green-700" : "text-red-600"}`}>
+                {hasAccess ? "Доступ активен" : "Доступ отозван"}
+              </span>
+              {executor.user?.email && (
+                <p className="text-xs text-neutral-400 mt-0.5">Логин: {executor.user.email}</p>
+              )}
+            </div>
+            {executor.user && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleToggleAccess}
+                disabled={togglingAccess}
+                className={hasAccess ? "border-red-300 text-red-600 hover:bg-red-50" : "border-green-300 text-green-700 hover:bg-green-50"}
+              >
+                {hasAccess ? "Отозвать доступ" : "Выдать доступ"}
+              </Button>
             )}
           </div>
-          {executor.user && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleToggleAccess}
-              disabled={togglingAccess}
-              className={hasAccess ? "border-red-300 text-red-600 hover:bg-red-50" : "border-green-300 text-green-700 hover:bg-green-50"}
-            >
-              {hasAccess ? "Отозвать доступ" : "Выдать доступ"}
-            </Button>
-          )}
         </div>
-      </div>
+      )}
 
       {/* Profile block */}
       <div className="border rounded-lg p-4 space-y-3">
         <h3 className="text-sm font-semibold text-neutral-800">Профиль</h3>
+        {(executor.user || isService) && (
+          <div className="space-y-1.5">
+            <Label>Исполнитель <span className="font-normal text-neutral-400">(ФИО, название компании, сервиса и т.д.)</span></Label>
+            <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
+          </div>
+        )}
         {executor.user && (
-          <>
-            <div className="space-y-1.5">
-              <Label>Исполнитель <span className="font-normal text-neutral-400">(ФИО, название компании, сервиса и т.д.)</span></Label>
-              <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Email (логин)</Label>
-              <Input value={email} onChange={(e) => setEmail(e.target.value)} />
-            </div>
-          </>
+          <div className="space-y-1.5">
+            <Label>Email (логин)</Label>
+            <Input value={email} onChange={(e) => setEmail(e.target.value)} />
+          </div>
         )}
         <div className="space-y-1.5">
           <Label>Контакты</Label>
@@ -188,15 +189,31 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
             placeholder="Телеграм, телефон и т.д."
           />
         </div>
-        <div className="flex items-center gap-2 pt-1">
-          <Checkbox
-            id="isResponsible"
-            checked={isResponsible}
-            onCheckedChange={(v) => setIsResponsible(Boolean(v))}
-          />
-          <Label htmlFor="isResponsible" className="cursor-pointer">
-            Является ответственным
-          </Label>
+        <div className="flex flex-col gap-1 pt-1">
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="isResponsible"
+              checked={isResponsible}
+              disabled={executorArchived}
+              onCheckedChange={(v) => setIsResponsible(Boolean(v))}
+            />
+            <Label
+              htmlFor="isResponsible"
+              className={executorArchived ? "text-neutral-400" : "cursor-pointer"}
+            >
+              Является ответственным
+            </Label>
+          </div>
+          {executorArchived && (
+            <p className="text-xs text-neutral-500 pl-6">
+              Архивного исполнителя нельзя назначить ответственным. Статус ответственного меняется в разделе «Ответственные».
+            </p>
+          )}
+          {isResponsible && !executorArchived && executor.isResponsible && !executor.responsibleActive && (
+            <p className="text-xs text-amber-700 pl-6">
+              Роль ответственного в архиве — исполнитель при этом может оставаться активным.
+            </p>
+          )}
         </div>
       </div>
 
@@ -220,15 +237,6 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
               <option key={v} value={v} />
             ))}
           </datalist>
-        </div>
-        <div className="space-y-1.5">
-          <Label>Ссылка на старую смету</Label>
-          <Input
-            value={oldEstimateUrl}
-            onChange={(e) => setOldEstimateUrl(e.target.value)}
-            placeholder="https://..."
-            type="url"
-          />
         </div>
         <div className="space-y-1.5">
           <Label>Источник оплаты по умолчанию</Label>
@@ -293,28 +301,19 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
       {/* Work types block */}
       <div className="border rounded-lg p-4 space-y-3">
         <h3 className="text-sm font-semibold text-neutral-800">Виды работ</h3>
-        <div className="flex flex-wrap gap-2">
-          {allWorkTypes.map((wt) => {
-            const selected = selectedWorkTypeIds.includes(wt.id);
-            return (
-              <button
-                key={wt.id}
-                type="button"
-                onClick={() => toggleWorkType(wt.id)}
-                className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                  selected
-                    ? "bg-blue-100 border-blue-300 text-blue-800"
-                    : "bg-neutral-50 border-neutral-200 text-neutral-600 hover:bg-neutral-100"
-                }`}
-              >
-                {wt.name}
-              </button>
-            );
-          })}
-          {allWorkTypes.length === 0 && (
-            <span className="text-xs text-neutral-400">Нет доступных видов работ</span>
-          )}
-        </div>
+        {allWorkTypes.length === 0 ? (
+          <span className="text-xs text-neutral-400">Нет доступных видов работ</span>
+        ) : (
+          <WorkTypesMultiSelect
+            options={allWorkTypes.map((wt) => ({
+              id: wt.id,
+              name: wt.name,
+              segment: wt.segment,
+            }))}
+            value={selectedWorkTypeIds}
+            onChange={setSelectedWorkTypeIds}
+          />
+        )}
       </div>
 
       {/* Projects block — read-only */}

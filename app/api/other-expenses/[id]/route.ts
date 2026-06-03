@@ -22,7 +22,7 @@ const patchSchema = z.object({
   plannedPayAt: z.string().nullable().optional(),
   paidAt: z.string().nullable().optional(),
   workStatus: z.enum(["submitted", "checked", "paid", "rework"]).optional(),
-  paymentStatus: z.enum(["planned", "paid"]).optional(),
+  paymentStatus: z.enum(["planned", "sent", "paid"]).nullable().optional(),
   comment: z.string().nullable().optional(),
 });
 

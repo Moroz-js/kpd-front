@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -27,6 +27,7 @@ model User {
   spendingPlanLinesCreated  SpendingPlanLine[] @relation("SpendingPlanLineCreatedBy")
   vacationApprovals         VacationEntry[]    @relation("VacationApprovedBy")
   activityLogs              ActivityLog[]
+  cashflowCellComments      CashflowCellComment[]
 
   @@map("users")
 }
@@ -53,7 +54,8 @@ model Executor {
   defaultBankAccount   BankAccount? @relation("ExecutorDefaultBankAccount", fields: [defaultBankAccountId], references: [id])
   responsibleUserId    String?
   responsibleUser      User? @relation("ExecutorResponsible", fields: [responsibleUserId], references: [id])
-  isResponsible   Boolean   @default(false)
+  isResponsible     Boolean   @default(false)
+  responsibleActive Boolean   @default(true) // статус ответственного (≠ Executor.status)
   oldEstimateUrl  String?
   specialties     String?   // JSON array of segments
   entityForm      String?   // ИП | ООО | ОАО | ПАО | ...
@@ -430,6 +432,23 @@ model CashflowOpeningBalance {
   updatedAt DateTime @updatedAt
 
   @@map("cashflow_opening_balances")
+}
+
+model CashflowCellComment {
+  id          String   @id @default(cuid())
+  year        Int
+  week        Int
+  rowKey      String
+  text        String   @default("")
+  highlight   String?  // yellow | green | red
+  createdById String
+  createdBy   User     @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([year, week, rowKey])
+  @@index([year, week])
+  @@map("cashflow_cell_comments")
 }
 
 // ─────────────────── ИСТОРИЯ ДЕЙСТВИЙ (audit log) ───────────────────

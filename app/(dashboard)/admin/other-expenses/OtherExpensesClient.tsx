@@ -18,15 +18,17 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { BulkSelectTableBody } from "@/components/ui-custom/BulkSelectTableBody";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { WORK_STATUSES, PAYMENT_STATUSES } from "@/lib/statuses";
 import { formatMoney, formatDate, formatDateShort, MONTHS } from "@/lib/format";
-import { getISOWeek, weekLabel } from "@/lib/iso-weeks";
-import { nearestPaymentDate, toLocalDateString } from "@/lib/iso-weeks";
+import { getISOWeek, weekLabel, nearestPaymentDate, toLocalDateString } from "@/lib/iso-weeks";
+import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
+import { useTableRowSelection } from "@/lib/useTableRowSelection";
 
 // ─── Константы ────────────────────────────────────────────────────────────────
 
@@ -101,12 +103,13 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
   const [checkTarget, setCheckTarget] = useState<OtherExpense | null>(null);
 
   // Bulk
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkWorkStatus, setBulkWorkStatus] = useState("");
   const [bulkPlannedPayAt, setBulkPlannedPayAt] = useState("");
   const [bulkPaidAt, setBulkPaidAt] = useState("");
   const [bulkBankId, setBulkBankId] = useState("");
   const [bulkSaving, setBulkSaving] = useState(false);
+  const [inlineEdit, setInlineEdit] = useState<{ rowId: string; field: "plannedPayAt" | "paidAt" } | null>(null);
+  const [inlineVal, setInlineVal] = useState("");
 
   // Фильтры
   const [fYear, setFYear] = useState<string[]>([]);
@@ -154,13 +157,108 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
     return true;
   });
 
+  const orderedRowIds = React.useMemo(() => filtered.map((r) => r.id), [filtered]);
+  const { selectedIds, handleRowSelect, toggleAll, clearSelection } = useTableRowSelection(orderedRowIds);
+
+  async function patchRow(id: string, patch: Record<string, unknown>) {
+    const res = await fetch(`/api/other-expenses/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) {
+      const d = await readApiJson<{ error?: string }>(res);
+      throw new Error(d.error ?? "Ошибка");
+    }
+    const updated = await readApiJson<OtherExpense>(res);
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...updated } : r)));
+    return updated;
+  }
+
+  function startInline(row: OtherExpense, field: "plannedPayAt" | "paidAt") {
+    if (field === "plannedPayAt" && !row.paymentStatus) return;
+    if (field === "paidAt" && !row.paymentStatus) return;
+    if (!isAdmin) return;
+    setInlineEdit({ rowId: row.id, field });
+    if (field === "paidAt") {
+      setInlineVal(row.paidAt ? row.paidAt.slice(0, 10) : toLocalDateString(new Date()));
+    } else {
+      setInlineVal(row.plannedPayAt ? row.plannedPayAt.slice(0, 10) : "");
+    }
+  }
+
+  async function commitInline(row: OtherExpense) {
+    if (!inlineEdit || inlineEdit.rowId !== row.id) return;
+    const patch: Record<string, unknown> = {};
+    if (inlineEdit.field === "paidAt") {
+      patch.paidAt = inlineVal ? new Date(inlineVal).toISOString() : null;
+    } else {
+      patch.plannedPayAt = inlineVal ? new Date(inlineVal).toISOString() : null;
+    }
+    try {
+      await patchRow(row.id, patch);
+      setInlineEdit(null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Ошибка");
+      silentLoad();
+    }
+  }
+
+  function renderPlanDateCell(row: OtherExpense) {
+    const editing = inlineEdit?.rowId === row.id && inlineEdit.field === "plannedPayAt";
+    if (!row.paymentStatus) {
+      return <span className="text-neutral-300">—</span>;
+    }
+    if (editing) {
+      return (
+        <input
+          autoFocus
+          type="date"
+          value={inlineVal}
+          onChange={(e) => setInlineVal(e.target.value)}
+          onBlur={() => commitInline(row)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commitInline(row);
+            if (e.key === "Escape") setInlineEdit(null);
+          }}
+          className="w-full h-6 rounded border border-blue-300 px-1 text-xs bg-blue-50 focus:outline-none"
+        />
+      );
+    }
+    return (
+      <button
+        type="button"
+        className="text-xs text-neutral-600 hover:text-blue-700 hover:underline"
+        onClick={() => startInline(row, "plannedPayAt")}
+      >
+        {formatDateShort(row.plannedPayAt)}
+      </button>
+    );
+  }
+
   async function handleCheck(row: OtherExpense) {
     setCheckTarget(null);
-    setRows(prev => prev.map(r => r.id === row.id ? { ...r, workStatus: "checked", checkedAt: new Date().toISOString(), paymentStatus: "planned" } : r));
+    const plannedIso = nearestPaymentDate().toISOString();
+    setRows((prev) =>
+      prev.map((r) =>
+        r.id === row.id
+          ? {
+              ...r,
+              workStatus: "checked",
+              checkedAt: new Date().toISOString(),
+              paymentStatus: "planned",
+              paymentAmount: r.amount,
+              plannedPayAt: plannedIso,
+            }
+          : r
+      )
+    );
     try {
       const res = await fetch(`/api/other-expenses/${row.id}/check`, { method: "POST" });
       if (!res.ok) { const d = await readApiJson<{ error?: string }>(res); throw new Error(d.error ?? "Ошибка"); }
-      toast.success("Работа проверена");
+      const updated = await readApiJson<OtherExpense>(res);
+      setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, ...updated } : r)));
+      toast.success("Работа проверена, выплата создана");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Ошибка");
       silentLoad();
@@ -178,15 +276,6 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
       toast.error("Не удалось удалить");
       silentLoad();
     }
-  }
-
-  function toggleRow(id: string) {
-    setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  }
-
-  function toggleAll() {
-    if (selectedIds.size === filtered.length) setSelectedIds(new Set());
-    else setSelectedIds(new Set(filtered.map(r => r.id)));
   }
 
   async function handleBulkApply() {
@@ -207,7 +296,7 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
     if (!res.ok) return toast.error("Ошибка массового обновления");
     const { updated } = await res.json() as { updated: number };
     toast.success(`Обновлено ${updated} записей`);
-    setSelectedIds(new Set());
+    clearSelection();
     setBulkWorkStatus(""); setBulkPlannedPayAt(""); setBulkPaidAt(""); setBulkBankId("");
     silentLoad();
   }
@@ -326,19 +415,22 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
             <span className="text-xs text-neutral-500">Дата оплаты:</span>
             <Input type="date" className="h-7 text-xs w-36" value={bulkPaidAt} onChange={(e) => setBulkPaidAt(e.target.value)} />
           </div>
-          <Select value={bulkBankId || "__none__"} onValueChange={(v) => setBulkBankId(v === "__none__" ? "" : (v ?? ""))}>
-            <SelectTrigger className="h-7 w-44 text-xs">
-              <SelectValue>{bulkBankId ? (bankAccounts.find(b => b.id === bulkBankId)?.name ?? "Источник оплаты") : "— не менять —"}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">— не менять —</SelectItem>
-              {bankAccounts.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-neutral-500">Источник оплаты:</span>
+            <Select value={bulkBankId || "__none__"} onValueChange={(v) => setBulkBankId(v === "__none__" ? "" : (v ?? ""))}>
+              <SelectTrigger className="h-7 w-44 text-xs">
+                <SelectValue>{bulkBankId ? (bankAccounts.find(b => b.id === bulkBankId)?.name ?? "") : "— не менять —"}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">— не менять —</SelectItem>
+                {bankAccounts.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
           <Button size="sm" className="h-7 text-xs" onClick={handleBulkApply} disabled={bulkSaving}>
             {bulkSaving ? "..." : "Применить"}
           </Button>
-          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { setSelectedIds(new Set()); setBulkWorkStatus(""); setBulkPlannedPayAt(""); setBulkPaidAt(""); setBulkBankId(""); }}>
+          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { clearSelection(); setBulkWorkStatus(""); setBulkPlannedPayAt(""); setBulkPaidAt(""); setBulkBankId(""); }}>
             <X className="h-3.5 w-3.5" />
           </Button>
         </div>
@@ -360,7 +452,7 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
           <TableHeader>
             <TableRow>
               <TableHead className="w-8">
-                <Checkbox checked={selectedIds.size === filtered.length && filtered.length > 0} onCheckedChange={toggleAll} />
+                <Checkbox checked={selectedIds.size === filtered.length && filtered.length > 0} onCheckedChange={() => toggleAll(orderedRowIds)} />
               </TableHead>
               <TableHead>Год</TableHead>
               <TableHead>Месяц</TableHead>
@@ -371,29 +463,35 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
               <TableHead>Вид работ</TableHead>
               <TableHead>Ответственный</TableHead>
               <TableHead>Способ оплаты</TableHead>
-              <TableHead>Дата оплаты план</TableHead>
+              <TableHead>Дата план (работа)</TableHead>
               <TableHead className="text-right">Сумма</TableHead>
               <TableHead>Статус работы</TableHead>
               <TableHead>Статус выплаты</TableHead>
+              <TableHead>Дата план (выплата)</TableHead>
               <TableHead className="text-right">Выплата</TableHead>
               <TableHead>Дата оплаты факт</TableHead>
               <TableHead>Счёт</TableHead>
               <TableHead className="w-16" />
             </TableRow>
           </TableHeader>
-          <TableBody>
+          <BulkSelectTableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={18} className="text-center text-neutral-500 py-8">Загрузка...</TableCell>
+                <TableCell colSpan={19} className="text-center text-neutral-500 py-8">Загрузка...</TableCell>
               </TableRow>
             ) : filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={18} className="text-center text-neutral-500 py-8">Нет данных</TableCell>
+                <TableCell colSpan={19} className="text-center text-neutral-500 py-8">Нет данных</TableCell>
               </TableRow>
-            ) : filtered.map((row) => (
+            ) : filtered.map((row, rowIndex) => (
               <TableRow key={row.id} className={selectedIds.has(row.id) ? "bg-blue-50" : ""}>
                 <TableCell>
-                  <Checkbox checked={selectedIds.has(row.id)} onCheckedChange={() => toggleRow(row.id)} />
+                  <RowSelectCheckbox
+                    checked={selectedIds.has(row.id)}
+                    rowIndex={rowIndex}
+                    rowId={row.id}
+                    onSelect={handleRowSelect}
+                  />
                 </TableCell>
                 <TableCell>{row.executionYear}</TableCell>
                 <TableCell className="whitespace-nowrap">{MONTHS.find(m => m.value === String(row.executionMonth))?.label ?? row.executionMonth}</TableCell>
@@ -404,7 +502,7 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
                 <TableCell>{row.workType.name}</TableCell>
                 <TableCell className="whitespace-nowrap">{row.responsibleUser.fullName}</TableCell>
                 <TableCell>{row.preferredPayMethod ?? "—"}</TableCell>
-                <TableCell>{formatDateShort(row.plannedPayAt)}</TableCell>
+                <TableCell className="min-w-[100px]">{renderPlanDateCell(row)}</TableCell>
                 <TableCell className="text-right tabular-nums font-semibold">{formatMoney(row.amount)}</TableCell>
                 <TableCell><StatusBadge dict={WORK_STATUSES} value={row.workStatus} /></TableCell>
                 <TableCell>
@@ -412,12 +510,43 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
                     ? <StatusBadge dict={PAYMENT_STATUSES} value={row.paymentStatus} />
                     : <span className="text-neutral-300">—</span>}
                 </TableCell>
+                <TableCell className="min-w-[100px]">{renderPlanDateCell(row)}</TableCell>
                 <TableCell className="text-right tabular-nums">{row.paymentAmount != null ? formatMoney(row.paymentAmount) : "—"}</TableCell>
-                <TableCell>{formatDateShort(row.paidAt)}</TableCell>
+                <TableCell className="min-w-[110px]">
+                  <div className="flex items-center gap-1">
+                    {inlineEdit?.rowId === row.id && inlineEdit.field === "paidAt" ? (
+                      <input
+                        autoFocus
+                        type="date"
+                        value={inlineVal}
+                        onChange={(e) => setInlineVal(e.target.value)}
+                        onBlur={() => commitInline(row)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") commitInline(row);
+                          if (e.key === "Escape") setInlineEdit(null);
+                        }}
+                        className="flex-1 h-6 rounded border border-blue-300 px-1 text-xs bg-blue-50 focus:outline-none"
+                      />
+                    ) : (
+                      <span className="text-xs text-neutral-600">{formatDateShort(row.paidAt)}</span>
+                    )}
+                    {row.paymentStatus && isAdmin && !(inlineEdit?.rowId === row.id && inlineEdit.field === "paidAt") && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 w-6 p-0 shrink-0"
+                        title="Указать дату оплаты"
+                        onClick={() => startInline(row, "paidAt")}
+                      >
+                        <Pencil className="h-3 w-3 text-neutral-500" />
+                      </Button>
+                    )}
+                  </div>
+                </TableCell>
                 <TableCell>{row.bankAccount?.name ?? "—"}</TableCell>
                 <TableCell>
                   <div className="flex gap-1 items-center">
-                    {isAdmin && row.workStatus !== "checked" && row.workStatus !== "paid" && (
+                    {isAdmin && !row.paymentStatus && row.workStatus === "submitted" && (
                       <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Проверить" onClick={() => setCheckTarget(row)}>
                         <CheckCircle className="h-3.5 w-3.5 text-blue-600" />
                       </Button>
@@ -436,7 +565,7 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
                 </TableCell>
               </TableRow>
             ))}
-          </TableBody>
+          </BulkSelectTableBody>
         </Table>
 
       {/* Диалоги */}
@@ -508,13 +637,13 @@ function OtherExpenseFormDialog({
 }) {
   const now = new Date();
   const [projectId, setProjectId] = useState(initial?.projectId ?? "");
-  const [executorId, setExecutorId] = useState(initial?.executorId ?? "__unselected__");
+  const [executorId, setExecutorId] = useState(initial?.executorId ?? "");
   const [workTypeId, setWorkTypeId] = useState(initial?.workTypeId ?? "");
   const [executorWorkTypeIds, setExecutorWorkTypeIds] = useState<string[] | null>(null);
 
   // Load work type IDs for selected executor
   React.useEffect(() => {
-    if (!executorId || executorId === "__unselected__") { setExecutorWorkTypeIds(null); return; }
+    if (!executorId) { setExecutorWorkTypeIds(null); return; }
     fetch(`/api/executors/${executorId}/work-type-ids`)
       .then(r => r.json())
       .then((ids: string[]) => { setExecutorWorkTypeIds(ids); })
@@ -522,8 +651,7 @@ function OtherExpenseFormDialog({
   }, [executorId]);
 
   const filteredWorkTypes = React.useMemo(() => {
-    if (!executorId || executorId === "") return [];
-    if (executorId === "__unselected__") return workTypes;
+    if (!executorId) return [];
     if (executorWorkTypeIds) return workTypes.filter(w => executorWorkTypeIds.includes(w.id));
     return workTypes;
   }, [executorId, executorWorkTypeIds, workTypes]);
@@ -533,19 +661,18 @@ function OtherExpenseFormDialog({
   const [month, setMonth] = useState(String(initial?.executionMonth ?? now.getMonth() + 1));
   const [description, setDescription] = useState(initial?.description ?? "");
   const [amount, setAmount] = useState(initial?.amount != null ? String(initial.amount) : "");
-  const [paymentAmount, setPaymentAmount] = useState(initial?.paymentAmount != null ? String(initial.paymentAmount) : "");
   const [preferredPayMethod, setPreferredPayMethod] = useState(initial?.preferredPayMethod ?? "");
-  const [plannedPayAt, setPlannedPayAt] = useState(initial?.plannedPayAt ? new Date(initial.plannedPayAt).toISOString().slice(0, 10) : toLocalDateString(nearestPaymentDate()));
-  const [paidAt, setPaidAt] = useState(initial?.paidAt ? new Date(initial.paidAt).toISOString().slice(0, 10) : "");
-  const [workStatus, setWorkStatus] = useState(initial?.workStatus ?? "");
+  const [plannedPayAt, setPlannedPayAt] = useState(initial?.plannedPayAt ? new Date(initial.plannedPayAt).toISOString().slice(0, 10) : "");
+  const [workStatus, setWorkStatus] = useState(initial?.workStatus ?? "submitted");
   const [comment, setComment] = useState(initial?.comment ?? "");
   const [saving, setSaving] = useState(false);
 
   const years = [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1];
   const isEdit = !!initial;
+  const paymentCreated = !!initial?.paymentStatus;
 
   async function handleSave() {
-    if (!projectId || !workTypeId || !responsibleUserId || !description || !amount) {
+    if (!projectId || !executorId || !workTypeId || !responsibleUserId || !description || !amount) {
       toast.error("Заполните обязательные поля");
       return;
     }
@@ -558,18 +685,16 @@ function OtherExpenseFormDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId,
-          executorId: executorId === "__unselected__" ? null : executorId,
+          executorId,
           workTypeId, responsibleUserId,
           bankAccountId: bankAccountId || null,
           executionYear: parseInt(year),
           executionMonth: parseInt(month),
           description,
           amount: parseFloat(amount),
-          paymentAmount: paymentAmount ? parseFloat(paymentAmount) : null,
           preferredPayMethod: preferredPayMethod || null,
-          plannedPayAt: plannedPayAt || null,
-          paidAt: paidAt || null,
-          workStatus: workStatus || undefined,
+          ...(paymentCreated ? { plannedPayAt: plannedPayAt || null } : {}),
+          workStatus: paymentCreated ? undefined : (workStatus || "submitted"),
           comment: comment || null,
         }),
       });
@@ -614,15 +739,20 @@ function OtherExpenseFormDialog({
           </div>
           <div className="space-y-1.5">
             {/* TODO: фильтровать исполнителей без личной сметы (hasPersonalEstimate: false) */}
-            <Label>Исполнитель</Label>
-            <Select value={executorId} onValueChange={(v) => setExecutorId(v ?? "__unselected__")}>
+            <Label>Исполнитель *</Label>
+            <Select
+              value={executorId}
+              onValueChange={(v) => {
+                setExecutorId(v ?? "");
+                setWorkTypeId("");
+              }}
+            >
               <SelectTrigger>
                 <SelectValue>
-                  {executorId === "__unselected__" ? "Пока не выбран" : (executors.find(e => e.id === executorId)?.name ?? "Выберите")}
+                  {executors.find(e => e.id === executorId)?.name ?? "Выберите"}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__unselected__">Пока не выбран</SelectItem>
                 {executors.map(e => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -639,7 +769,7 @@ function OtherExpenseFormDialog({
                 {filteredWorkTypes.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
                 {filteredWorkTypes.length === 0 && (
                   <div className="px-3 py-2 text-xs text-neutral-400">
-                    {executorId && executorId !== "__unselected__" ? "Нет видов работ у исполнителя" : "Сначала выберите исполнителя"}
+                    {executorId ? "Нет видов работ у исполнителя" : "Сначала выберите исполнителя"}
                   </div>
                 )}
               </SelectContent>
@@ -674,31 +804,31 @@ function OtherExpenseFormDialog({
             <Label>Сумма к выплате *</Label>
             <Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
           </div>
-          <div className="space-y-1.5">
-            <Label>Выплата (факт)</Label>
-            <Input type="number" value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} placeholder="= сумма по умолчанию" />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Дата оплаты — план</Label>
-            <Input type="date" className="h-9" value={plannedPayAt} onChange={(e) => setPlannedPayAt(e.target.value)} />
-          </div>
-          {isEdit && (
+          {paymentCreated && (
             <div className="space-y-1.5">
-              <Label>Дата оплаты (факт)</Label>
-              <Input type="date" className="h-9" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} />
+              <Label>Дата оплаты — план</Label>
+              <Input type="date" className="h-9" value={plannedPayAt} onChange={(e) => setPlannedPayAt(e.target.value)} />
             </div>
           )}
           <div className="space-y-1.5">
             <Label>Статус работы</Label>
-            <Select value={workStatus || "__none__"} onValueChange={(v) => setWorkStatus(v === "__none__" ? "" : (v ?? ""))}>
-              <SelectTrigger>
-                <SelectValue>{workStatus ? (WORK_STATUSES[workStatus as keyof typeof WORK_STATUSES]?.label ?? workStatus) : "— По умолчанию —"}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">— По умолчанию —</SelectItem>
-                {Object.entries(WORK_STATUSES).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            {paymentCreated ? (
+              <Input
+                value={WORK_STATUSES[workStatus as keyof typeof WORK_STATUSES]?.label ?? workStatus}
+                disabled
+                className="h-9"
+              />
+            ) : (
+              <Select value={workStatus || "__none__"} onValueChange={(v) => setWorkStatus(v === "__none__" ? "" : (v ?? ""))}>
+                <SelectTrigger>
+                  <SelectValue>{workStatus ? (WORK_STATUSES[workStatus as keyof typeof WORK_STATUSES]?.label ?? workStatus) : "— По умолчанию —"}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— По умолчанию —</SelectItem>
+                  {Object.entries(WORK_STATUSES).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label>Источник оплаты</Label>

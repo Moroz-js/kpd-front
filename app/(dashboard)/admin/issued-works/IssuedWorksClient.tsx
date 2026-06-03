@@ -7,7 +7,7 @@ import { Pencil, CheckCircle2, X } from "lucide-react";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
-import { WORK_STATUSES, EXECUTOR_TYPES, PROJECT_TYPES } from "@/lib/statuses";
+import { WORK_STATUSES, WORK_STATUSES_SETTABLE, EXECUTOR_TYPES, PROJECT_TYPES } from "@/lib/statuses";
 import { formatMoney, formatDate, formatDateShort, weekLabel, monthLabel, MONTHS } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -15,13 +15,15 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Table,
-  TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { BulkSelectTableBody } from "@/components/ui-custom/BulkSelectTableBody";
 import { SortableHead } from "@/components/ui-custom/SortableHead";
+import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
+import { useTableRowSelection } from "@/lib/useTableRowSelection";
 import { IssuedWorkEditDialog, type SmetaType } from "./IssuedWorkEditDialog";
 
 type Row = {
@@ -101,39 +103,11 @@ export function IssuedWorksClient() {
   const [editing, setEditing] = React.useState<Row | null>(null);
 
   // Bulk
-  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = React.useState("");
   const [bulkPlannedPayAt, setBulkPlannedPayAt] = React.useState("");
   const [bulkSaving, setBulkSaving] = React.useState(false);
 
   function rowId(r: Row) { return `${r.sourceType}:${r.sourceId}`; }
-  function toggleRow(r: Row) {
-    const id = rowId(r);
-    setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  }
-  function toggleAll() {
-    if (selectedIds.size === rows.length) setSelectedIds(new Set());
-    else setSelectedIds(new Set(rows.map(rowId)));
-  }
-  async function handleBulkApply() {
-    const ids = Array.from(selectedIds);
-    const patch: Record<string, unknown> = {};
-    if (bulkStatus) patch.workStatus = bulkStatus;
-    if (bulkPlannedPayAt) patch.plannedPayAt = new Date(bulkPlannedPayAt).toISOString();
-    if (Object.keys(patch).length === 0) return toast.error("Выберите хотя бы одно поле");
-    setBulkSaving(true);
-    const res = await fetch("/api/issued-works/bulk", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids, patch }),
-    });
-    setBulkSaving(false);
-    if (!res.ok) return toast.error("Ошибка массового обновления");
-    const { updated } = await res.json() as { updated: number };
-    toast.success(`Обновлено ${updated} записей`);
-    setSelectedIds(new Set()); setBulkStatus(""); setBulkPlannedPayAt("");
-    mutate();
-  }
 
   function compareRows(a: Row, b: Row): number {
     for (const s of sort) {
@@ -234,6 +208,31 @@ export function IssuedWorksClient() {
     smetaFilter,
     sort,
   ]);
+
+  const orderedRowIds = React.useMemo(() => rows.map(rowId), [rows]);
+  const { selectedIds, handleRowSelect, toggleAll, clearSelection } = useTableRowSelection(orderedRowIds);
+
+  async function handleBulkApply() {
+    const ids = Array.from(selectedIds);
+    const patch: Record<string, unknown> = {};
+    if (bulkStatus) patch.workStatus = bulkStatus;
+    if (bulkPlannedPayAt) patch.plannedPayAt = new Date(bulkPlannedPayAt).toISOString();
+    if (Object.keys(patch).length === 0) return toast.error("Выберите хотя бы одно поле");
+    setBulkSaving(true);
+    const res = await fetch("/api/issued-works/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids, patch }),
+    });
+    setBulkSaving(false);
+    if (!res.ok) return toast.error("Ошибка массового обновления");
+    const { updated } = await res.json() as { updated: number };
+    toast.success(`Обновлено ${updated} записей`);
+    clearSelection();
+    setBulkStatus("");
+    setBulkPlannedPayAt("");
+    mutate();
+  }
 
   async function handleCheck(row: Row) {
     const compositeId = `${row.sourceType}:${row.sourceId}`;
@@ -339,7 +338,9 @@ export function IssuedWorksClient() {
               <SelectValue>{bulkStatus ? (WORK_STATUSES[bulkStatus as keyof typeof WORK_STATUSES]?.label ?? "Статус") : "Статус"}</SelectValue>
             </SelectTrigger>
             <SelectContent>
-              {Object.entries(WORK_STATUSES).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
+              {WORK_STATUSES_SETTABLE.map((k) => (
+                <SelectItem key={k} value={k}>{WORK_STATUSES[k].label}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <div className="flex items-center gap-1">
@@ -349,7 +350,7 @@ export function IssuedWorksClient() {
           <Button size="sm" className="h-7 text-xs" onClick={handleBulkApply} disabled={bulkSaving}>
             {bulkSaving ? "..." : "Применить"}
           </Button>
-          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { setSelectedIds(new Set()); setBulkStatus(""); setBulkPlannedPayAt(""); }}>
+          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { clearSelection(); setBulkStatus(""); setBulkPlannedPayAt(""); }}>
             <X className="h-3.5 w-3.5" />
           </Button>
         </div>
@@ -362,31 +363,32 @@ export function IssuedWorksClient() {
           <TableHeader>
             <TableRow>
               <TableHead className="w-8">
-                <Checkbox checked={selectedIds.size === rows.length && rows.length > 0} onCheckedChange={toggleAll} />
+                <Checkbox checked={selectedIds.size === rows.length && rows.length > 0} onCheckedChange={() => toggleAll(orderedRowIds)} />
               </TableHead>
               <SortableHead
                 field="yearPlanFact"
                 sortBy={activeSortField()}
                 sortDir={activeSortDir()}
                 onSort={handleSort}
-                className="w-20"
+                className="w-12 max-w-12 px-0.5 text-center"
               >
-                Год план-факт
+                <span title="Год план-факт">Год ПФ</span>
               </SortableHead>
               <SortableHead
                 field="executionYear"
                 sortBy={activeSortField()}
                 sortDir={activeSortDir()}
                 onSort={handleSort}
-                className="w-20"
+                className="w-12 max-w-12 px-0.5 text-center"
               >
-                Год выполн.
+                <span title="Год выполнения">Год вып.</span>
               </SortableHead>
               <SortableHead
                 field="executionMonth"
                 sortBy={activeSortField()}
                 sortDir={activeSortDir()}
                 onSort={handleSort}
+                className="w-11 max-w-11 px-0.5"
               >
                 Месяц
               </SortableHead>
@@ -451,7 +453,7 @@ export function IssuedWorksClient() {
               <TableHead className="w-24" />
             </TableRow>
           </TableHeader>
-          <TableBody>
+          <BulkSelectTableBody>
             {isLoading ? (
               <TableRow>
                 <TableCell colSpan={18} className="text-center text-neutral-500 py-8">
@@ -466,14 +468,19 @@ export function IssuedWorksClient() {
                 </TableCell>
               </TableRow>
             ) : (
-              rows.map((r) => (
+              rows.map((r, rowIndex) => (
                 <TableRow key={`${r.sourceType}:${r.sourceId}`} className={`${selectedIds.has(rowId(r)) ? "bg-blue-50" : ""} ${r.workStatus === "archived" ? "bg-neutral-50 text-neutral-400" : ""}`.trim()}>
                   <TableCell>
-                    <Checkbox checked={selectedIds.has(rowId(r))} onCheckedChange={() => toggleRow(r)} />
+                    <RowSelectCheckbox
+                      checked={selectedIds.has(rowId(r))}
+                      rowIndex={rowIndex}
+                      rowId={rowId(r)}
+                      onSelect={handleRowSelect}
+                    />
                   </TableCell>
-                  <TableCell className="text-sm tabular-nums w-20">{r.yearPlanFact ?? "—"}</TableCell>
-                  <TableCell className="text-sm tabular-nums w-20">{r.executionYear}</TableCell>
-                  <TableCell className="text-sm">{monthLabel(r.executionMonth)}</TableCell>
+                  <TableCell className="text-xs tabular-nums w-12 max-w-12 px-0.5 text-center">{r.yearPlanFact ?? "—"}</TableCell>
+                  <TableCell className="text-xs tabular-nums w-12 max-w-12 px-0.5 text-center">{r.executionYear}</TableCell>
+                  <TableCell className="text-xs w-11 max-w-11 px-0.5 whitespace-nowrap">{monthLabel(r.executionMonth)}</TableCell>
                   <TableCell className="border-r-2 border-neutral-300 text-sm">
                     {r.weekPlanFact != null ? weekLabel(r.weekPlanFact) : "—"}
                   </TableCell>
@@ -515,7 +522,7 @@ export function IssuedWorksClient() {
                 </TableRow>
               ))
             )}
-          </TableBody>
+          </BulkSelectTableBody>
         </Table>
 
       {editing && (

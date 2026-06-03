@@ -16,6 +16,10 @@
 import { prisma } from "@/lib/db";
 import { logActivity, diff } from "@/lib/audit/log";
 import type { PayoutSource } from "@/lib/views/payouts";
+import {
+  clearOtherExpensePayment,
+  updateOtherExpense,
+} from "@/lib/services/other-expenses";
 
 export type PayoutPatch = {
   amount?: number;
@@ -112,72 +116,25 @@ async function updatePaymentSource(paymentId: string, patch: PayoutPatch, userId
 }
 
 async function updateOtherSource(otherId: string, patch: PayoutPatch, userId: string) {
-  const before = await prisma.otherExpense.findUnique({ where: { id: otherId } });
-  if (!before) throw new Error("OtherExpense not found");
-
-  const data: Record<string, unknown> = {};
-  if (patch.amount !== undefined) data.paymentAmount = patch.amount;
-  if (patch.paymentStatus !== undefined) data.paymentStatus = patch.paymentStatus;
-  if (patch.paidAt !== undefined) data.paidAt = patch.paidAt;
-  if (patch.plannedPayAt !== undefined) data.plannedPayAt = patch.plannedPayAt;
-  if (patch.bankAccountId !== undefined) data.bankAccountId = patch.bankAccountId;
-  if (patch.comment !== undefined) data.comment = patch.comment;
-  if (patch.executorId !== undefined) data.executorId = patch.executorId;
-  if (patch.executionMonth !== undefined) data.executionMonth = patch.executionMonth;
-  if (patch.executionYear !== undefined) data.executionYear = patch.executionYear;
-
-  // §2.3 каскад: оплата → workStatus = paid; откат оплаты → checked + очистить paidAt
-  if (patch.paymentStatus === "paid" && before.paymentStatus !== "paid") {
-    data.workStatus = "paid";
-  } else if (
-    patch.paymentStatus !== undefined &&
-    patch.paymentStatus !== "paid" &&
-    before.paymentStatus === "paid"
-  ) {
-    data.workStatus = "checked";
-    data.paidAt = null; // возврат в «Запланировано» → сбросить дату оплаты
-  }
-
-  const updated = await prisma.otherExpense.update({ where: { id: otherId }, data });
-
-  const changes = diff(
+  return updateOtherExpense(
+    otherId,
     {
-      paymentAmount: before.paymentAmount,
-      paymentStatus: before.paymentStatus,
-      paidAt: before.paidAt,
-      plannedPayAt: before.plannedPayAt,
-      bankAccountId: before.bankAccountId,
-      comment: before.comment,
-      executorId: before.executorId,
-      executionMonth: before.executionMonth,
-      executionYear: before.executionYear,
-      workStatus: before.workStatus,
+      ...(patch.amount !== undefined && { paymentAmount: patch.amount }),
+      ...(patch.paymentStatus !== undefined && { paymentStatus: patch.paymentStatus }),
+      ...(patch.paidAt !== undefined && {
+        paidAt: patch.paidAt ? patch.paidAt.toISOString() : null,
+      }),
+      ...(patch.plannedPayAt !== undefined && {
+        plannedPayAt: patch.plannedPayAt ? patch.plannedPayAt.toISOString() : null,
+      }),
+      ...(patch.bankAccountId !== undefined && { bankAccountId: patch.bankAccountId }),
+      ...(patch.comment !== undefined && { comment: patch.comment }),
+      ...(patch.executorId !== undefined && { executorId: patch.executorId }),
+      ...(patch.executionMonth !== undefined && { executionMonth: patch.executionMonth }),
+      ...(patch.executionYear !== undefined && { executionYear: patch.executionYear }),
     },
-    {
-      paymentAmount: updated.paymentAmount,
-      paymentStatus: updated.paymentStatus,
-      paidAt: updated.paidAt,
-      plannedPayAt: updated.plannedPayAt,
-      bankAccountId: updated.bankAccountId,
-      comment: updated.comment,
-      executorId: updated.executorId,
-      executionMonth: updated.executionMonth,
-      executionYear: updated.executionYear,
-      workStatus: updated.workStatus,
-    }
+    userId
   );
-  if (Object.keys(changes).length > 0) {
-    await logActivity({
-      userId,
-      action: "update",
-      entityType: "OtherExpense",
-      entityId: otherId,
-      entityLabel: `Прочие траты · ${before.description.slice(0, 40)}`,
-      changes,
-    });
-  }
-
-  return updated;
 }
 
 export async function deletePayout(
@@ -220,28 +177,5 @@ async function deletePaymentSource(paymentId: string, userId: string) {
 }
 
 async function clearOtherPaymentFields(otherId: string, userId: string) {
-  const before = await prisma.otherExpense.findUnique({ where: { id: otherId } });
-  if (!before) throw new Error("OtherExpense not found");
-
-  const updated = await prisma.otherExpense.update({
-    where: { id: otherId },
-    data: {
-      paymentAmount: null,
-      plannedPayAt: null,
-      paidAt: null,
-      bankAccountId: null,
-      paymentStatus: "planned",
-      ...(before.workStatus === "paid" && { workStatus: "checked" }),
-    },
-  });
-
-  await logActivity({
-    userId,
-    action: "delete",
-    entityType: "OtherExpense",
-    entityId: otherId,
-    entityLabel: `Прочие траты · ${before.description.slice(0, 40)} (очищена выплата)`,
-  });
-
-  return updated;
+  return clearOtherExpensePayment(otherId, userId);
 }

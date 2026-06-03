@@ -93,27 +93,49 @@ export async function updateWork(
   patch: UpdateWorkInput,
   userId: string
 ) {
-  const updated = await prisma.work.update({
-    where: { id: workId },
-    data: {
-      ...(patch.projectId !== undefined && { projectId: patch.projectId }),
-      ...(patch.workTypeId !== undefined && { workTypeId: patch.workTypeId }),
-      ...(patch.executionYear !== undefined && { executionYear: patch.executionYear }),
-      ...(patch.executionMonth !== undefined && { executionMonth: patch.executionMonth }),
-      ...(patch.techTask !== undefined && { techTask: patch.techTask }),
-      ...(patch.report !== undefined && { report: patch.report }),
-      ...(patch.link !== undefined && { link: patch.link }),
-      ...(patch.volume !== undefined && { volume: patch.volume }),
-      ...(patch.rate !== undefined && { rate: patch.rate }),
-      ...(patch.amount !== undefined && { amount: patch.amount }),
-      ...(patch.plannedPayAt !== undefined && {
-        plannedPayAt: patch.plannedPayAt ? new Date(patch.plannedPayAt) : null,
-      }),
-      ...(patch.filledTechTask !== undefined && { filledTechTask: patch.filledTechTask }),
-      ...(patch.filledAct !== undefined && { filledAct: patch.filledAct }),
-      ...(patch.workStatus !== undefined && { workStatus: patch.workStatus }),
-      ...(patch.comment !== undefined && { comment: patch.comment }),
-    },
+  const before = await prisma.work.findUniqueOrThrow({ where: { id: workId } });
+
+  if (patch.amount !== undefined && before.workStatus === "paid") {
+    throw new Error("Сумму оплаченной работы нельзя менять из сметы");
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const row = await tx.work.update({
+      where: { id: workId },
+      data: {
+        ...(patch.projectId !== undefined && { projectId: patch.projectId }),
+        ...(patch.workTypeId !== undefined && { workTypeId: patch.workTypeId }),
+        ...(patch.executionYear !== undefined && { executionYear: patch.executionYear }),
+        ...(patch.executionMonth !== undefined && { executionMonth: patch.executionMonth }),
+        ...(patch.techTask !== undefined && { techTask: patch.techTask }),
+        ...(patch.report !== undefined && { report: patch.report }),
+        ...(patch.link !== undefined && { link: patch.link }),
+        ...(patch.volume !== undefined && { volume: patch.volume }),
+        ...(patch.rate !== undefined && { rate: patch.rate }),
+        ...(patch.amount !== undefined && { amount: patch.amount }),
+        ...(patch.plannedPayAt !== undefined && {
+          plannedPayAt: patch.plannedPayAt ? new Date(patch.plannedPayAt) : null,
+        }),
+        ...(patch.filledTechTask !== undefined && { filledTechTask: patch.filledTechTask }),
+        ...(patch.filledAct !== undefined && { filledAct: patch.filledAct }),
+        ...(patch.workStatus !== undefined && { workStatus: patch.workStatus }),
+        ...(patch.comment !== undefined && { comment: patch.comment }),
+      },
+    });
+
+    if (patch.amount !== undefined && before.paymentId) {
+      const linked = await tx.work.findMany({
+        where: { paymentId: before.paymentId },
+        select: { amount: true },
+      });
+      const newAmount = linked.reduce((s, w) => s + w.amount, 0);
+      await tx.payment.update({
+        where: { id: before.paymentId },
+        data: { amount: newAmount },
+      });
+    }
+
+    return row;
   });
 
   await logActivity({

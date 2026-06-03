@@ -13,8 +13,9 @@ import { formatMoney, formatDateShort, weekLabel, monthLabel, MONTHS } from "@/l
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { BulkSelectTableBody } from "@/components/ui-custom/BulkSelectTableBody";
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -22,6 +23,8 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SortableHead } from "@/components/ui-custom/SortableHead";
+import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
+import { useTableRowSelection } from "@/lib/useTableRowSelection";
 import { PayoutEditDialog } from "./PayoutEditDialog";
 
 type Row = {
@@ -93,7 +96,6 @@ export function PayoutsClient() {
   const [paying, setPaying] = React.useState<Row | null>(null);
 
   // Bulk
-  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = React.useState("");
   const [bulkPlannedPayAt, setBulkPlannedPayAt] = React.useState("");
   const [bulkPaidAt, setBulkPaidAt] = React.useState("");
@@ -159,6 +161,9 @@ export function PayoutsClient() {
     if (smetaFilter.length) list = list.filter((r) => smetaFilter.includes(r.sourceType));
     return [...list].sort(compareRows);
   }, [allRows, periodYearFilter, periodMonthFilter, weekFilter, executorFilter, statusFilter, bankFilter, smetaFilter, sort]);
+
+  const orderedRowIds = React.useMemo(() => rows.map(rowKey), [rows]);
+  const { selectedIds, handleRowSelect, toggleAll, clearSelection } = useTableRowSelection(orderedRowIds);
 
   const activeBanks = React.useMemo(
     () => (banks ?? []).filter((b) => b.status === "active"),
@@ -255,22 +260,12 @@ export function PayoutsClient() {
     if (!res.ok) return toast.error("Ошибка массового обновления");
     const { updated } = await res.json();
     toast.success(`Обновлено ${updated} выплат`);
-    setSelectedIds(new Set());
-    setBulkStatus(""); setBulkPlannedPayAt(""); setBulkPaidAt(""); setBulkBankId("");
+    clearSelection();
+    setBulkStatus("");
+    setBulkPlannedPayAt("");
+    setBulkPaidAt("");
+    setBulkBankId("");
     mutate();
-  }
-
-  function toggleRow(key: string) {
-    setSelectedIds((prev) => {
-      const n = new Set(prev);
-      n.has(key) ? n.delete(key) : n.add(key);
-      return n;
-    });
-  }
-
-  function toggleAll() {
-    if (selectedIds.size === rows.length) setSelectedIds(new Set());
-    else setSelectedIds(new Set(rows.map(rowKey)));
   }
 
   function activeSortField(): SortField { return sort[0]?.field ?? "weekPlanFact"; }
@@ -311,19 +306,22 @@ export function PayoutsClient() {
             <span className="text-xs text-neutral-500">Дата оплаты:</span>
             <Input type="date" className="h-7 text-xs w-36" value={bulkPaidAt} onChange={(e) => setBulkPaidAt(e.target.value)} />
           </div>
-          <Select value={bulkBankId || "__none__"} onValueChange={(v) => setBulkBankId(v === "__none__" ? "" : (v ?? ""))}>
-            <SelectTrigger className="h-7 w-44 text-xs">
-              <SelectValue>{bulkBankId ? (activeBanks.find(b => b.id === bulkBankId)?.name ?? "Источник оплаты") : "— не менять —"}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">— не менять —</SelectItem>
-              {activeBanks.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-neutral-500">Источник оплаты:</span>
+            <Select value={bulkBankId || "__none__"} onValueChange={(v) => setBulkBankId(v === "__none__" ? "" : (v ?? ""))}>
+              <SelectTrigger className="h-7 w-44 text-xs">
+                <SelectValue>{bulkBankId ? (activeBanks.find(b => b.id === bulkBankId)?.name ?? "") : "— не менять —"}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">— не менять —</SelectItem>
+                {activeBanks.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
           <Button size="sm" className="h-7 text-xs" onClick={handleBulkApply} disabled={bulkSaving}>
             {bulkSaving ? "..." : "Применить"}
           </Button>
-          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { setSelectedIds(new Set()); setBulkStatus(""); setBulkPlannedPayAt(""); setBulkPaidAt(""); setBulkBankId(""); }}>
+          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { clearSelection(); setBulkStatus(""); setBulkPlannedPayAt(""); setBulkPaidAt(""); setBulkBankId(""); }}>
             <X className="h-3.5 w-3.5" />
           </Button>
         </div>
@@ -358,12 +356,14 @@ export function PayoutsClient() {
               <TableHead className="w-8">
                 <Checkbox
                   checked={rows.length > 0 && selectedIds.size === rows.length}
-                  onCheckedChange={toggleAll}
+                  onCheckedChange={() => toggleAll(orderedRowIds)}
                 />
               </TableHead>
-              <TableHead className="w-20">Год план-факт</TableHead>
-              <SortableHead field="periodYear" sortBy={activeSortField()} sortDir={activeSortDir()} onSort={handleSort} className="w-20">Год выполн.</SortableHead>
-              <SortableHead field="periodMonth" sortBy={activeSortField()} sortDir={activeSortDir()} onSort={handleSort}>Месяц</SortableHead>
+              <TableHead className="w-12 max-w-12 px-0.5 text-center" title="Год план-факт">Год ПФ</TableHead>
+              <SortableHead field="periodYear" sortBy={activeSortField()} sortDir={activeSortDir()} onSort={handleSort} className="w-12 max-w-12 px-0.5 text-center">
+                <span title="Год выполнения">Год вып.</span>
+              </SortableHead>
+              <SortableHead field="periodMonth" sortBy={activeSortField()} sortDir={activeSortDir()} onSort={handleSort} className="w-11 max-w-11 px-0.5">Месяц</SortableHead>
               <SortableHead field="weekPlanFact" sortBy={activeSortField()} sortDir={activeSortDir()} onSort={handleSort}>Неделя</SortableHead>
               <SortableHead field="executorName" sortBy={activeSortField()} sortDir={activeSortDir()} onSort={handleSort}>Исполнитель</SortableHead>
               <TableHead>Комментарий</TableHead>
@@ -376,23 +376,28 @@ export function PayoutsClient() {
               <TableHead className="w-24" />
             </TableRow>
           </TableHeader>
-          <TableBody>
+          <BulkSelectTableBody>
             {isLoading ? (
               <TableRow><TableCell colSpan={14} className="text-center text-neutral-500 py-8">Загрузка...</TableCell></TableRow>
             ) : rows.length === 0 ? (
               <TableRow><TableCell colSpan={14} className="text-center text-neutral-500 py-12">Нет выплат.</TableCell></TableRow>
             ) : (
-              rows.map((r) => {
+              rows.map((r, rowIndex) => {
                 const key = rowKey(r);
                 const isEditing = (field: string) => inlineEdit?.key === key && inlineEdit.field === field;
                 return (
                   <TableRow key={key} className={selectedIds.has(key) ? "bg-blue-50/40" : undefined}>
                     <TableCell>
-                      <Checkbox checked={selectedIds.has(key)} onCheckedChange={() => toggleRow(key)} />
+                      <RowSelectCheckbox
+                        checked={selectedIds.has(key)}
+                        rowIndex={rowIndex}
+                        rowId={key}
+                        onSelect={handleRowSelect}
+                      />
                     </TableCell>
-                    <TableCell className="tabular-nums w-20">{r.yearPlanFact ?? "—"}</TableCell>
-                    <TableCell className="tabular-nums w-20">{r.periodYear}</TableCell>
-                    <TableCell>{monthLabel(r.periodMonth)}</TableCell>
+                    <TableCell className="text-xs tabular-nums w-12 max-w-12 px-0.5 text-center">{r.yearPlanFact ?? "—"}</TableCell>
+                    <TableCell className="text-xs tabular-nums w-12 max-w-12 px-0.5 text-center">{r.periodYear}</TableCell>
+                    <TableCell className="text-xs w-11 max-w-11 px-0.5 whitespace-nowrap">{monthLabel(r.periodMonth)}</TableCell>
                     <TableCell>{r.weekPlanFact != null ? weekLabel(r.weekPlanFact) : "—"}</TableCell>
                     <TableCell>{r.executorName}</TableCell>
                     <TableCell className="max-w-48 truncate" title={r.comment ?? ""}>{r.comment ?? "—"}</TableCell>
@@ -507,7 +512,7 @@ export function PayoutsClient() {
                 );
               })
             )}
-          </TableBody>
+          </BulkSelectTableBody>
         </Table>
 
       {paying && (

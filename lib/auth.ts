@@ -36,13 +36,20 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         );
         if (!isValid) return null;
 
+        const exec = user.executor;
         return {
           id: user.id,
           email: user.email,
           name: user.fullName,
           role: user.role,
           fullName: user.fullName,
-          executorId: user.executor?.id ?? null,
+          executorId: exec?.id ?? null,
+          isResponsible: !!(exec?.isResponsible || user.role === "responsible"),
+          responsibleActive: exec
+            ? exec.responsibleActive
+            : user.role === "responsible"
+              ? user.isActive
+              : false,
         };
       },
     }),
@@ -50,11 +57,21 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   callbacks: {
     jwt({ token, user }) {
       if (user) {
-        const u = user as { id: string; role: string; fullName: string; executorId: string | null; email?: string };
+        const u = user as {
+          id: string;
+          role: string;
+          fullName: string;
+          executorId: string | null;
+          email?: string;
+          isResponsible?: boolean;
+          responsibleActive?: boolean;
+        };
         token.sub = u.id;
         token.role = u.role;
         token.fullName = u.fullName;
         token.executorId = u.executorId;
+        token.isResponsible = u.isResponsible ?? false;
+        token.responsibleActive = u.responsibleActive ?? false;
         if (u.email) token.email = u.email;
       }
       return token;
@@ -66,6 +83,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         u.fullName = token.fullName;
         u.executorId = token.executorId;
         u.id = token.sub;
+        u.isResponsible = token.isResponsible;
+        u.responsibleActive = token.responsibleActive;
       }
       return session;
     },
@@ -78,6 +97,10 @@ export type SessionUser = {
   role: string;
   fullName: string;
   executorId: string | null;
+  /** Исполнитель с флагом «ответственный» (роль PM). */
+  isResponsible?: boolean;
+  /** Активен ли статус ответственного (≠ архив исполнителя). */
+  responsibleActive?: boolean;
 };
 
 /**
@@ -101,18 +124,38 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       role: true,
       fullName: true,
       isActive: true,
-      executor: { select: { id: true, accessRevokedAt: true } },
+      executor: {
+        select: {
+          id: true,
+          accessRevokedAt: true,
+          status: true,
+          isResponsible: true,
+          responsibleActive: true,
+        },
+      },
     },
   });
 
   if (!dbUser?.isActive) return null;
   if (dbUser.executor?.accessRevokedAt) return null;
 
+  const exec = dbUser.executor;
+  const isResponsibleFlag =
+    exec?.isResponsible ?? dbUser.role === "responsible";
+  const responsibleActive =
+    exec != null
+      ? exec.responsibleActive
+      : dbUser.role === "responsible"
+        ? dbUser.isActive
+        : false;
+
   return {
     id: dbUser.id,
     email: dbUser.email,
     role: dbUser.role,
     fullName: dbUser.fullName,
-    executorId: dbUser.executor?.id ?? null,
+    executorId: exec?.id ?? null,
+    isResponsible: isResponsibleFlag,
+    responsibleActive,
   };
 }

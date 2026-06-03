@@ -3,11 +3,12 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
 import { updateIssuedWork } from "@/lib/services/issuedWorks";
+import { WORK_STATUSES_SETTABLE } from "@/lib/statuses";
 
 const bulkSchema = z.object({
   ids: z.array(z.string()).min(1),
   patch: z.object({
-    workStatus: z.enum(["submitted", "checked", "paid", "rework"]).optional(),
+    workStatus: z.enum(WORK_STATUSES_SETTABLE).optional(),
     plannedPayAt: z.string().nullable().optional(),
   }),
 });

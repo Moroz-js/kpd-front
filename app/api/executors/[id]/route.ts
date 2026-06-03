@@ -71,6 +71,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     return NextResponse.json(updated);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    const status = msg.startsWith("Нельзя") ? 400 : 500;
+    return NextResponse.json({ error: msg }, { status });
   }
 }

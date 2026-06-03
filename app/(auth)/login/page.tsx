@@ -37,9 +37,15 @@ export default function LoginPage() {
     const sessionRes = await fetch("/api/auth/session");
     const session = await sessionRes.json();
     const role = session?.user?.role;
+    const u = session?.user as Record<string, unknown> | undefined;
+    const isPm =
+      role === "responsible" ||
+      (role === "executor" &&
+        u?.isResponsible === true &&
+        u?.responsibleActive !== false);
 
     if (role === "admin") router.push("/admin/projects");
-    else if (role === "responsible") router.push("/responsible/projects");
+    else if (isPm) router.push("/responsible/projects");
     else if (role === "executor") router.push("/me");
     else router.refresh();
   }

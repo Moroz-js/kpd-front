@@ -16,6 +16,7 @@ import { prisma } from "@/lib/db";
 import { hash } from "bcryptjs";
 import { logActivity, diff } from "@/lib/audit/log";
 import { seedOnboardingTasks } from "@/lib/services/tasks";
+import { assertCanUnsetResponsible } from "@/lib/services/responsibles";
 
 
 export type ExecutorListRow = {
@@ -242,6 +243,17 @@ export async function updateExecutor(id: string, patch: UpdateExecutorInput, use
   });
   if (!before) throw new Error("Executor not found");
 
+  if (patch.isResponsible === true && before.status === "archived") {
+    throw new Error("Нельзя назначить ответственным архивного исполнителя");
+  }
+
+  if (patch.isResponsible === false && before.isResponsible) {
+    if (!before.userId) {
+      throw new Error("Нельзя снять роль ответственного: у исполнителя нет учётной записи");
+    }
+    await assertCanUnsetResponsible(before.userId);
+  }
+
   const updated = await prisma.$transaction(async (tx) => {
     if (patch.workTypeIds) {
       await tx.executorWorkType.deleteMany({ where: { executorId: id } });
@@ -272,7 +284,10 @@ export async function updateExecutor(id: string, patch: UpdateExecutorInput, use
         ...(patch.oldEstimateUrl !== undefined && { oldEstimateUrl: patch.oldEstimateUrl }),
         ...(patch.entityForm !== undefined && { entityForm: patch.entityForm }),
         ...(patch.specialties !== undefined && { specialties: patch.specialties }),
-        ...(patch.isResponsible !== undefined && { isResponsible: patch.isResponsible }),
+        ...(patch.isResponsible !== undefined && {
+          isResponsible: patch.isResponsible,
+          ...(patch.isResponsible && { responsibleActive: true }),
+        }),
       },
     });
   });

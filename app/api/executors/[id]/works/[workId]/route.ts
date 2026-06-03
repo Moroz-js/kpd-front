@@ -57,8 +57,13 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     );
   }
 
-  const updated = await updateWork(workId, parsed.data, user.id);
-  return NextResponse.json(updated);
+  try {
+    const updated = await updateWork(workId, parsed.data, user.id);
+    return NextResponse.json(updated);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Error";
+    return NextResponse.json({ error: msg }, { status: 400 });
+  }
 }
 
 export async function DELETE(req: NextRequest, { params }: Ctx) {

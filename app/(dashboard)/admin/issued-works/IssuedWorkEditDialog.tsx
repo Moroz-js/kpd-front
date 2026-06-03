@@ -20,7 +20,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { MONTHS, formatDate } from "@/lib/format";
-import { WORK_STATUSES } from "@/lib/statuses";
+import { WORK_STATUSES, WORK_STATUSES_SETTABLE } from "@/lib/statuses";
+import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import type { IssuedWorkRowDTO } from "./IssuedWorksClient";
 
 export type SmetaType = "personal" | "other-expense";
@@ -68,6 +69,7 @@ export function IssuedWorkEditDialog({
   const activeProjects = projects.filter((p) => p.status === "active" || p.id === row.projectId);
   const activeExecutors = executors.filter((e) => e.status === "active" || e.id === row.executorId);
   const activeWorkTypes = workTypes.filter((w) => w.status === "active" || w.id === row.workTypeId);
+  const statusLocked = row.workStatus === "paid";
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -75,14 +77,17 @@ export function IssuedWorkEditDialog({
     const payload: Record<string, unknown> = {
       projectId,
       workTypeId,
-      workStatus,
     };
+    if (!statusLocked) payload.workStatus = workStatus;
     if (isPersonal) {
       payload.plannedPayAt = plannedPayAt ? new Date(plannedPayAt).toISOString() : null;
     } else {
       payload.executionMonth = Number(executionMonth);
       payload.executionYear = Number(executionYear);
       payload.executorId = executorId;
+      if (plannedPayAt) {
+        payload.plannedPayAt = new Date(plannedPayAt).toISOString();
+      }
     }
 
     setSubmitting(true);
@@ -227,28 +232,48 @@ export function IssuedWorkEditDialog({
                   </SelectContent>
                 </Select>
               </div>
+              {row.plannedPayAt && (
+                <div className="space-y-2">
+                  <Label htmlFor="plannedPayAt">Дата оплаты — план</Label>
+                  <Input
+                    id="plannedPayAt"
+                    type="date"
+                    value={plannedPayAt}
+                    onChange={(e) => setPlannedPayAt(e.target.value)}
+                  />
+                </div>
+              )}
             </>
           )}
 
           <div className="space-y-2">
             <Label htmlFor="workStatus">Статус работы</Label>
-          <Select value={workStatus} onValueChange={(v) => setWorkStatus(v ?? "")}>
-            <SelectTrigger id="workStatus">
-              <SelectValue>
-                {WORK_STATUSES[workStatus as keyof typeof WORK_STATUSES]?.label ?? workStatus}
-              </SelectValue>
-            </SelectTrigger>
-              <SelectContent>
-                {Object.entries(WORK_STATUSES).map(([value, { label }]) => (
-                  <SelectItem key={value} value={value}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-neutral-500">
-              Смена на «Проверено» автоматически проставит дату проверки.
-            </p>
+            {statusLocked ? (
+              <div className="flex items-center gap-2">
+                <StatusBadge dict={WORK_STATUSES} value={row.workStatus} />
+                <span className="text-xs text-neutral-500">Меняется только при выплате</span>
+              </div>
+            ) : (
+              <>
+                <Select value={workStatus} onValueChange={(v) => setWorkStatus(v ?? "")}>
+                  <SelectTrigger id="workStatus">
+                    <SelectValue>
+                      {WORK_STATUSES[workStatus as keyof typeof WORK_STATUSES]?.label ?? workStatus}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {WORK_STATUSES_SETTABLE.map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {WORK_STATUSES[value].label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-neutral-500">
+                  Смена на «Проверено» автоматически проставит дату проверки. «Оплачено» — только из выплаты.
+                </p>
+              </>
+            )}
           </div>
 
           <DialogFooter>

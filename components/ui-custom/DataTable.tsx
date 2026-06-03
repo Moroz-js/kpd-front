@@ -22,9 +22,12 @@
  */
 
 import * as React from "react";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { BulkSelectTableBody } from "@/components/ui-custom/BulkSelectTableBody";
+import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
+import { computeRowSelection } from "@/lib/table-row-selection";
 
 export type DataTableProps<T> = {
   rows: T[];
@@ -56,12 +59,15 @@ export function DataTable<T>({
 }: DataTableProps<T>) {
   const hasBulk = !!onSelectionChange;
   const selectedSet = React.useMemo(() => new Set(selectedIds ?? []), [selectedIds]);
+  const orderedIds = React.useMemo(() => rows.map(getRowId), [rows, getRowId]);
+  const anchorIndexRef = React.useRef<number | null>(null);
 
   const allChecked = hasBulk && rows.length > 0 && rows.every((r) => selectedSet.has(getRowId(r)));
   const someChecked = hasBulk && rows.some((r) => selectedSet.has(getRowId(r)));
 
   function toggleAll(checked: boolean) {
     if (!onSelectionChange) return;
+    anchorIndexRef.current = null;
     if (checked) {
       const ids = new Set(selectedIds ?? []);
       rows.forEach((r) => ids.add(getRowId(r)));
@@ -72,13 +78,18 @@ export function DataTable<T>({
     }
   }
 
-  function toggleOne(id: string, checked: boolean) {
+  function selectRow(index: number, id: string, shiftKey: boolean) {
     if (!onSelectionChange) return;
-    if (checked) {
-      onSelectionChange(Array.from(new Set([...(selectedIds ?? []), id])));
-    } else {
-      onSelectionChange((selectedIds ?? []).filter((x) => x !== id));
-    }
+    const { nextSelected, nextAnchor } = computeRowSelection(
+      orderedIds,
+      selectedSet,
+      anchorIndexRef.current,
+      index,
+      id,
+      shiftKey
+    );
+    anchorIndexRef.current = nextAnchor;
+    onSelectionChange(Array.from(nextSelected));
   }
 
   return (
@@ -98,7 +109,7 @@ export function DataTable<T>({
           {header}
         </TableRow>
       </TableHeader>
-      <TableBody>
+      <BulkSelectTableBody>
         {rows.length === 0 ? (
           <TableRow>
             <TableCell
@@ -109,17 +120,18 @@ export function DataTable<T>({
             </TableCell>
           </TableRow>
         ) : (
-          rows.map((row) => {
+          rows.map((row, rowIndex) => {
             const id = getRowId(row);
             const selected = selectedSet.has(id);
             return (
               <TableRow key={id} className={cn(selected && "bg-neutral-50")}>
                 {hasBulk && (
                   <TableCell className="w-10">
-                    <Checkbox
+                    <RowSelectCheckbox
                       checked={selected}
-                      onCheckedChange={(c) => toggleOne(id, c)}
-                      aria-label={`Выделить строку ${id}`}
+                      rowIndex={rowIndex}
+                      rowId={id}
+                      onSelect={selectRow}
                     />
                   </TableCell>
                 )}
@@ -128,7 +140,7 @@ export function DataTable<T>({
             );
           })
         )}
-      </TableBody>
+      </BulkSelectTableBody>
     </Table>
   );
 }

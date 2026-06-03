@@ -48,6 +48,17 @@ function formatRuDate(iso: string) {
   });
 }
 
+function formatRuDateShort(iso: string) {
+  return new Date(iso).toLocaleDateString("ru-RU", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+const VERIFICATION_COL =
+  "w-[92px] min-w-[92px] max-w-[92px] px-1.5 border-r last:border-r-0";
+
 function CommentCell({
   verificationId,
   projectId,
@@ -76,7 +87,7 @@ function CommentCell({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         title={comment ? comment : "Добавить комментарий"}
-        className={`ml-1.5 rounded p-0.5 transition-colors border-0 bg-transparent cursor-pointer ${
+        className={`rounded p-0.5 transition-colors border-0 bg-transparent cursor-pointer ${
           comment
             ? "text-blue-500 hover:text-blue-700"
             : "text-neutral-300 hover:text-neutral-500"
@@ -290,7 +301,7 @@ export function VerificationTab() {
         </div>
       ) : (
         <div className="overflow-auto rounded-lg border border-neutral-200 flex-1 min-h-0">
-          <table className="border-collapse text-xs w-full">
+          <table className="border-collapse text-xs w-max">
             <thead>
               <tr className="bg-neutral-50">
                 <th className="sticky left-0 z-20 bg-neutral-50 border-b border-r border-neutral-200 px-3 py-2 text-left font-medium text-neutral-600 uppercase tracking-wide min-w-[220px]">
@@ -299,18 +310,18 @@ export function VerificationTab() {
                 {verifications.map(v => (
                   <th
                     key={v.id}
-                    className="border-b border-r border-neutral-200 px-3 py-2 text-left font-medium text-neutral-600 min-w-[160px] last:border-r-0"
+                    className={`border-b border-neutral-200 py-2 text-left font-medium text-neutral-600 ${VERIFICATION_COL}`}
                   >
-                    <div className="font-medium text-neutral-800 text-xs whitespace-nowrap">
-                      {formatRuDate(v.date)}
+                    <div className="font-medium text-neutral-800 text-[11px] leading-tight">
+                      {formatRuDateShort(v.date)}
                     </div>
-                    <div className="mt-1.5 flex items-center gap-2">
-                      <Progress value={v.progressPct} className="h-1.5 flex-1" />
-                      <span className="text-neutral-500 whitespace-nowrap text-[11px]">
+                    <div className="mt-1 flex items-center gap-1">
+                      <Progress value={v.progressPct} className="h-1 min-w-0 flex-1" />
+                      <span className="text-neutral-500 shrink-0 text-[10px] tabular-nums">
                         {v.checkedProjects}/{v.totalProjects}
                       </span>
                     </div>
-                    <div className="mt-1.5">
+                    <div className="mt-1">
                       <button
                         type="button"
                         onClick={() => setConfirmDeleteId(v.id)}
@@ -337,10 +348,10 @@ export function VerificationTab() {
                     return (
                       <td
                         key={v.id}
-                        className="border-r border-neutral-100 px-3 py-2 last:border-r-0"
+                        className={`border-neutral-100 py-1.5 ${VERIFICATION_COL}`}
                       >
                         {result ? (
-                          <div className="flex items-center">
+                          <div className="flex items-center justify-center gap-0.5">
                             <Checkbox
                               id={`pv-${v.id}-${projectId}`}
                               checked={result.checked}
