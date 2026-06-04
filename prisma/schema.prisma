@@ -160,6 +160,7 @@ model BankAccount {
   otherExpenses         OtherExpense[]
   bankOperations        BankOperation[]
   defaultForExecutors   Executor[]      @relation("ExecutorDefaultBankAccount")
+  reconciliationResults BankAccountReconciliationResult[]
 
   @@map("bank_accounts")
 }
@@ -468,6 +469,32 @@ model ActivityLog {
   @@index([userId, createdAt])
   @@index([createdAt])
   @@map("activity_logs")
+}
+
+model BankAccountReconciliation {
+  id        String   @id @default(cuid())
+  date      DateTime
+  createdAt DateTime @default(now())
+  createdBy String
+  results   BankAccountReconciliationResult[]
+
+  @@map("bank_account_reconciliations")
+}
+
+model BankAccountReconciliationResult {
+  id               String                  @id @default(cuid())
+  reconciliationId String
+  bankAccountId    String
+  amount           Float?
+  comment          String?
+  updatedAt        DateTime                @updatedAt
+  reconciliation   BankAccountReconciliation @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
+  bankAccount      BankAccount             @relation(fields: [bankAccountId], references: [id])
+
+  @@unique([reconciliationId, bankAccountId])
+  @@index([reconciliationId])
+  @@index([bankAccountId])
+  @@map("bank_account_reconciliation_results")
 }
 
 model ProjectVerification {

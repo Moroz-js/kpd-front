@@ -16,7 +16,7 @@ import { SortableHead } from "@/components/ui-custom/SortableHead";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
+import { BankAccountVerificationTab } from "./BankAccountVerificationTab";
 
 type Row = {
   id: string;
@@ -40,6 +40,7 @@ type SortDir = "asc" | "desc";
 
 export function BankAccountsClient() {
   const { data, isLoading, mutate } = useSWR<Row[]>("/api/bank-accounts", fetcher);
+  const [activeTab, setActiveTab] = React.useState<"accounts" | "verification">("accounts");
   const [statusFilter, setStatusFilter] = React.useState<string[]>(["active"]);
   const [sort, setSort] = React.useState<{ field: SortField; dir: SortDir }>({
     field: "name",
@@ -93,12 +94,41 @@ export function BankAccountsClient() {
       <PageHeader
         title="Банковские счета"
         actions={
-          <Button onClick={() => setEditing("new")}>
-            <Plus className="h-4 w-4 mr-1" /> Добавить счёт
-          </Button>
+          activeTab === "accounts" ? (
+            <Button onClick={() => setEditing("new")}>
+              <Plus className="h-4 w-4 mr-1" /> Добавить счёт
+            </Button>
+          ) : undefined
         }
       />
 
+      <div className="border-b border-neutral-200 mb-4">
+        <nav className="flex gap-0">
+          {(["accounts", "verification"] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveTab(tab)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                activeTab === tab
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-neutral-500 hover:text-neutral-800 hover:border-neutral-300"
+              }`}
+            >
+              {tab === "accounts" ? "Счета" : "Остатки"}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {activeTab === "verification" && (
+        <div className="flex-1 min-h-0 flex flex-col">
+          <BankAccountVerificationTab />
+        </div>
+      )}
+
+      {activeTab === "accounts" && (
+      <>
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <MultiSelectFilter
           label="Статус"
@@ -242,6 +272,8 @@ export function BankAccountsClient() {
           if (unarchiveTarget) await handleUnarchive(unarchiveTarget);
         }}
       />
+      </>
+      )}
     </div>
   );
 }
