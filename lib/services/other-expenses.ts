@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { logActivity } from "@/lib/audit/log";
 import { nearestPaymentDate } from "@/lib/iso-weeks";
+import { assertExecutorEligibleForOtherExpense } from "@/lib/executor-personal-estimate";
 import {
   hasOtherExpensePayment,
   workStatusFromPaymentStatus,
@@ -132,6 +133,7 @@ export async function createOtherExpense(
   input: CreateOtherExpenseInput,
   userId: string
 ) {
+  await assertExecutorEligibleForOtherExpense(input.executorId);
   const paidAt = input.paidAt ? new Date(input.paidAt) : null;
   const expense = await prisma.otherExpense.create({
     data: {
@@ -176,6 +178,9 @@ export async function updateOtherExpense(
   userId: string
 ) {
   const existing = await prisma.otherExpense.findUniqueOrThrow({ where: { id } });
+  if (patch.executorId !== undefined) {
+    await assertExecutorEligibleForOtherExpense(patch.executorId);
+  }
   assertCanChangeWorkStatus(existing, patch);
 
   const state = {

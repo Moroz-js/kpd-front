@@ -31,11 +31,8 @@ import {
 import { SortableHead } from "@/components/ui-custom/SortableHead";
 import { ExpandableListCell } from "@/components/ui-custom/ExpandableListCell";
 import { ExecutorWizard } from "./ExecutorWizard";
+import { hasPersonalSmeta } from "@/lib/executor-personal-estimate";
 import { EXECUTOR_COMPANY_STATUSES } from "@/lib/statuses";
-
-function hasPersonalSmeta(row: { type: string; userId: string | null }): boolean {
-  return row.type !== "service" && !!row.userId;
-}
 
 type Row = {
   id: string;

@@ -2,6 +2,7 @@
 import { getSessionUser } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
 import { prisma } from "@/lib/db";
+import { executorWhereForOtherExpense } from "@/lib/executor-personal-estimate";
 import { listActiveResponsibleUsers } from "@/lib/services/responsibles";
 import { OtherExpensesClient } from "./OtherExpensesClient";
 
@@ -11,7 +12,7 @@ export default async function Page() {
 
   const [projects, executors, workTypes, responsibles, bankAccounts] = await Promise.all([
     prisma.project.findMany({ where: { status: "active" }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
-    prisma.executor.findMany({ where: { status: "active", OR: [{ userId: null }, { accessRevokedAt: { not: null } }] }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.executor.findMany({ where: executorWhereForOtherExpense, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.workType.findMany({ where: { status: "active" }, select: { id: true, name: true, segment: true }, orderBy: { name: "asc" } }),
     listActiveResponsibleUsers(),
     prisma.bankAccount.findMany({ where: { status: "active" }, select: { id: true, name: true }, orderBy: { name: "asc" } }),

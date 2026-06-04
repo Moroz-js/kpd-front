@@ -816,7 +816,6 @@ function OtherExpenseFormDialog({
             </Select>
           </div>
           <div className="space-y-1.5">
-            {/* TODO: фильтровать исполнителей без личной сметы (hasPersonalEstimate: false) */}
             <Label>Исполнитель *</Label>
             <Select
               value={executorId}
