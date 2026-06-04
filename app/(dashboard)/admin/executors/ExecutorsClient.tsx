@@ -33,6 +33,8 @@ import { ExpandableListCell } from "@/components/ui-custom/ExpandableListCell";
 import { ExecutorWizard } from "./ExecutorWizard";
 import { hasPersonalSmeta } from "@/lib/executor-personal-estimate";
 import { EXECUTOR_COMPANY_STATUSES } from "@/lib/statuses";
+/** Вертикальный разделитель блоков колонок (1px). */
+const colDivider = "border-r border-neutral-300";
 
 type Row = {
   id: string;
@@ -387,7 +389,7 @@ export function ExecutorsClient() {
                 <br />
                 в компании
               </TableHead>
-              <TableHead>Тип</TableHead>
+              <TableHead className={colDivider}>Тип</TableHead>
               <TableHead>Виды работ</TableHead>
               <TableHead>Специальность</TableHead>
               <TableHead>Проекты</TableHead>
@@ -402,7 +404,7 @@ export function ExecutorsClient() {
               <TableHead>Источник оплаты</TableHead>
               <TableHead>Тип получателя</TableHead>
               <TableHead>В чате ТГ</TableHead>
-              <TableHead>Доступ</TableHead>
+              <TableHead className={colDivider}>Доступ</TableHead>
               <TableHead>Статус</TableHead>
               <SortableHead
                 field="lastPaidAt"
@@ -464,7 +466,7 @@ export function ExecutorsClient() {
                         ? "Орбита"
                         : "—"}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className={colDivider}>
                     {EXECUTOR_TYPES[r.type as keyof typeof EXECUTOR_TYPES] ?? r.type}
                   </TableCell>
                   <TableCell>
@@ -488,7 +490,7 @@ export function ExecutorsClient() {
                       <X className="h-4 w-4 text-neutral-300 inline" />
                     )}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className={colDivider}>
                     {r.email && r.type !== "service" ? (
                       <button
                         type="button"

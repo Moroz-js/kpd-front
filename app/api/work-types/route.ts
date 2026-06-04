@@ -3,7 +3,6 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
 import { createWorkType, listWorkTypes } from "@/lib/services/workTypes";
-import { WORK_TYPE_SEGMENTS } from "@/lib/statuses";
 
 export async function GET(req: Request) {
   const me = await getSessionUser();
@@ -27,7 +26,7 @@ export async function GET(req: Request) {
 
 const createSchema = z.object({
   name: z.string().min(1),
-  segment: z.enum(WORK_TYPE_SEGMENTS),
+  segment: z.string().min(1, "Введите сегмент").max(120),
 });
 
 export async function POST(req: Request) {

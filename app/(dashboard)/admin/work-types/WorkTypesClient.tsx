@@ -12,10 +12,10 @@ import { ENTITY_STATUSES, WORK_TYPE_SEGMENTS, PROJECT_TYPES } from "@/lib/status
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SortableHead } from "@/components/ui-custom/SortableHead";
+import { DepartmentCombobox } from "@/components/ui-custom/DepartmentCombobox";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type Row = {
   id: string;
@@ -56,6 +56,29 @@ export function WorkTypesClient() {
   const [editing, setEditing] = React.useState<Row | "new" | null>(null);
   const [archiveTarget, setArchiveTarget] = React.useState<Row | null>(null);
   const [unarchiveTarget, setUnarchiveTarget] = React.useState<Row | null>(null);
+
+  const segmentUsage = React.useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const r of data ?? []) {
+      if (!r.segment) continue;
+      counts[r.segment] = (counts[r.segment] ?? 0) + 1;
+    }
+    return counts;
+  }, [data]);
+
+  const existingSegments = React.useMemo(() => {
+    const list = data ?? [];
+    return Array.from(new Set(list.map((r) => r.segment).filter(Boolean))).sort((a, b) =>
+      a.localeCompare(b, "ru")
+    );
+  }, [data]);
+
+  const segmentFilterOptions = React.useMemo(() => {
+    const set = new Set<string>([...WORK_TYPE_SEGMENTS, ...existingSegments]);
+    return Array.from(set)
+      .sort((a, b) => a.localeCompare(b, "ru"))
+      .map((s) => ({ value: s, label: s }));
+  }, [existingSegments]);
 
   const rows = React.useMemo(() => {
     let list = data ?? [];
@@ -114,7 +137,7 @@ export function WorkTypesClient() {
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <MultiSelectFilter
           label="Сегмент"
-          options={WORK_TYPE_SEGMENTS.map((s) => ({ value: s, label: s }))}
+          options={segmentFilterOptions}
           value={segmentFilter}
           onChange={setSegmentFilter}
         />
@@ -233,6 +256,8 @@ export function WorkTypesClient() {
       {editing && (
         <WorkTypeEditDialog
           row={editing === "new" ? null : editing}
+          existingSegments={existingSegments}
+          segmentUsage={segmentUsage}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
@@ -268,32 +293,64 @@ export function WorkTypesClient() {
 
 function WorkTypeEditDialog({
   row,
+  existingSegments,
+  segmentUsage,
   onClose,
   onSaved,
 }: {
   row: Row | null;
+  existingSegments: string[];
+  segmentUsage: Record<string, number>;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [name, setName] = React.useState(row?.name ?? "");
   const [segment, setSegment] = React.useState(row?.segment ?? "");
+  const [extraSegments, setExtraSegments] = React.useState<string[]>([]);
+  const [hiddenSegments, setHiddenSegments] = React.useState<Set<string>>(() => new Set());
   const [submitting, setSubmitting] = React.useState(false);
+
+  const segmentOptions = React.useMemo(() => {
+    const set = new Set<string>([...WORK_TYPE_SEGMENTS, ...existingSegments, ...extraSegments]);
+    if (row?.segment) set.add(row.segment);
+    return Array.from(set)
+      .filter((s) => !hiddenSegments.has(s))
+      .sort((a, b) => a.localeCompare(b, "ru"));
+  }, [existingSegments, extraSegments, hiddenSegments, row?.segment]);
 
   React.useEffect(() => {
     setName(row?.name ?? "");
     setSegment(row?.segment ?? "");
+    setExtraSegments([]);
+    setHiddenSegments(new Set());
   }, [row]);
+
+  function handleAddSegment(name: string) {
+    setExtraSegments((prev) => (prev.includes(name) ? prev : [...prev, name]));
+    setSegment(name);
+  }
+
+  function handleRemoveSegment(name: string) {
+    const usage = segmentUsage[name] ?? 0;
+    if (usage > 0) {
+      toast.error("Нельзя удалить: сегмент привязан к видам работ. Смените сегмент у записей.");
+      return;
+    }
+    setHiddenSegments((prev) => new Set([...prev, name]));
+    setExtraSegments((prev) => prev.filter((s) => s !== name));
+    if (segment === name) setSegment("");
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return toast.error("Введите название");
-    if (!segment) return toast.error("Выберите сегмент");
+    if (!segment.trim()) return toast.error("Выберите сегмент");
     setSubmitting(true);
     const isNew = !row;
     const res = await fetch(isNew ? "/api/work-types" : `/api/work-types/${row.id}`, {
       method: isNew ? "POST" : "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), segment }),
+      body: JSON.stringify({ name: name.trim(), segment: segment.trim() }),
     });
     setSubmitting(false);
     if (!res.ok) {
@@ -325,20 +382,15 @@ function WorkTypeEditDialog({
           </div>
           <div className="space-y-2">
             <Label htmlFor="segment">Сегмент</Label>
-            <Select value={segment} onValueChange={(v) => setSegment(v ?? "")}>
-              <SelectTrigger id="segment">
-                <SelectValue placeholder="Выберите сегмент">
-                  {segment || undefined}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {WORK_TYPE_SEGMENTS.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {s}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <DepartmentCombobox
+              id="segment"
+              value={segment}
+              onValueChange={setSegment}
+              options={segmentOptions}
+              onAddOption={handleAddSegment}
+              onRemoveOption={handleRemoveSegment}
+              placeholder="Выберите или введите сегмент..."
+            />
           </div>
           {row && (row.projectTypes.length > 0 || row.estimateSources.length > 0) && (
             <div className="rounded-md bg-neutral-50 border border-neutral-200 px-3 py-2 text-xs space-y-1">

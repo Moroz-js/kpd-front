@@ -135,7 +135,7 @@ export function ExecutorEstimateClient({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64 text-sm text-neutral-400">
+      <div className="flex items-center justify-center h-[calc(100vh-3rem)] text-sm text-neutral-400">
         Загрузка...
       </div>
     );
@@ -143,7 +143,7 @@ export function ExecutorEstimateClient({
 
   if (!executor) {
     return (
-      <div className="flex items-center justify-center h-64 text-sm text-neutral-500">
+      <div className="flex items-center justify-center h-[calc(100vh-3rem)] text-sm text-neutral-500">
         Исполнитель не найден или нет доступа.
       </div>
     );
@@ -156,9 +156,9 @@ export function ExecutorEstimateClient({
     : [...TABS, ...(isAdmin ? [{ id: "settings" as TabId, label: "Настройки" }] : [])];
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col h-[calc(100vh-3rem)] min-h-0 gap-3">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="shrink-0 flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
           {backHref && (
             <Link href={backHref}>
@@ -189,13 +189,13 @@ export function ExecutorEstimateClient({
       </div>
 
       {visibleTabs.length === 0 ? (
-        <p className="text-sm text-neutral-500 py-8">
+        <p className="text-sm text-neutral-500 py-8 shrink-0">
           У этого исполнителя нет личной сметы — доступны только настройки.
         </p>
       ) : (
         <>
       {/* Tab bar */}
-      <div className="border-b border-neutral-200">
+      <div className="shrink-0 border-b border-neutral-200">
         <nav className="flex gap-0 overflow-x-auto">
           {visibleTabs.map((tab) => (
             <button
@@ -219,7 +219,7 @@ export function ExecutorEstimateClient({
       </div>
 
       {/* Tab content */}
-      <div>
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
         {hasPersonalSmeta && activeTab === "works" && (
           <WorksTab
             executorId={executorId}
@@ -242,13 +242,15 @@ export function ExecutorEstimateClient({
           />
         )}
         {activeTab === "settings" && isAdmin && (
-          <SettingsTab
-            executorId={executorId}
-            executor={executor}
-            bankAccounts={bankAccounts}
-            allWorkTypes={allWorkTypes}
-            onChanged={reload}
-          />
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <SettingsTab
+              executorId={executorId}
+              executor={executor}
+              bankAccounts={bankAccounts}
+              allWorkTypes={allWorkTypes}
+              onChanged={reload}
+            />
+          </div>
         )}
       </div>
         </>

@@ -141,11 +141,13 @@ function OpeningBalanceInput({
 }
 
 export function CashflowClient() {
-  const currentYear = new Date().getFullYear();
-  const [year, setYear] = useState(currentYear);
+  const now = new Date();
+  const currentISOWeek = getISOWeek(now);
+  const currentISOYear = getISOWeekYear(now);
+  const [year, setYear] = useState(currentISOYear);
   const [openingBalance, setOpeningBalance] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<"table" | "chart">("table");
-  const YEARS = [currentYear - 2, currentYear - 1, currentYear, currentYear + 1];
+  const YEARS = [currentISOYear - 2, currentISOYear - 1, currentISOYear, currentISOYear + 1];
 
   const { data, mutate } = useSWR<CashflowResponse>(`/api/cashflow?year=${year}`, fetcher, {
     onSuccess: d => {
@@ -179,25 +181,60 @@ export function CashflowClient() {
     return cellMeta?.[cashflowCommentMapKey(rowKey, week)];
   }
 
-  const now = new Date();
-  const currentISOWeek = getISOWeek(now);
-  const currentISOYear = getISOWeekYear(now);
-
   const [showOldWeeks, setShowOldWeeks] = useState(false);
 
   const weeks = (data && !("error" in data)) ? data.weeks : [];
+  const collapsedWeeks =
+    !showOldWeeks && year === currentISOYear && weeks.length > 0;
   const visibleWeeks = React.useMemo(() => {
-    if (!weeks.length || showOldWeeks || year !== currentISOYear) return weeks;
-    return weeks.filter((wh) => wh.week >= firstVisibleCashflowWeek(currentISOWeek));
-  }, [weeks, showOldWeeks, year, currentISOYear, currentISOWeek]);
+    if (!weeks.length || !collapsedWeeks) return weeks;
+    const fromWeek = firstVisibleCashflowWeek(currentISOWeek);
+    return weeks.filter((wh) => wh.week >= fromWeek);
+  }, [weeks, collapsedWeeks, currentISOWeek]);
 
   const visibleWeekIndices = React.useMemo(
     () => visibleWeeks.map((vw) => weeks.findIndex((w) => w.week === vw.week)),
     [visibleWeeks, weeks]
   );
 
-  if (!data) return <div className="p-6 text-sm text-neutral-500">Загрузка…</div>;
-  if ("error" in data) return <div className="p-6 text-sm text-neutral-500">{data.error}</div>;
+  const pickByVisibleWeeks = React.useCallback(
+    (arr: number[]) => {
+      if (!collapsedWeeks) return arr;
+      return visibleWeekIndices.map((i) => arr[i] ?? 0);
+    },
+    [collapsedWeeks, visibleWeekIndices]
+  );
+
+  const chartProjects = React.useMemo(() => {
+    if (!data || "error" in data) return [];
+    const list = [
+      ...(data.externalProjects ?? data.projects),
+      ...(data.internalProjects ?? []),
+    ];
+    if (!collapsedWeeks) return list;
+    return list.map((p) => ({
+      ...p,
+      plan: pickByVisibleWeeks(p.plan),
+      iw: pickByVisibleWeeks(p.iw),
+      charges: pickByVisibleWeeks(p.charges),
+      cashflow: pickByVisibleWeeks(p.cashflow),
+    }));
+  }, [data, collapsedWeeks, pickByVisibleWeeks]);
+
+  if (!data) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-3rem)] text-sm text-neutral-500">
+        Загрузка…
+      </div>
+    );
+  }
+  if ("error" in data) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-3rem)] text-sm text-neutral-500">
+        {data.error}
+      </div>
+    );
+  }
 
   const { summary, projects, weeksInYear, externalProjects, internalProjects, aggregates } = data;
 
@@ -277,8 +314,8 @@ export function CashflowClient() {
   function rowTotal(arr: number[]) { return arr.reduce((a, b) => a + b, 0); }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col h-[calc(100vh-3rem)] min-h-0 gap-3">
+      <div className="shrink-0 flex items-center justify-between">
         <h1 className="text-xl font-semibold">Кэшфлоу проектов</h1>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 text-sm text-neutral-600">
@@ -297,7 +334,7 @@ export function CashflowClient() {
       </div>
 
       {/* Tab bar */}
-      <div className="border-b border-neutral-200">
+      <div className="shrink-0 border-b border-neutral-200">
         <nav className="flex gap-0">
           {(["table", "chart"] as const).map((tab) => (
             <button
@@ -316,21 +353,23 @@ export function CashflowClient() {
       </div>
 
       {activeTab === "chart" && (
-        <CashflowChart
-          weeks={weeks}
-          balanceEndDP={summary.balanceEndDP}
-          balanceEndBudget={summary.balanceEndBudget}
-          projects={[...(externalProjects ?? projects), ...(internalProjects ?? [])]}
-          currentISOWeek={currentISOWeek}
-          currentISOYear={currentISOYear}
-          year={year}
-        />
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <CashflowChart
+            weeks={visibleWeeks}
+            balanceEndDP={pickByVisibleWeeks(summary.balanceEndDP)}
+            balanceEndBudget={pickByVisibleWeeks(summary.balanceEndBudget)}
+            projects={chartProjects}
+            currentISOWeek={currentISOWeek}
+            currentISOYear={currentISOYear}
+            year={year}
+          />
+        </div>
       )}
 
       {activeTab === "table" && (
-      <div className="rounded-lg border border-neutral-200 bg-white">
-        {year === currentYear && (
-          <div className="px-3 pt-2 pb-0">
+      <div className="flex flex-col flex-1 min-h-0 rounded-lg border border-neutral-200 bg-white overflow-hidden">
+        {year === currentISOYear && weeks.length > visibleWeeks.length && (
+          <div className="shrink-0 px-3 pt-2 pb-0">
             <button
               className="text-xs text-neutral-400 hover:text-neutral-700 hover:underline underline-offset-2"
               onClick={() => setShowOldWeeks((v) => !v)}
@@ -341,7 +380,7 @@ export function CashflowClient() {
             </button>
           </div>
         )}
-        <div className="overflow-x-auto">
+        <div className="flex-1 min-h-0 overflow-auto">
           <table className="min-w-max border-collapse text-sm">
             <thead>
               <tr className="bg-neutral-50 border-b border-neutral-100">

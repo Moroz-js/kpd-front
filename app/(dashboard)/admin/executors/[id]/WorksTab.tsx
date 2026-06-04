@@ -381,9 +381,9 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col h-full min-h-0 gap-3">
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="shrink-0 flex flex-wrap items-center gap-2">
         {selectedIds.size > 0 ? (
           <>
             <span className="text-xs font-medium text-neutral-700">{selectedIds.size} работ выбрано</span>
@@ -471,6 +471,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
         </div>
       </div>
 
+      <div className="flex-1 min-h-0 min-w-0 overflow-auto rounded-md border bg-white">
       {(() => {
         if (loading) return <div className="text-sm text-neutral-400 py-8 text-center">Загрузка...</div>;
 
@@ -512,18 +513,18 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
           "border-b border-neutral-200 px-1 py-1 text-right text-[10px] leading-tight font-medium text-neutral-600 bg-neutral-100 uppercase tracking-tight";
         const td = "border-b border-neutral-100 px-1 py-1 text-[10px] leading-tight";
         const tdDim = "border-b border-neutral-100 px-1 py-1 text-[10px] leading-tight text-neutral-300";
-        const tdStatus = `${td} min-w-[8.25rem] w-[8.25rem] px-1.5 overflow-hidden`;
-        const tdStatusPay = `${td} min-w-[10rem] w-[10rem] px-1.5 overflow-hidden`;
+        const tdStatus = `${td} min-w-[110px] px-1.5 overflow-hidden`;
+        const tdStatusPay = `${td} min-w-[110px] px-1.5 overflow-hidden`;
 
         const showWorks = filterType !== "payments";
         const showPayments = filterType !== "works";
 
         return (
-          <div className="overflow-x-auto min-w-0">
-            <table className="w-full table-fixed text-[10px] border-separate border-spacing-0">
+          <div className="min-w-0">
+            <table className="w-full text-[10px] border-separate border-spacing-0">
               <thead>
                 <tr>
-                  <th className={`${th} w-7 px-0.5`}>
+                  <th className={`${th} w-8 px-1`}>
                     {(() => {
                       const allWorkIds = flatRows.filter((r) => r.kind === "work").map((r) => r.data.id);
                       const allSelected = allWorkIds.length > 0 && allWorkIds.every((id) => selectedIds.has(id));
@@ -543,51 +544,51 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
                       );
                     })()}
                   </th>
-                  <th className={`${th} w-[2.5%]`}>Год</th>
-                  <th className={`${th} w-[5%]`}>Месяц</th>
+                  <th className={`${th} min-w-[40px]`}>Год</th>
+                  <th className={`${th} min-w-[72px]`}>Месяц</th>
                   {showWorks && <>
-                    <th className={`${th} w-[6%]`}>Проект</th>
-                    <th className={`${th} w-[8%]`}>
+                    <th className={`${th} min-w-[120px]`}>Проект</th>
+                    <th className={`${th} min-w-[180px]`}>
                       <span className="block normal-case">Тех. задание</span>
                     </th>
-                    <th className={`${th} w-[5.5%]`}>Вид работ</th>
-                    <th className={`${th} w-[3.5%]`}>Отчёт</th>
-                    <th className={`${th} w-[3.5%]`}>Ссылка</th>
-                    <th className={`${thr} w-[3.5%]`}>Объём</th>
-                    <th className={`${thr} w-[4.5%]`}>Ставка</th>
-                    <EditableColHead className={`${thr} w-[5%]`} showPencil={isAdmin} align="right">
+                    <th className={`${th} min-w-[100px]`}>Вид работ</th>
+                    <th className={`${th} min-w-[55px]`}>Отчёт</th>
+                    <th className={`${th} min-w-[55px]`}>Ссылка</th>
+                    <th className={`${thr} min-w-[55px]`}>Объём</th>
+                    <th className={`${thr} min-w-[65px]`}>Ставка</th>
+                    <EditableColHead className={`${thr} min-w-[80px]`} showPencil={isAdmin} align="right">
                       Сумма
                     </EditableColHead>
-                    <EditableColHead className={`${th} w-[5.5%]`} showPencil={isAdmin}>
+                    <EditableColHead className={`${th} min-w-[95px]`} showPencil={isAdmin}>
                       <span className="block normal-case whitespace-normal leading-tight">Дата план (р)</span>
                     </EditableColHead>
-                    <th className={`${th} min-w-[8.25rem] w-[8.25rem] px-1.5`}>Статус работы</th>
+                    <th className={`${th} min-w-[110px] px-1.5`}>Статус работы</th>
                   </>}
                   {showPayments && <>
-                    <th className={`${thr} w-[5%]`}>Выплата</th>
-                    <th className={`${th} w-[5%]`}>
+                    <th className={`${thr} min-w-[80px]`}>Выплата</th>
+                    <th className={`${th} min-w-[85px]`}>
                       <span className="block normal-case whitespace-normal leading-tight">Дата оплаты</span>
                     </th>
-                    <EditableColHead className={`${th} w-[5%]`} showPencil={isAdmin}>
+                    <EditableColHead className={`${th} min-w-[95px]`} showPencil={isAdmin}>
                       <span className="block normal-case whitespace-normal leading-tight">Дата план (в)</span>
                     </EditableColHead>
-                    <th className={`${th} min-w-[10rem] w-[10rem] px-1.5`}>Статус выплаты</th>
-                    <th className={`${th} w-[5.5rem] min-w-[5.5rem]`}>
+                    <th className={`${th} min-w-[110px] px-1.5`}>Статус выплаты</th>
+                    <th className={`${th} min-w-[90px]`}>
                       <span className="block normal-case whitespace-normal leading-tight">Счёт в выплате</span>
                     </th>
                   </>}
                   {showWorks && (
                     <>
-                      <th className={`${th} w-[4%]`}>
+                      <th className={`${th} min-w-[72px]`}>
                         <span className="block normal-case whitespace-normal leading-tight">Заполн. ТЗ</span>
                       </th>
-                      <th className={`${th} w-[4%]`}>
+                      <th className={`${th} min-w-[72px]`}>
                         <span className="block normal-case whitespace-normal leading-tight">Заполн. акт</span>
                       </th>
-                      <th className={`${th} w-[5%]`}>Проверена</th>
+                      <th className={`${th} min-w-[85px]`}>Проверена</th>
                     </>
                   )}
-                  <th className={`${th} w-[3.5%]`}></th>
+                  <th className={`${th} w-16`}></th>
                 </tr>
               </thead>
               <tbody>
@@ -620,11 +621,11 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
                         {isFirst && <td className={ymClass} rowSpan={span}>{row.year}</td>}
                         {isFirst && <td className={`${ymClass} whitespace-nowrap`} rowSpan={span}>{monthFullLabel(row.month)}</td>}
                         {showWorks && <>
-                          <td className={`${td} truncate`} title={w.project.name}>{w.project.name}</td>
-                          <td className={td}>
+                          <td className={`${td} max-w-[120px] truncate`} title={w.project.name}>{w.project.name}</td>
+                          <td className={`${td} max-w-[180px]`}>
                             <div className="truncate" title={w.techTask ?? ""}>{w.techTask || "—"}</div>
                           </td>
-                          <td className={`${td} truncate text-neutral-600`} title={w.workType.name}>{w.workType.name}</td>
+                          <td className={`${td} max-w-[100px] truncate text-neutral-600`} title={w.workType.name}>{w.workType.name}</td>
                           <td className={td}>{w.report ? <a href={w.report} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">отч.</a> : <span className="text-neutral-300">—</span>}</td>
                           <td className={td}>{w.link ? <a href={w.link} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">ссыл.</a> : <span className="text-neutral-300">—</span>}</td>
                           <td className={`${td} text-right text-neutral-600 tabular-nums`}>{w.volume ?? "—"}</td>
@@ -709,7 +710,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
                           />
                         </td>
                         <td className={tdStatusPay}><StatusBadge status={p.paymentStatus} type="payment" /></td>
-                        <td className={`${td} w-[5.5rem] min-w-[5.5rem] truncate text-neutral-600`} title={p.bankAccount?.name ?? undefined}>{p.bankAccount?.name ?? "—"}</td>
+                        <td className={`${td} min-w-[90px] truncate text-neutral-600`} title={p.bankAccount?.name ?? undefined}>{p.bankAccount?.name ?? "—"}</td>
                       </>}
                       {showWorks && (
                         <>
@@ -735,6 +736,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
           </div>
         );
       })()}
+      </div>
 
       {/* Create Work Dialog */}
       {createWorkOpen && (

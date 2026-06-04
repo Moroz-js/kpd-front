@@ -3,11 +3,9 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
 import { updateWorkType } from "@/lib/services/workTypes";
-import { WORK_TYPE_SEGMENTS } from "@/lib/statuses";
-
 const patchSchema = z.object({
   name: z.string().min(1).optional(),
-  segment: z.enum(WORK_TYPE_SEGMENTS).optional(),
+  segment: z.string().min(1, "Введите сегмент").max(120).optional(),
 });
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {

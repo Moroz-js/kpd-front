@@ -42,8 +42,8 @@ export function PivotTab({ executorId, type }: Props) {
   }, [executorId, year, type]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
+    <div className="flex flex-col h-full min-h-0 gap-3">
+      <div className="shrink-0 flex items-center gap-3">
         <Select value={year} onValueChange={(v) => setYear(v ?? "")}>
           <SelectTrigger className="w-32 h-8 text-xs">
             <SelectValue>{year} год</SelectValue>
@@ -59,6 +59,7 @@ export function PivotTab({ executorId, type }: Props) {
         </span>
       </div>
 
+      <div className="flex-1 min-h-0 min-w-0 overflow-auto rounded-md border bg-white">
       {loading ? (
         <div className="text-sm text-neutral-400 text-center py-8">Загрузка...</div>
       ) : !data || data.pivot.length === 0 ? (
@@ -66,7 +67,7 @@ export function PivotTab({ executorId, type }: Props) {
           {type === "paid" ? "Нет оплаченных работ за выбранный год" : "Долгов нет"}
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="min-w-0">
           <table className="w-full text-xs border-separate border-spacing-0">
             <thead>
               <tr className="bg-neutral-50">
@@ -115,6 +116,7 @@ export function PivotTab({ executorId, type }: Props) {
           </table>
         </div>
       )}
+      </div>
     </div>
   );
 }

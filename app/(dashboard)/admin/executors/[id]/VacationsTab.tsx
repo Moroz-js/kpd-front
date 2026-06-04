@@ -258,7 +258,8 @@ export function VacationsTab({ executorId, isAdmin, isOwner }: Props) {
   const canCreate = isAdmin || isOwner;
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col h-full min-h-0 overflow-y-auto">
+      <div className="space-y-6 min-h-0">
       {/* Мои отпуска */}
       <div>
         <div className="flex items-center justify-between mb-3">
@@ -356,6 +357,7 @@ export function VacationsTab({ executorId, isAdmin, isOwner }: Props) {
       <div>
         <h3 className="text-sm font-semibold text-neutral-800 mb-2">Общий график отпусков</h3>
         <SharedVacationCalendar />
+      </div>
       </div>
 
       {createOpen && (

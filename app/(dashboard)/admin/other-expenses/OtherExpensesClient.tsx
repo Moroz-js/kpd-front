@@ -47,6 +47,25 @@ const stickyActionsHead =
 const stickyActionsCell =
   "sticky right-0 z-10 border-l border-neutral-200 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.08)] bg-white";
 
+function EditableColHead({
+  children,
+  className,
+  showPencil,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  showPencil?: boolean;
+}) {
+  return (
+    <TableHead className={className}>
+      <span className="inline-flex items-center gap-1">
+        {children}
+        {showPencil && <Pencil className="h-3 w-3 shrink-0 text-neutral-400" aria-hidden />}
+      </span>
+    </TableHead>
+  );
+}
+
 // ─── Константы ────────────────────────────────────────────────────────────────
 
 const PREFERRED_PAY_METHODS = [
@@ -494,7 +513,9 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
               <TableHead className={compactHead}>Статус выплаты</TableHead>
               <TableHead className={compactHead}>Дата план (выплата)</TableHead>
               <TableHead className={cn(compactHead, "text-right")}>Выплата</TableHead>
-              <TableHead className={compactHead}>Дата оплаты факт</TableHead>
+              <EditableColHead className={compactHead} showPencil={isAdmin}>
+                Дата оплаты факт
+              </EditableColHead>
               <TableHead className={compactHead}>Источник перевода</TableHead>
               <TableHead className={stickyActionsHead} />
             </TableRow>
@@ -576,35 +597,33 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
                   {row.paymentAmount != null ? formatMoney(row.paymentAmount) : "—"}
                 </TableCell>
                 <TableCell className={cn(cellClip, "whitespace-nowrap")}>
-                  <div className="flex items-center gap-1">
-                    {inlineEdit?.rowId === row.id && inlineEdit.field === "paidAt" ? (
-                      <input
-                        autoFocus
-                        type="date"
-                        value={inlineVal}
-                        onChange={(e) => setInlineVal(e.target.value)}
-                        onBlur={() => commitInline(row)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") commitInline(row);
-                          if (e.key === "Escape") setInlineEdit(null);
-                        }}
-                        className="flex-1 h-6 rounded border border-blue-300 px-1 text-xs bg-blue-50 focus:outline-none"
-                      />
-                    ) : (
-                      <span className="text-xs text-neutral-600">{formatDateShort(row.paidAt)}</span>
-                    )}
-                    {row.paymentStatus && isAdmin && !(inlineEdit?.rowId === row.id && inlineEdit.field === "paidAt") && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-6 w-6 p-0 shrink-0"
-                        title="Указать дату оплаты"
-                        onClick={() => startInline(row, "paidAt")}
-                      >
-                        <Pencil className="h-3 w-3 text-neutral-500" />
-                      </Button>
-                    )}
-                  </div>
+                  {inlineEdit?.rowId === row.id && inlineEdit.field === "paidAt" ? (
+                    <input
+                      autoFocus
+                      type="date"
+                      value={inlineVal}
+                      onChange={(e) => setInlineVal(e.target.value)}
+                      onBlur={() => commitInline(row)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") commitInline(row);
+                        if (e.key === "Escape") setInlineEdit(null);
+                      }}
+                      className="w-full h-6 rounded border border-blue-300 px-1 text-xs bg-blue-50 focus:outline-none"
+                    />
+                  ) : row.paymentStatus && isAdmin ? (
+                    <button
+                      type="button"
+                      className="text-xs text-neutral-600 hover:text-blue-700 hover:underline"
+                      title="Указать дату оплаты"
+                      onClick={() => startInline(row, "paidAt")}
+                    >
+                      {row.paidAt ? formatDateShort(row.paidAt) : "—"}
+                    </button>
+                  ) : (
+                    <span className="text-xs text-neutral-600">
+                      {row.paidAt ? formatDateShort(row.paidAt) : "—"}
+                    </span>
+                  )}
                 </TableCell>
                 <TableCell className={cn(cellClip, "whitespace-nowrap")}>
                   <span className="block truncate" title={row.bankAccount?.name ?? undefined}>

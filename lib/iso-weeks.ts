@@ -85,8 +85,9 @@ export function isoWeekDays(year: number, week: number): Date[] {
   return Array.from({ length: 7 }, (_, i) => addDays(start, i));
 }
 
-/** Сколько прошлых ISO-недель оставлять видимыми (плюс текущая и будущие). */
+/** Сколько полных прошлых ISO-недель показывать в свёрнутом виде (+ текущая и будущие). */
 export const PROJECT_DASHBOARD_WEEKS_BACK = 4;
+/** Кэшфлоу: текущая неделя и 4 предыдущие → первая видимая = currentWeek − 4. */
 export const CASHFLOW_WEEKS_BACK = 4;
 
 /** Первая видимая неделя года при свёрнутых «старых» неделях (дашборд проекта). */

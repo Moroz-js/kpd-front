@@ -129,15 +129,16 @@ export function TasksTab({ executorId, isAdmin, isOwner, onTaskCountChange }: Pr
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col h-full min-h-0 gap-3">
       {isAdmin && (
-        <div>
+        <div className="shrink-0">
           <Button size="sm" onClick={() => setCreateOpen(true)}>
             <Plus className="h-3.5 w-3.5 mr-1" /> Задача
           </Button>
         </div>
       )}
 
+      <div className="flex-1 min-h-0 min-w-0 overflow-auto rounded-md border bg-white">
       {loading ? (
         <div className="text-sm text-neutral-400 text-center py-8">Загрузка...</div>
       ) : tasks.length === 0 ? (
@@ -145,7 +146,7 @@ export function TasksTab({ executorId, isAdmin, isOwner, onTaskCountChange }: Pr
           Задач нет. {isAdmin ? "Создайте первую задачу." : ""}
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="min-w-0">
           <table className="w-full text-xs border-separate border-spacing-0">
             <thead>
               <tr className="bg-neutral-100">
@@ -241,6 +242,7 @@ export function TasksTab({ executorId, isAdmin, isOwner, onTaskCountChange }: Pr
           </table>
         </div>
       )}
+      </div>
 
       {createOpen && (
         <CreateTaskDialog
