@@ -29,7 +29,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { SortableHead } from "@/components/ui-custom/SortableHead";
+import { ExpandableListCell } from "@/components/ui-custom/ExpandableListCell";
 import { ExecutorWizard } from "./ExecutorWizard";
+import { EXECUTOR_COMPANY_STATUSES } from "@/lib/statuses";
 
 function hasPersonalSmeta(row: { type: string; userId: string | null }): boolean {
   return row.type !== "service" && !!row.userId;
@@ -39,7 +41,6 @@ type Row = {
   id: string;
   name: string;
   companyStatus: string | null;
-  workOpsCount: number;
   type: string;
   workTypeIds: string[];
   workTypeNames: string[];
@@ -48,7 +49,7 @@ type Row = {
   responsibleName: string | null;
   defaultBankAccountId: string | null;
   defaultBankAccountName: string | null;
-  recipientType: string | null;
+  recipientTypes: string[];
   requisites: string | null;
   contacts: string | null;
   userId: string | null;
@@ -75,7 +76,7 @@ const fetcher = <T,>(url: string): Promise<T> =>
     return r.json() as Promise<T>;
   });
 
-type SortField = "name" | "responsibleName" | "lastPaidAt" | "workOpsCount";
+type SortField = "name" | "responsibleName" | "lastPaidAt";
 type SortDir = "asc" | "desc";
 
 export function ExecutorsClient() {
@@ -90,6 +91,7 @@ export function ExecutorsClient() {
   const [responsibleFilter, setResponsibleFilter] = React.useState<string[]>([]);
   const [bankFilter, setBankFilter] = React.useState<string[]>([]);
   const [recipientFilter, setRecipientFilter] = React.useState<string[]>([]);
+  const [companyStatusFilter, setCompanyStatusFilter] = React.useState<string[]>([]);
   const [accessFilter, setAccessFilter] = React.useState<string[]>([]);
   const [statusFilter, setStatusFilter] = React.useState<string[]>(["active"]);
   const [nameSearch, setNameSearch] = React.useState("");
@@ -156,7 +158,17 @@ export function ExecutorsClient() {
     }
 
     if (recipientFilter.length) {
-      list = list.filter((r) => recipientFilter.includes(r.recipientType ?? "__none__"));
+      list = list.filter((r) => {
+        if (recipientFilter.includes("__none__") && r.recipientTypes.length === 0) return true;
+        return r.recipientTypes.some((t) => recipientFilter.includes(t));
+      });
+    }
+
+    if (companyStatusFilter.length) {
+      list = list.filter((r) => {
+        if (companyStatusFilter.includes("__none__") && !r.companyStatus) return true;
+        return r.companyStatus != null && companyStatusFilter.includes(r.companyStatus);
+      });
     }
 
     if (accessFilter.length) {
@@ -186,6 +198,7 @@ export function ExecutorsClient() {
     responsibleFilter,
     bankFilter,
     recipientFilter,
+    companyStatusFilter,
     accessFilter,
     statusFilter,
     sort,
@@ -271,6 +284,14 @@ export function ExecutorsClient() {
     []
   );
 
+  const companyStatusOpts = React.useMemo(
+    () => [
+      { value: "__none__", label: "Пусто" },
+      ...Object.entries(EXECUTOR_COMPANY_STATUSES).map(([value, label]) => ({ value, label })),
+    ],
+    []
+  );
+
   const typeFilterOpts = React.useMemo(
     () =>
       Object.keys(EXECUTOR_TYPE_FILTER_GROUPS).map((label) => ({
@@ -302,6 +323,12 @@ export function ExecutorsClient() {
           />
         </div>
         <MultiSelectFilter label="Тип" options={typeFilterOpts} value={typeFilter} onChange={setTypeFilter} />
+        <MultiSelectFilter
+          label="Статус в компании"
+          options={companyStatusOpts}
+          value={companyStatusFilter}
+          onChange={setCompanyStatusFilter}
+        />
         <MultiSelectFilter
           label="Виды работ"
           options={workTypeOpts}
@@ -358,8 +385,12 @@ export function ExecutorsClient() {
               <SortableHead field="name" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
                 Исполнитель
               </SortableHead>
-              <TableHead>Статус в компании</TableHead>
-              <TableHead className="border-r-2 border-neutral-300">Тип</TableHead>
+              <TableHead className="w-[4.5rem] text-[10px] leading-tight font-medium whitespace-normal align-bottom">
+                Статус
+                <br />
+                в компании
+              </TableHead>
+              <TableHead>Тип</TableHead>
               <TableHead>Виды работ</TableHead>
               <TableHead>Специальность</TableHead>
               <TableHead>Проекты</TableHead>
@@ -374,7 +405,7 @@ export function ExecutorsClient() {
               <TableHead>Источник оплаты</TableHead>
               <TableHead>Тип получателя</TableHead>
               <TableHead>В чате ТГ</TableHead>
-              <TableHead className="border-r-2 border-neutral-300">Доступ</TableHead>
+              <TableHead>Доступ</TableHead>
               <TableHead>Статус</TableHead>
               <SortableHead
                 field="lastPaidAt"
@@ -384,28 +415,19 @@ export function ExecutorsClient() {
               >
                 Последняя выплата
               </SortableHead>
-              <SortableHead
-                field="workOpsCount"
-                sortBy={sort.field}
-                sortDir={sort.dir}
-                onSort={handleSort}
-                className="text-right"
-              >
-                Работ / операций
-              </SortableHead>
               <TableHead className="w-24" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={15} className="text-center text-neutral-500 py-8">
+                <TableCell colSpan={14} className="text-center text-neutral-500 py-8">
                   Загрузка...
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={15} className="text-center text-neutral-500 py-8">
+                <TableCell colSpan={14} className="text-center text-neutral-500 py-8">
                   Нет исполнителей
                 </TableCell>
               </TableRow>
@@ -445,21 +467,23 @@ export function ExecutorsClient() {
                         ? "Орбита"
                         : "—"}
                   </TableCell>
-                  <TableCell className="border-r-2 border-neutral-300">
+                  <TableCell>
                     {EXECUTOR_TYPES[r.type as keyof typeof EXECUTOR_TYPES] ?? r.type}
                   </TableCell>
-                  <TableCell className="max-w-48 truncate">
-                    {r.workTypeNames.join(", ") || "—"}
+                  <TableCell>
+                    <ExpandableListCell items={r.workTypeNames} />
                   </TableCell>
                   <TableCell className="max-w-32 truncate">
                     {r.specialty ?? "—"}
                   </TableCell>
-                  <TableCell className="max-w-48 truncate">
-                    {r.projectNames.join(", ") || "—"}
+                  <TableCell>
+                    <ExpandableListCell items={r.projectNames} className="max-w-64" />
                   </TableCell>
                   <TableCell>{r.responsibleName ?? "—"}</TableCell>
                   <TableCell>{r.defaultBankAccountName ?? "—"}</TableCell>
-                  <TableCell>{r.recipientType ?? "—"}</TableCell>
+                  <TableCell>
+                    <ExpandableListCell items={r.recipientTypes} className="max-w-56" />
+                  </TableCell>
                   <TableCell className="text-center">
                     {r.inTgChat ? (
                       <Check className="h-4 w-4 text-green-600 inline" />
@@ -467,7 +491,7 @@ export function ExecutorsClient() {
                       <X className="h-4 w-4 text-neutral-300 inline" />
                     )}
                   </TableCell>
-                  <TableCell className="border-r-2 border-neutral-300">
+                  <TableCell>
                     {r.email && r.type !== "service" ? (
                       <button
                         type="button"
@@ -495,7 +519,6 @@ export function ExecutorsClient() {
                   <TableCell>
                     {r.lastPaidAt ? formatDate(r.lastPaidAt) : "—"}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{r.workOpsCount}</TableCell>
                   <TableCell>
                     <div className="flex items-center justify-end gap-0.5">
                       <Button

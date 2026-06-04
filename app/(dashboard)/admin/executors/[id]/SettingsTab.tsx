@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -15,11 +15,13 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { WorkTypesMultiSelect } from "@/components/ui-custom/WorkTypesMultiSelect";
-import { RECIPIENT_TYPES, WORK_TYPE_SEGMENTS } from "@/lib/statuses";
+import { RecipientTypesPicker } from "@/components/ui-custom/RecipientTypesPicker";
+import { WORK_TYPE_SEGMENTS } from "@/lib/statuses";
+import { parseRecipientTypes } from "@/lib/executor-recipient-type";
 
 type BankAccount = { id: string; name: string };
 type WorkType = { id: string; name: string; segment?: string };
-type Project = { id: string; name: string; status: string };
+type PlanProject = { id: string; name: string };
 
   type ExecutorDetail = {
   id: string;
@@ -38,7 +40,6 @@ type Project = { id: string; name: string; status: string };
   onboardingSeeded: boolean;
   user: { id: string; email: string; fullName: string; isActive: boolean } | null;
   executorWorkTypes: { workType: WorkType }[];
-  projectExecutors: { project: Project }[];
 };
 
 type Props = {
@@ -55,7 +56,9 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
   const [email, setEmail] = useState(executor.user?.email ?? "");
   const [contacts, setContacts] = useState(executor.contacts ?? "");
   const [requisites, setRequisites] = useState(executor.requisites ?? "");
-  const [recipientType, setRecipientType] = useState(executor.recipientType ?? "");
+  const [recipientTypes, setRecipientTypes] = useState<string[]>(() =>
+    parseRecipientTypes(executor.recipientType)
+  );
   const [defaultBankAccountId, setDefaultBankAccountId] = useState(executor.defaultBankAccountId ?? "");
   const [entityForm, setEntityForm] = useState(executor.entityForm ?? "");
   const [selectedSpecialties, setSelectedSpecialties] = useState<string[]>(() => {
@@ -66,7 +69,18 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
   );
   const [isResponsible, setIsResponsible] = useState(executor.isResponsible ?? false);
   const executorArchived = executor.status === "archived";
+  const [planProjects, setPlanProjects] = useState<PlanProject[]>([]);
+  const [loadingPlanProjects, setLoadingPlanProjects] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setLoadingPlanProjects(true);
+    fetch(`/api/executors/${executorId}/plan-projects`)
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((list: PlanProject[]) => setPlanProjects(list))
+      .catch(() => setPlanProjects([]))
+      .finally(() => setLoadingPlanProjects(false));
+  }, [executorId]);
 
   // Access toggle
   const [togglingAccess, setTogglingAccess] = useState(false);
@@ -98,7 +112,7 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
           name: fullName.trim(),
           contacts: contacts || null,
           requisites: requisites || null,
-          recipientType: recipientType || null,
+          recipientTypes,
           defaultBankAccountId: defaultBankAccountId || null,
           entityForm: entityForm || null,
           specialties: JSON.stringify(selectedSpecialties),
@@ -258,19 +272,7 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
         </div>
         <div className="space-y-1.5">
           <Label>Тип получателя</Label>
-          <Select value={recipientType || "__none__"} onValueChange={(v) => setRecipientType(v === "__none__" ? "" : (v ?? ""))}>
-            <SelectTrigger>
-              <SelectValue>
-                {recipientType || "— Не задан —"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">— Не задан —</SelectItem>
-              {RECIPIENT_TYPES.map((rt) => (
-                <SelectItem key={rt} value={rt}>{rt}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <RecipientTypesPicker value={recipientTypes} onChange={setRecipientTypes} />
         </div>
       </div>
 
@@ -316,30 +318,29 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
         )}
       </div>
 
-      {/* Projects block — read-only */}
+      {/* Projects from spending plan (same as work create dropdown) */}
       <div className="border rounded-lg p-4 space-y-3">
         <h3 className="text-sm font-semibold text-neutral-800">Проекты</h3>
-        {executor.projectExecutors.length === 0 ? (
-          <p className="text-xs text-neutral-400">Исполнитель не добавлен ни в один проект</p>
+        {loadingPlanProjects ? (
+          <p className="text-xs text-neutral-400">Загрузка…</p>
+        ) : planProjects.length === 0 ? (
+          <p className="text-xs text-neutral-400">
+            Нет проектов в плане расходов. Руководитель добавляет строку с этим исполнителем в дашборде проекта.
+          </p>
         ) : (
           <div className="flex flex-wrap gap-2">
-            {executor.projectExecutors.map(({ project }) => (
+            {planProjects.map((project) => (
               <span
                 key={project.id}
-                className={`rounded-full border px-3 py-1 text-xs font-medium ${
-                  project.status === "active"
-                    ? "bg-neutral-100 border-neutral-200 text-neutral-700"
-                    : "bg-slate-100 border-slate-200 text-slate-500"
-                }`}
+                className="rounded-full border px-3 py-1 text-xs font-medium bg-neutral-100 border-neutral-200 text-neutral-700"
               >
                 {project.name}
-                {project.status === "archived" && " (архив)"}
               </span>
             ))}
           </div>
         )}
         <p className="text-xs text-neutral-400">
-          Чтобы добавить проект исполнителю, руководитель должен добавить строку с этим исполнителем в план расходов проекта.
+          Тот же список, что при создании работы — проекты из плана расходов, где указан этот исполнитель.
         </p>
       </div>
 

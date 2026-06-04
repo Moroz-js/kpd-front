@@ -44,27 +44,19 @@ const NAV_CONFIG: Record<string, NavGroup[]> = {
   admin: [
     {
       items: [
+        { label: "Кэшфлоу", href: "/admin/cashflow", icon: TrendingUp },
         { label: "Проекты", href: "/admin/projects", icon: FolderOpen },
-        { label: "Ответственные", href: "/admin/responsibles", icon: UserCheck },
-        { label: "Исполнители", href: "/admin/executors", icon: Users },
+        { label: "Начисления", href: "/admin/charges", icon: FileText },
+        { label: "Заказы", href: "/admin/orders", icon: ShoppingCart },
         { label: "Выставленные работы", href: "/admin/issued-works", icon: Briefcase },
         { label: "Выплаты", href: "/admin/payouts", icon: CreditCard },
         { label: "Прочие траты", href: "/admin/other-expenses", icon: Receipt },
-        { label: "Кэшфлоу", href: "/admin/cashflow", icon: TrendingUp },
-      ],
-    },
-    {
-      items: [
-        { label: "Заказы", href: "/admin/orders", icon: ShoppingCart },
-        { label: "Начисления", href: "/admin/charges", icon: FileText },
+        { label: "Исполнители", href: "/admin/executors", icon: Users },
+        { label: "Ответственные", href: "/admin/responsibles", icon: UserCheck },
         { label: "Клиенты", href: "/admin/clients", icon: Building2 },
-        { label: "Банковские счета", href: "/admin/bank-accounts", icon: Wallet },
         { label: "Виды работ", href: "/admin/work-types", icon: Wrench },
+        { label: "Банковские счета", href: "/admin/bank-accounts", icon: Wallet },
         { label: "Задачи", href: "/admin/tasks", icon: CheckSquare },
-      ],
-    },
-    {
-      items: [
         { label: "История действий", href: "/admin/activity", icon: History },
       ],
     },
@@ -72,8 +64,8 @@ const NAV_CONFIG: Record<string, NavGroup[]> = {
   responsible: [
     {
       items: [
-        { label: "Мои проекты", href: "/responsible/projects", icon: FolderOpen },
         { label: "Кэшфлоу", href: "/responsible/cashflow", icon: TrendingUp },
+        { label: "Мои проекты", href: "/responsible/projects", icon: FolderOpen },
         { label: "Прочие траты", href: "/responsible/other-expenses", icon: Receipt },
       ],
     },

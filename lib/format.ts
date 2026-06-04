@@ -40,6 +40,13 @@ export function formatMoney(n: number | null | undefined): string {
   return moneyFormatter.format(n).replace(/\s/g, "\u00A0");
 }
 
+/** Сумма с суффиксом «руб.» для агрегатов и итогов в шапке таблиц. */
+export function formatMoneyRub(n: number | null | undefined): string {
+  const base = formatMoney(n);
+  if (base === "—") return base;
+  return `${base} руб.`;
+}
+
 export function formatDate(date: Date | string | null | undefined): string {
   if (!date) return "—";
   const d = typeof date === "string" ? new Date(date) : date;

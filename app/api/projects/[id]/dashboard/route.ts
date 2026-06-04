@@ -67,7 +67,7 @@ export async function GET(req: NextRequest, { params }: Ctx) {
     prisma.spendingPlanLine.findMany({
       where: { projectId: id, year },
       include: {
-        executor: { select: { id: true, name: true } },
+        executor: { select: { id: true, name: true, userId: true, type: true } },
         workType: { select: { id: true, name: true } },
       },
     }),
@@ -182,8 +182,13 @@ export async function GET(req: NextRequest, { params }: Ctx) {
 
   // Block 4: SpendingPlanLine grouped by (executor, workType)
   const planGroupMap = new Map<string, {
-    id: string; executorId: string; executorName: string;
-    workTypeId: string; workTypeName: string; sourceType: string | null;
+    id: string;
+    executorId: string;
+    executorName: string;
+    executorHasPersonalSmeta: boolean;
+    workTypeId: string;
+    workTypeName: string;
+    sourceType: string | null;
     weeks: (string | null)[];
     lineIds: (string | null)[];
   }>();
@@ -195,6 +200,8 @@ export async function GET(req: NextRequest, { params }: Ctx) {
         id: key,
         executorId: pl.executorId,
         executorName: pl.executor.name,
+        executorHasPersonalSmeta:
+          pl.executor.type !== "service" && pl.executor.userId != null,
         workTypeId: pl.workTypeId,
         workTypeName: pl.workType.name,
         sourceType: pl.sourceType,
@@ -217,65 +224,6 @@ export async function GET(req: NextRequest, { params }: Ctx) {
     };
   });
 
-  const STATUS_LABELS: Record<string, string> = {
-    submitted: "Сдана",
-    checked: "Проверена",
-    paid: "Оплачена",
-    rework: "Переработка",
-    planned: "Запланировано",
-    issued: "Выставлено",
-    overdue: "Просрочено",
-  };
-
-  const worksTable = [
-    ...works.map(w => ({
-      id: w.id,
-      source: "work" as const,
-      executorName: w.executor.name,
-      workTypeName: w.workType.name,
-      description: null as string | null,
-      amount: w.amount,
-      status: w.workStatus,
-      statusLabel: STATUS_LABELS[w.workStatus] ?? w.workStatus,
-      executionYear: w.executionYear,
-      executionMonth: w.executionMonth,
-      plannedPayAt: w.plannedPayAt?.toISOString() ?? null,
-      paidAt: w.paidAt?.toISOString() ?? null,
-    })),
-    ...otherExpenses.map(o => ({
-      id: o.id,
-      source: "other" as const,
-      executorName: o.executor.name,
-      workTypeName: o.workType.name,
-      description: o.description,
-      amount: o.amount,
-      status: o.workStatus,
-      statusLabel: STATUS_LABELS[o.workStatus] ?? o.workStatus,
-      executionYear: o.executionYear,
-      executionMonth: o.executionMonth,
-      plannedPayAt: o.plannedPayAt?.toISOString() ?? null,
-      paidAt: o.paidAt?.toISOString() ?? null,
-    })),
-  ].sort((a, b) => {
-    const da = a.paidAt ?? a.plannedPayAt ?? "";
-    const db = b.paidAt ?? b.plannedPayAt ?? "";
-    return db.localeCompare(da);
-  });
-
-  const chargesTable = charges.map(c => ({
-    id: c.id,
-    chargeNumber: c.chargeNumber,
-    invoiceNumber: c.invoiceNumber,
-    orderNumber: c.order.orderNumber,
-    orderDescription: c.order.description,
-    amount: c.amount,
-    status: c.status,
-    statusLabel: STATUS_LABELS[c.status] ?? c.status,
-    issuedAt: c.issuedAt?.toISOString() ?? null,
-    paidPlanAt: c.paidPlanAt?.toISOString() ?? null,
-    paidAt: c.paidAt?.toISOString() ?? null,
-  }));
-
   return NextResponse.json({
     project: {
       id: project.id,
@@ -295,7 +243,5 @@ export async function GET(req: NextRequest, { params }: Ctx) {
       workTypeIds: e.executorWorkTypes.map(ewt => ewt.workTypeId),
     })),
     availableWorkTypes: workTypes,
-    worksTable,
-    chargesTable,
   });
 }

@@ -3,11 +3,10 @@
 import React, { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
-import { ChevronLeft, Plus, Pencil, Check, TrendingUp, CreditCard, AlertTriangle, Trash2 } from "lucide-react";
+import { ChevronLeft, Plus, Pencil, Check, TrendingUp, CreditCard, AlertTriangle, Trash2, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { buttonVariants, Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   weekLabel,
   getISOWeeksInYear,
@@ -20,9 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
-import { StatusBadge } from "@/components/ui-custom/StatusBadge";
-import { WORK_STATUSES, CHARGE_STATUSES } from "@/lib/statuses";
-import { formatMoney, formatDate, monthLabel } from "@/lib/format";
+import { ProjectCashflowChart } from "@/components/ui-custom/ProjectCashflowChart";
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
@@ -34,6 +31,13 @@ function fmt(n: number) {
 function fmtSign(n: number) {
   if (n === 0) return "—";
   return n.toLocaleString("ru-RU", { maximumFractionDigits: 0 });
+}
+
+/** Перерасход: минус — экономия (зелёный), плюс — превышение (красный) */
+function overspendValueClass(v: number): string {
+  if (v === 0) return "";
+  if (v < 0) return "text-green-600 font-medium";
+  return "text-red-600 font-medium";
 }
 
 type WeekHeader = { week: number; month: number; monthName: string };
@@ -54,40 +58,12 @@ type PlanLineRow = {
   id: string;
   executorId: string;
   executorName: string;
+  executorHasPersonalSmeta: boolean;
   workTypeId: string;
   workTypeName: string;
   sourceType: string | null;
   weeks: (string | null)[];
   lineIds: (string | null)[];
-};
-
-type WorkTableRow = {
-  id: string;
-  source: "work" | "other";
-  executorName: string;
-  workTypeName: string;
-  description: string | null;
-  amount: number;
-  status: string;
-  statusLabel: string;
-  executionYear: number;
-  executionMonth: number;
-  plannedPayAt: string | null;
-  paidAt: string | null;
-};
-
-type ChargeTableRow = {
-  id: string;
-  chargeNumber: string;
-  invoiceNumber: string;
-  orderNumber: number;
-  orderDescription: string;
-  amount: number;
-  status: string;
-  statusLabel: string;
-  issuedAt: string | null;
-  paidPlanAt: string | null;
-  paidAt: string | null;
 };
 
 type DashboardData = {
@@ -99,8 +75,6 @@ type DashboardData = {
   planLines: PlanLineRow[];
   executors: { id: string; name: string; workTypeIds: string[] }[];
   availableWorkTypes: { id: string; name: string }[];
-  worksTable: WorkTableRow[];
-  chargesTable: ChargeTableRow[];
 };
 
 type EditingCell = {
@@ -334,7 +308,7 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
 
   if (!data) return <div className="p-6 text-sm text-neutral-500">Загрузка…</div>;
 
-  const { project, weeks, summary, workTypes, planLines, executors, availableWorkTypes, worksTable, chargesTable } = data;
+  const { project, weeks, summary, workTypes, planLines, executors, availableWorkTypes } = data;
 
   // Group month headers
   const monthGroups: { label: string; count: number }[] = [];
@@ -404,6 +378,13 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
           </p>
         </div>
       </div>
+
+      <ProjectCashflowChart
+        weeks={visibleWeeks}
+        cashflow={visibleWeekIndices.map((i) => summary.cashflow[i] ?? 0)}
+        expensePlan={visibleWeekIndices.map((i) => summary.expensePlan[i] ?? 0)}
+        incomePlanFact={visibleWeekIndices.map((i) => summary.incomePlanFact[i] ?? 0)}
+      />
 
       {/* Main grid */}
       <div className="rounded-lg border border-neutral-200 bg-white">
@@ -510,28 +491,42 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
 
               {/* Block 3: Overspend (row41 = expenses − expensePlan) */}
               <tr className="bg-neutral-50 border-t-2 border-b border-neutral-200">
-                <td className={stickyHdr}>Перерасход (факт − план)</td>
-                <td colSpan={visibleWeeks.length + 1} className="bg-neutral-50" />
-              </tr>
-              <tr className="border-b border-neutral-100">
-                <td className={cn(stickyLbl, "font-normal")}>Перерасход</td>
+                <td className={cn(stickyLbl, "bg-neutral-50 font-medium text-neutral-800")}>Перерасход</td>
                 {visibleWeekIndices.map((idx, vi) => {
                   const wh = visibleWeeks[vi];
                   const v = (summary.overspend ?? [])[idx] ?? 0;
                   return (
-                    <td key={idx} className={cn(tdCls, wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50/70 font-semibold" : wh?.week < currentISOWeek && year === currentYear ? "text-neutral-400 bg-neutral-50/40" : "")}>
+                    <td
+                      key={idx}
+                      className={cn(
+                        tdCls,
+                        "bg-neutral-50",
+                        overspendValueClass(v),
+                        wh?.week === currentISOWeek && year === currentYear
+                          ? "!bg-blue-50/70 font-semibold"
+                          : wh?.week < currentISOWeek && year === currentYear && v === 0
+                            ? "text-neutral-400"
+                            : ""
+                      )}
+                    >
                       {v === 0 ? "—" : fmtSign(v)}
                     </td>
                   );
                 })}
-                <td className={cn(tdCls, "bg-neutral-50 font-medium")}>
+                <td
+                  className={cn(
+                    tdCls,
+                    "bg-neutral-50 font-medium",
+                    overspendValueClass(rowTotal(summary.overspend ?? []))
+                  )}
+                >
                   {rowTotal(summary.overspend ?? []) === 0 ? "—" : fmtSign(rowTotal(summary.overspend ?? []))}
                 </td>
               </tr>
 
               {/* Block 4: SpendingPlan (row42 = итог; rows 43+ = строки) */}
               <tr className="bg-neutral-50 border-t-2 border-b border-neutral-200">
-                <td className={stickyHdr}>План расходов (ДП)</td>
+                <td className={stickyHdr}>План расходов</td>
                 <td colSpan={visibleWeeks.length + 1} className="bg-neutral-50" />
               </tr>
               {/* Row 42: итог плана */}
@@ -566,7 +561,20 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                       <div className="flex items-center gap-1 min-w-0">
                         <div className="flex flex-col leading-tight min-w-0 flex-1">
                           <span className="truncate font-medium text-neutral-900">{pl.workTypeName}</span>
-                          <span className="text-neutral-400 text-[11px] truncate">{pl.executorName}</span>
+                          {pl.executorHasPersonalSmeta ? (
+                            <Link
+                              href={`/admin/executors/${pl.executorId}?fromProject=${projectId}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-0.5 text-[11px] text-blue-600 hover:underline truncate max-w-full"
+                              title="Открыть личную смету"
+                            >
+                              <span className="truncate">{pl.executorName}</span>
+                              <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
+                            </Link>
+                          ) : (
+                            <span className="text-neutral-400 text-[11px] truncate">{pl.executorName}</span>
+                          )}
                         </div>
                         {canManagePlan && (
                           <Button
@@ -637,100 +645,6 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
             </tbody>
           </table>
         </div>
-      </div>
-
-      {/* Works table — стиль как в /admin/issued-works */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-neutral-800">Выставленные работы</h2>
-          <span className="text-xs text-neutral-400">{worksTable.length} строк</span>
-        </div>
-        {worksTable.length === 0 ? (
-          <div className="text-sm text-neutral-400 py-6 text-center border rounded-md bg-white">Нет данных</div>
-        ) : (
-          <div className="rounded-md border bg-white overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Исполнитель</TableHead>
-                  <TableHead>Вид работ</TableHead>
-                  <TableHead>Описание</TableHead>
-                  <TableHead>Период</TableHead>
-                  <TableHead className="text-right">Сумма</TableHead>
-                  <TableHead>Статус</TableHead>
-                  <TableHead>Оплата план</TableHead>
-                  <TableHead>Оплата факт</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {worksTable.map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell className="font-medium">{row.executorName}</TableCell>
-                    <TableCell>{row.workTypeName}</TableCell>
-                    <TableCell className="max-w-[200px] truncate text-neutral-500">{row.description ?? "—"}</TableCell>
-                    <TableCell className="text-neutral-500">{monthLabel(row.executionMonth)} {row.executionYear}</TableCell>
-                    <TableCell className="text-right tabular-nums font-medium">{formatMoney(row.amount)}</TableCell>
-                    <TableCell><StatusBadge dict={WORK_STATUSES} value={row.status} /></TableCell>
-                    <TableCell className="text-neutral-500">{formatDate(row.plannedPayAt)}</TableCell>
-                    <TableCell className="text-neutral-500">{formatDate(row.paidAt)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </div>
-
-      {/* Charges table — стиль как в /admin/charges */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-neutral-800">Начисления</h2>
-          <span className="text-xs text-neutral-400">{chargesTable.length} строк</span>
-        </div>
-        {chargesTable.length === 0 ? (
-          <div className="text-sm text-neutral-400 py-6 text-center border rounded-md bg-white">Нет данных</div>
-        ) : (
-          <div className="overflow-x-auto">
-            {(() => {
-              const th = "border border-neutral-200 px-2 py-1.5 text-left font-medium text-neutral-600 bg-neutral-50 text-xs whitespace-nowrap";
-              const thr = th + " text-right";
-              const td = "border border-neutral-200 px-2 py-1.5 text-xs";
-              const tdr = td + " text-right";
-              return (
-                <table className="w-full text-xs border-separate border-spacing-0">
-                  <thead>
-                    <tr>
-                      <th className={th}>Нач. №</th>
-                      <th className={th}>Счёт №</th>
-                      <th className={th}>Заказ</th>
-                      <th className={th}>Назначение</th>
-                      <th className={thr}>Сумма</th>
-                      <th className={th}>Статус</th>
-                      <th className={th}>Выставлено</th>
-                      <th className={th}>Оплата план</th>
-                      <th className={th}>Оплата факт</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {chargesTable.map((row) => (
-                      <tr key={row.id} className="hover:bg-neutral-50">
-                        <td className={td}>{row.chargeNumber}</td>
-                        <td className={td}>{row.invoiceNumber}</td>
-                        <td className={td}>№{row.orderNumber}</td>
-                        <td className={td}><div className="truncate max-w-[200px]" title={row.orderDescription}>{row.orderDescription}</div></td>
-                        <td className={tdr}>{formatMoney(row.amount)}</td>
-                        <td className={td}><StatusBadge dict={CHARGE_STATUSES} value={row.status} /></td>
-                        <td className={td}>{formatDate(row.issuedAt)}</td>
-                        <td className={td}>{formatDate(row.paidPlanAt)}</td>
-                        <td className={td}>{formatDate(row.paidAt)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              );
-            })()}
-          </div>
-        )}
       </div>
 
       {addOpen && (

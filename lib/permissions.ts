@@ -99,6 +99,14 @@ export async function canViewExecutorEstimate(
   }
 
   if (isResponsible(user)) {
+    const onProject = await prisma.spendingPlanLine.findFirst({
+      where: {
+        executorId,
+        project: { responsibleUserId: user.id, status: "active" },
+      },
+    });
+    if (onProject) return true;
+
     const projectExecutor = await prisma.projectExecutor.findFirst({
       where: {
         executorId,

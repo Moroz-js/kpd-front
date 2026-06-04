@@ -25,10 +25,27 @@ import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { WORK_STATUSES, PAYMENT_STATUSES } from "@/lib/statuses";
-import { formatMoney, formatDate, formatDateShort, MONTHS } from "@/lib/format";
+import { formatMoney, formatMoneyRub, formatDate, formatDateShort, MONTHS } from "@/lib/format";
 import { getISOWeek, weekLabel, nearestPaymentDate, toLocalDateString } from "@/lib/iso-weeks";
+import { cn } from "@/lib/utils";
 import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
 import { useTableRowSelection } from "@/lib/useTableRowSelection";
+import { ExpandableListCell } from "@/components/ui-custom/ExpandableListCell";
+
+const compactPeriodHead =
+  "text-[10px] leading-tight font-medium whitespace-normal normal-case align-bottom";
+const compactHead =
+  "text-[10px] leading-tight font-medium whitespace-normal normal-case align-bottom";
+/** Ширины колонок (19) — table-fixed, иначе правые колонки сжимаются и наезжают друг на друга */
+const COL_WIDTHS = [
+  36, 48, 84, 64, 168, 128, 180, 100, 108, 92, 88, 80, 108, 108, 88, 80, 104, 120, 72,
+] as const;
+const TABLE_MIN_WIDTH = COL_WIDTHS.reduce((s, w) => s + w, 0);
+const cellClip = "overflow-hidden max-w-0";
+const stickyActionsHead =
+  "sticky right-0 z-20 bg-neutral-100 border-l border-neutral-200 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.08)] w-16";
+const stickyActionsCell =
+  "sticky right-0 z-10 border-l border-neutral-200 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.08)] bg-white";
 
 // ─── Константы ────────────────────────────────────────────────────────────────
 
@@ -360,6 +377,8 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
             options={projects.map(p => ({ value: p.id, label: p.name }))}
             value={fProject}
             onChange={setFProject}
+            popoverClassName="w-auto min-w-72 max-w-lg"
+            optionLabelClassName="whitespace-normal"
           />
           <MultiSelectFilter
             label="Исполнитель"
@@ -398,7 +417,7 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
       {selectedIds.size > 0 && (
         <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200">
           <span className="text-xs font-medium text-blue-700">{selectedIds.size} выбрано</span>
-          <span className="text-xs tabular-nums font-semibold text-neutral-700">{formatMoney(selectedSum)}</span>
+          <span className="text-xs tabular-nums font-semibold text-neutral-700">{formatMoneyRub(selectedSum)}</span>
           <Select value={bulkWorkStatus} onValueChange={(v) => v && setBulkWorkStatus(v)}>
             <SelectTrigger className="h-7 w-44 text-xs">
               <SelectValue>{bulkWorkStatus ? (WORK_STATUSES[bulkWorkStatus as keyof typeof WORK_STATUSES]?.label ?? "Статус работы") : "Статус работы"}</SelectValue>
@@ -416,7 +435,7 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
             <Input type="date" className="h-7 text-xs w-36" value={bulkPaidAt} onChange={(e) => setBulkPaidAt(e.target.value)} />
           </div>
           <div className="flex items-center gap-1">
-            <span className="text-xs text-neutral-500">Источник оплаты:</span>
+            <span className="text-xs text-neutral-500">Источник перевода:</span>
             <Select value={bulkBankId || "__none__"} onValueChange={(v) => setBulkBankId(v === "__none__" ? "" : (v ?? ""))}>
               <SelectTrigger className="h-7 w-44 text-xs">
                 <SelectValue>{bulkBankId ? (bankAccounts.find(b => b.id === bulkBankId)?.name ?? "") : "— не менять —"}</SelectValue>
@@ -439,39 +458,45 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
       {filtered.length > 0 && (
         <div className="flex items-center gap-4 px-1 py-1 text-xs text-neutral-500 shrink-0">
           <span>{filtered.length} записей</span>
-          <span className="text-neutral-800 font-semibold tabular-nums">
-            {formatMoney(filtered.reduce((s, r) => s + (r.amount ?? 0), 0))}
+          <span className="text-xs font-medium tabular-nums text-neutral-800">
+            {formatMoneyRub(filtered.reduce((s, r) => s + (r.amount ?? 0), 0))}
           </span>
         </div>
       )}
 
       <Table
-        className="min-w-[1600px]"
+        className="table-fixed w-full"
+        style={{ minWidth: TABLE_MIN_WIDTH }}
         containerClassName="rounded-md border bg-white flex-1 min-h-0 min-w-0 overflow-auto"
       >
+          <colgroup>
+            {COL_WIDTHS.map((w, i) => (
+              <col key={i} style={{ width: w }} />
+            ))}
+          </colgroup>
           <TableHeader>
             <TableRow>
               <TableHead className="w-8">
                 <Checkbox checked={selectedIds.size === filtered.length && filtered.length > 0} onCheckedChange={() => toggleAll(orderedRowIds)} />
               </TableHead>
-              <TableHead>Год</TableHead>
-              <TableHead>Месяц</TableHead>
-              <TableHead>Неделя оплаты</TableHead>
-              <TableHead>Проект</TableHead>
-              <TableHead>Исполнитель</TableHead>
-              <TableHead className="min-w-[200px]">Описание работы</TableHead>
-              <TableHead>Вид работ</TableHead>
-              <TableHead>Ответственный</TableHead>
-              <TableHead>Способ оплаты</TableHead>
-              <TableHead>Дата план (работа)</TableHead>
-              <TableHead className="text-right">Сумма</TableHead>
-              <TableHead>Статус работы</TableHead>
-              <TableHead>Статус выплаты</TableHead>
-              <TableHead>Дата план (выплата)</TableHead>
-              <TableHead className="text-right">Выплата</TableHead>
-              <TableHead>Дата оплаты факт</TableHead>
-              <TableHead>Счёт</TableHead>
-              <TableHead className="w-16" />
+              <TableHead className={compactPeriodHead}>Год выполнения</TableHead>
+              <TableHead className={compactPeriodHead}>Месяц выполнения</TableHead>
+              <TableHead className={compactPeriodHead}>Неделя оплаты</TableHead>
+              <TableHead className={compactHead}>Проект</TableHead>
+              <TableHead className={compactHead}>Исполнитель</TableHead>
+              <TableHead className={compactHead}>Описание работы</TableHead>
+              <TableHead className={compactHead}>Вид работ</TableHead>
+              <TableHead className={compactHead}>Ответственный</TableHead>
+              <TableHead className={compactHead}>Способ оплаты</TableHead>
+              <TableHead className={compactHead}>Дата план (работа)</TableHead>
+              <TableHead className={cn(compactHead, "text-right")}>Сумма</TableHead>
+              <TableHead className={compactHead}>Статус работы</TableHead>
+              <TableHead className={compactHead}>Статус выплаты</TableHead>
+              <TableHead className={compactHead}>Дата план (выплата)</TableHead>
+              <TableHead className={cn(compactHead, "text-right")}>Выплата</TableHead>
+              <TableHead className={compactHead}>Дата оплаты факт</TableHead>
+              <TableHead className={compactHead}>Источник перевода</TableHead>
+              <TableHead className={stickyActionsHead} />
             </TableRow>
           </TableHeader>
           <BulkSelectTableBody>
@@ -496,23 +521,61 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
                 <TableCell>{row.executionYear}</TableCell>
                 <TableCell className="whitespace-nowrap">{MONTHS.find(m => m.value === String(row.executionMonth))?.label ?? row.executionMonth}</TableCell>
                 <TableCell>{payWeek(row.plannedPayAt, row.paidAt)}</TableCell>
-                <TableCell className="max-w-[120px] truncate" title={row.project.name}>{row.project.name}</TableCell>
-                <TableCell className="whitespace-nowrap">{row.executor.name}</TableCell>
-                <TableCell className="max-w-[200px]"><div className="truncate" title={row.description}>{row.description}</div></TableCell>
-                <TableCell>{row.workType.name}</TableCell>
-                <TableCell className="whitespace-nowrap">{row.responsibleUser.fullName}</TableCell>
-                <TableCell>{row.preferredPayMethod ?? "—"}</TableCell>
-                <TableCell className="min-w-[100px]">{renderPlanDateCell(row)}</TableCell>
-                <TableCell className="text-right tabular-nums font-semibold">{formatMoney(row.amount)}</TableCell>
-                <TableCell><StatusBadge dict={WORK_STATUSES} value={row.workStatus} /></TableCell>
-                <TableCell>
-                  {row.paymentStatus
-                    ? <StatusBadge dict={PAYMENT_STATUSES} value={row.paymentStatus} />
-                    : <span className="text-neutral-300">—</span>}
+                <TableCell className={cn(cellClip, "whitespace-normal")}>
+                  <ExpandableListCell items={[row.project.name]} />
                 </TableCell>
-                <TableCell className="min-w-[100px]">{renderPlanDateCell(row)}</TableCell>
-                <TableCell className="text-right tabular-nums">{row.paymentAmount != null ? formatMoney(row.paymentAmount) : "—"}</TableCell>
-                <TableCell className="min-w-[110px]">
+                <TableCell className={cn(cellClip, "whitespace-nowrap")}>
+                  <span className="block truncate" title={row.executor.name}>
+                    {row.executor.name}
+                  </span>
+                </TableCell>
+                <TableCell className={cn(cellClip, "whitespace-normal")}>
+                  <ExpandableListCell items={row.description ? [row.description] : []} />
+                </TableCell>
+                <TableCell className={cn(cellClip, "whitespace-nowrap")}>
+                  <span className="block truncate" title={row.workType.name}>
+                    {row.workType.name}
+                  </span>
+                </TableCell>
+                <TableCell className={cn(cellClip, "whitespace-nowrap")}>
+                  <span className="block truncate" title={row.responsibleUser.fullName}>
+                    {row.responsibleUser.fullName}
+                  </span>
+                </TableCell>
+                <TableCell className={cn(cellClip, "whitespace-normal")}>
+                  {row.preferredPayMethod ? (
+                    <ExpandableListCell items={[row.preferredPayMethod]} />
+                  ) : (
+                    <span className="text-neutral-400">—</span>
+                  )}
+                </TableCell>
+                <TableCell className={cn(cellClip, "whitespace-nowrap")}>
+                  {renderPlanDateCell(row)}
+                </TableCell>
+                <TableCell className={cn(cellClip, "text-right tabular-nums font-semibold whitespace-nowrap")}>
+                  {formatMoney(row.amount)}
+                </TableCell>
+                <TableCell className={cellClip}>
+                  <div className="w-full overflow-hidden">
+                    <StatusBadge dict={WORK_STATUSES} value={row.workStatus} />
+                  </div>
+                </TableCell>
+                <TableCell className={cellClip}>
+                  <div className="w-full overflow-hidden">
+                    {row.paymentStatus ? (
+                      <StatusBadge dict={PAYMENT_STATUSES} value={row.paymentStatus} />
+                    ) : (
+                      <span className="text-neutral-300">—</span>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell className={cn(cellClip, "whitespace-nowrap")}>
+                  {renderPlanDateCell(row)}
+                </TableCell>
+                <TableCell className={cn(cellClip, "text-right tabular-nums whitespace-nowrap")}>
+                  {row.paymentAmount != null ? formatMoney(row.paymentAmount) : "—"}
+                </TableCell>
+                <TableCell className={cn(cellClip, "whitespace-nowrap")}>
                   <div className="flex items-center gap-1">
                     {inlineEdit?.rowId === row.id && inlineEdit.field === "paidAt" ? (
                       <input
@@ -543,9 +606,18 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
                     )}
                   </div>
                 </TableCell>
-                <TableCell>{row.bankAccount?.name ?? "—"}</TableCell>
-                <TableCell>
-                  <div className="flex gap-1 items-center">
+                <TableCell className={cn(cellClip, "whitespace-nowrap")}>
+                  <span className="block truncate" title={row.bankAccount?.name ?? undefined}>
+                    {row.bankAccount?.name ?? "—"}
+                  </span>
+                </TableCell>
+                <TableCell
+                  className={cn(
+                    stickyActionsCell,
+                    selectedIds.has(row.id) && "bg-blue-50"
+                  )}
+                >
+                  <div className="flex gap-1 items-center justify-end">
                     {isAdmin && !row.paymentStatus && row.workStatus === "submitted" && (
                       <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Проверить" onClick={() => setCheckTarget(row)}>
                         <CheckCircle className="h-3.5 w-3.5 text-blue-600" />
@@ -687,7 +759,7 @@ function OtherExpenseFormDialog({
           projectId,
           executorId,
           workTypeId, responsibleUserId,
-          bankAccountId: bankAccountId || null,
+          ...(isEdit ? { bankAccountId: bankAccountId || null } : {}),
           executionYear: parseInt(year),
           executionMonth: parseInt(month),
           description,
@@ -734,7 +806,13 @@ function OtherExpenseFormDialog({
             <Label>Проект *</Label>
             <Select value={projectId} onValueChange={(v) => setProjectId(v ?? "")}>
               <SelectTrigger><SelectValue>{projects.find(p => p.id === projectId)?.name ?? "Выберите проект"}</SelectValue></SelectTrigger>
-              <SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+              <SelectContent className="max-w-lg">
+                {projects.map(p => (
+                  <SelectItem key={p.id} value={p.id} className="whitespace-normal">
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           </div>
           <div className="space-y-1.5">
@@ -830,16 +908,18 @@ function OtherExpenseFormDialog({
               </Select>
             )}
           </div>
-          <div className="space-y-1.5">
-            <Label>Источник оплаты</Label>
-            <Select value={bankAccountId} onValueChange={(v) => setBankAccountId(v ?? "")}>
-              <SelectTrigger><SelectValue>{bankAccounts.find(b => b.id === bankAccountId)?.name ?? "—"}</SelectValue></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">—</SelectItem>
-                {bankAccounts.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
+          {isEdit && (
+            <div className="space-y-1.5">
+              <Label>Источник перевода</Label>
+              <Select value={bankAccountId} onValueChange={(v) => setBankAccountId(v ?? "")}>
+                <SelectTrigger><SelectValue>{bankAccounts.find(b => b.id === bankAccountId)?.name ?? "—"}</SelectValue></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">—</SelectItem>
+                  {bankAccounts.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label>Комментарий</Label>
             <Input value={comment} onChange={(e) => setComment(e.target.value)} />

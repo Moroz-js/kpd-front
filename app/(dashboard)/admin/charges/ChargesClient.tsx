@@ -126,11 +126,10 @@ function InlineDateCell({ value, onSave }: { value: string; onSave: (v: string) 
   if (!editing) {
     return (
       <span
-        className="inline-flex items-center gap-1 cursor-pointer hover:bg-neutral-100 rounded px-1 py-0.5 text-neutral-600 group"
+        className="inline-flex cursor-pointer hover:bg-neutral-100 rounded px-1 py-0.5 text-neutral-600"
         onClick={() => { setEditing(true); setTimeout(() => { try { ref.current?.showPicker(); } catch { /**/ } }, 50); }}
       >
         {v ? v.slice(5).split("-").reverse().join(".") : <span className="text-neutral-300">—</span>}
-        <Pencil className="h-3 w-3 shrink-0 text-neutral-300 group-hover:text-neutral-500" />
       </span>
     );
   }
@@ -166,14 +165,13 @@ function InlinePurposeCell({ value, onSave }: { value: string; onSave: (v: strin
         render={
           <button
             type="button"
-            className="inline-flex max-w-[220px] items-start gap-1 rounded px-1 py-0.5 text-left text-xs text-neutral-600 hover:bg-neutral-100 group"
+            className="inline-flex max-w-[220px] rounded px-1 py-0.5 text-left text-xs text-neutral-600 hover:bg-neutral-100"
           />
         }
       >
-        <span className="line-clamp-2 min-w-0 flex-1 break-words">
+        <span className="line-clamp-2 min-w-0 break-words">
           {value || <span className="text-neutral-300">— задать —</span>}
         </span>
-        <Pencil className="mt-0.5 h-3 w-3 shrink-0 text-neutral-300 group-hover:text-neutral-500" />
       </PopoverTrigger>
       <PopoverContent className="w-80 p-3" align="start" side="bottom">
         <div className="space-y-2">
@@ -342,7 +340,7 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
 
         <div className="ml-auto flex flex-wrap gap-2">
           <MultiSelectFilter
-            label="Банк. счёт"
+            label="Счёт получения"
             options={bankAccounts.map(b => ({ value: b.id, label: b.name }))}
             value={fBankAccount}
             onChange={setFBankAccount}
@@ -409,21 +407,37 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
                     onCheckedChange={() => toggleAll(orderedRowIds)}
                   />
                 </TableHead>
-                <TableHead>Банк. счёт</TableHead>
-                <TableHead>№ счёта</TableHead>
-                <TableHead>Заказ</TableHead>
-                <TableHead>Номер</TableHead>
+                <TableHead>Счёт получения</TableHead>
                 <TableHead className="text-right">Сумма</TableHead>
+                <TableHead>
+                  <span className="flex items-center gap-1">
+                    Статус
+                    <Pencil className="h-3 w-3 text-neutral-400" />
+                  </span>
+                </TableHead>
+                <TableHead>Клиент</TableHead>
+                <TableHead>Проект</TableHead>
                 <TableHead>Выст. план</TableHead>
                 <TableHead>Выст. факт</TableHead>
                 <TableHead>Опл. план</TableHead>
                 <TableHead>Месяц</TableHead>
                 <TableHead>Неделя</TableHead>
                 <TableHead>Год</TableHead>
-                <TableHead>Опл. факт</TableHead>
-                <TableHead>Статус</TableHead>
-                <TableHead>Проект</TableHead>
-                <TableHead className="min-w-[220px]">Назначение</TableHead>
+                <TableHead>
+                  <span className="flex items-center gap-1">
+                    Опл. факт
+                    <Pencil className="h-3 w-3 text-neutral-400" />
+                  </span>
+                </TableHead>
+                <TableHead className="min-w-[220px]">
+                  <span className="flex items-center gap-1">
+                    Назначение
+                    <Pencil className="h-3 w-3 text-neutral-400" />
+                  </span>
+                </TableHead>
+                <TableHead>Номер заказа</TableHead>
+                <TableHead>Номер начисления</TableHead>
+                <TableHead>Номер счёта</TableHead>
                 <TableHead className="w-10" />
               </TableRow>
             </TableHeader>
@@ -446,22 +460,7 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
                       />
                     </TableCell>
                     <TableCell>{row.bankAccount?.name ?? "—"}</TableCell>
-                    <TableCell>{row.invoiceNumber || "—"}</TableCell>
-                    <TableCell>{row.order ? row.order.orderNumber : "—"}</TableCell>
-                    <TableCell>{row.chargeNumber}</TableCell>
                     <TableCell className="text-right tabular-nums font-semibold text-sm">{row.amount ? formatMoney(row.amount) : "—"}</TableCell>
-                    <TableCell>{formatDateShort(row.issuedPlanAt)}</TableCell>
-                    <TableCell>{formatDateShort(row.issuedAt)}</TableCell>
-                    <TableCell className={overdueH ? "text-red-600" : ""}>{formatDateShort(row.paidPlanAt)}</TableCell>
-                    <TableCell>{pd ? MONTH_LABELS[pd.getMonth()] : "—"}</TableCell>
-                    <TableCell>{pd ? weekLabel(getISOWeek(pd)) : "—"}</TableCell>
-                    <TableCell>{pd ? pd.getFullYear() : "—"}</TableCell>
-                    <TableCell className={missingM ? "text-red-600" : ""}>
-                      <InlineDateCell
-                        value={row.paidAt ? row.paidAt.slice(0, 10) : ""}
-                        onSave={(v) => patchInlinePaidAt(row.id, v)}
-                      />
-                    </TableCell>
                     <TableCell>
                       <Select
                         value={row.status}
@@ -479,13 +478,29 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
                         </SelectContent>
                       </Select>
                     </TableCell>
+                    <TableCell>{row.order?.project?.client?.name ?? "—"}</TableCell>
                     <TableCell>{row.order?.project?.name ?? "—"}</TableCell>
+                    <TableCell>{formatDateShort(row.issuedPlanAt)}</TableCell>
+                    <TableCell>{formatDateShort(row.issuedAt)}</TableCell>
+                    <TableCell className={overdueH ? "text-red-600" : ""}>{formatDateShort(row.paidPlanAt)}</TableCell>
+                    <TableCell>{pd ? MONTH_LABELS[pd.getMonth()] : "—"}</TableCell>
+                    <TableCell>{pd ? weekLabel(getISOWeek(pd)) : "—"}</TableCell>
+                    <TableCell>{pd ? pd.getFullYear() : "—"}</TableCell>
+                    <TableCell className={missingM ? "text-red-600" : ""}>
+                      <InlineDateCell
+                        value={row.paidAt ? row.paidAt.slice(0, 10) : ""}
+                        onSave={(v) => patchInlinePaidAt(row.id, v)}
+                      />
+                    </TableCell>
                     <TableCell className="align-top max-w-[280px]">
                       <InlinePurposeCell
                         value={row.paymentPurpose ?? ""}
                         onSave={(v) => patchInlinePurpose(row.id, v)}
                       />
                     </TableCell>
+                    <TableCell className="tabular-nums">{row.order ? row.order.orderNumber : "—"}</TableCell>
+                    <TableCell className="tabular-nums">{row.chargeNumber}</TableCell>
+                    <TableCell>{row.invoiceNumber || "—"}</TableCell>
                     <TableCell>
                       <div className="flex gap-1 items-center">
                         <button title="Редактировать" className="p-0.5 text-neutral-500 hover:text-neutral-800" onClick={() => setEditTarget(row)}>
@@ -573,20 +588,23 @@ function ChargeFormDialog({
     try {
       const url = isEdit ? `/api/charges/${initial!.id}` : "/api/charges";
       const method = isEdit ? "PATCH" : "POST";
+      const payload: Record<string, unknown> = {
+        bankAccountId: bankAccountId || null,
+        orderId: orderId || null,
+        amount: amount ? parseFloat(amount) : null,
+        issuedPlanAt: issuedPlanAt || null,
+        paidPlanAt: paidPlanAt || null,
+        paymentPurpose: paymentPurpose || null,
+        status,
+      };
+      if (isEdit) {
+        payload.issuedAt = issuedAt || null;
+        payload.paidAt = paidAt || null;
+      }
       const r = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          bankAccountId: bankAccountId || null,
-          orderId: orderId || null,
-          amount: amount ? parseFloat(amount) : null,
-          issuedPlanAt: issuedPlanAt || null,
-          issuedAt: issuedAt || null,
-          paidPlanAt: paidPlanAt || null,
-          paidAt: paidAt || null,
-          paymentPurpose: paymentPurpose || null,
-          status,
-        }),
+        body: JSON.stringify(payload),
       });
       if (!r.ok) { const d = await r.json(); throw new Error(d.error ?? "Ошибка"); }
       const saved = await r.json();
@@ -608,7 +626,7 @@ function ChargeFormDialog({
         </DialogHeader>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label>Банковский счёт</Label>
+            <Label>Счёт получения</Label>
             <Select value={bankAccountId} onValueChange={(v) => setBankAccountId(v ?? "")}>
               <SelectTrigger><SelectValue>{bankAccounts.find(b => b.id === bankAccountId)?.name ?? "Выберите"}</SelectValue></SelectTrigger>
               <SelectContent>
@@ -631,7 +649,6 @@ function ChargeFormDialog({
             {selectedOrder && (
               <p className="text-xs text-neutral-500">
                 Проект: {selectedOrder.project.name}
-                {selectedOrder.project.client ? ` · ${selectedOrder.project.client.name}` : ""}
               </p>
             )}
           </div>
@@ -652,18 +669,22 @@ function ChargeFormDialog({
             <Label>Выставлен — план</Label>
             <Input type="date" className="h-8 text-xs" value={issuedPlanAt} onChange={(e) => setIssuedPlanAt(e.target.value)} />
           </div>
-          <div className="space-y-1.5">
-            <Label>Выставлен — факт</Label>
-            <Input type="date" className="h-8 text-xs" value={issuedAt} onChange={(e) => setIssuedAt(e.target.value)} />
-          </div>
+          {isEdit && (
+            <div className="space-y-1.5">
+              <Label>Выставлен — факт</Label>
+              <Input type="date" className="h-8 text-xs" value={issuedAt} onChange={(e) => setIssuedAt(e.target.value)} />
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label>Оплачен — план</Label>
             <Input type="date" className="h-8 text-xs" value={paidPlanAt} onChange={(e) => setPaidPlanAt(e.target.value)} />
           </div>
-          <div className="space-y-1.5">
-            <Label>Оплачен — факт</Label>
-            <Input type="date" className="h-8 text-xs" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} />
-          </div>
+          {isEdit && (
+            <div className="space-y-1.5">
+              <Label>Оплачен — факт</Label>
+              <Input type="date" className="h-8 text-xs" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} />
+            </div>
+          )}
           <div className="space-y-1.5 col-span-2">
             <Label>Назначение платежа</Label>
             <Textarea

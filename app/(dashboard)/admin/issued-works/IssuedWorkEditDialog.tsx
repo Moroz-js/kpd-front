@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { MONTHS, formatDate } from "@/lib/format";
-import { WORK_STATUSES, WORK_STATUSES_SETTABLE } from "@/lib/statuses";
+import { WORK_STATUSES, WORK_STATUSES_SETTABLE, EXECUTOR_TYPES, PROJECT_TYPES } from "@/lib/statuses";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import type { IssuedWorkRowDTO } from "./IssuedWorksClient";
 
@@ -128,8 +128,32 @@ export function IssuedWorkEditDialog({
               <span className="font-medium">{row.amount.toLocaleString("ru-RU")} ₽</span>
             </div>
             <div>
-              <span className="text-neutral-500">Дата оплаты: </span>
+              <span className="text-neutral-500">Год оплаты (план-факт): </span>
+              <span className="font-medium tabular-nums">{row.yearPlanFact ?? "—"}</span>
+            </div>
+            <div>
+              <span className="text-neutral-500">Тип проекта: </span>
+              <span className="font-medium">
+                {PROJECT_TYPES[row.projectType as keyof typeof PROJECT_TYPES] ?? row.projectType ?? "—"}
+              </span>
+            </div>
+            <div>
+              <span className="text-neutral-500">Сегмент работ: </span>
+              <span className="font-medium">{row.workTypeSegment || "—"}</span>
+            </div>
+            <div>
+              <span className="text-neutral-500">Тип исполнителя: </span>
+              <span className="font-medium">
+                {EXECUTOR_TYPES[row.executorType as keyof typeof EXECUTOR_TYPES] ?? row.executorType ?? "—"}
+              </span>
+            </div>
+            <div>
+              <span className="text-neutral-500">Дата оплаты факт: </span>
               <span className="font-medium">{formatDate(row.paidAt)}</span>
+            </div>
+            <div>
+              <span className="text-neutral-500">Дата оплаты план: </span>
+              <span className="font-medium">{formatDate(row.plannedPayAt)}</span>
             </div>
           </div>
 

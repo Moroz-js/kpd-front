@@ -21,6 +21,7 @@ const personSchema = z.object({
   responsibleUserId: z.string().nullable().optional(),
   specialty: z.string().nullable().optional(),
   defaultBankAccountId: z.string().nullable().optional(),
+  recipientTypes: z.array(z.string()).optional(),
   recipientType: z.string().nullable().optional(),
 });
 
@@ -29,6 +30,7 @@ const legalSchema = z.object({
   legalName: z.string().min(1),
   legalForm: z.string().min(1),
   responsibleUserId: z.string().nullable().optional(),
+  recipientTypes: z.array(z.string()).optional(),
   recipientType: z.string().nullable().optional(),
   defaultBankAccountId: z.string().nullable().optional(),
 });
@@ -37,6 +39,7 @@ const serviceSchema = z.object({
   type: z.literal("service"),
   legalName: z.string().min(1),
   responsibleUserId: z.string().nullable().optional(),
+  recipientTypes: z.array(z.string()).optional(),
   recipientType: z.string().nullable().optional(),
   defaultBankAccountId: z.string().nullable().optional(),
 });

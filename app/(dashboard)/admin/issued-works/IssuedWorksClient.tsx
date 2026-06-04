@@ -7,8 +7,8 @@ import { Pencil, CheckCircle2, X } from "lucide-react";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
-import { WORK_STATUSES, WORK_STATUSES_SETTABLE, EXECUTOR_TYPES, PROJECT_TYPES } from "@/lib/statuses";
-import { formatMoney, formatDate, formatDateShort, weekLabel, monthLabel, MONTHS } from "@/lib/format";
+import { WORK_STATUSES, WORK_STATUSES_SETTABLE } from "@/lib/statuses";
+import { formatMoney, formatMoneyRub, formatDate, formatDateShort, weekLabel, monthLabel, MONTHS } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -24,7 +24,11 @@ import { BulkSelectTableBody } from "@/components/ui-custom/BulkSelectTableBody"
 import { SortableHead } from "@/components/ui-custom/SortableHead";
 import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
 import { useTableRowSelection } from "@/lib/useTableRowSelection";
+import { cn } from "@/lib/utils";
 import { IssuedWorkEditDialog, type SmetaType } from "./IssuedWorkEditDialog";
+
+const compactPeriodHead =
+  "text-[10px] leading-tight font-medium whitespace-normal normal-case align-bottom !whitespace-normal";
 
 type Row = {
   sourceType: "personal" | "other-expense";
@@ -65,7 +69,6 @@ type SortField =
   | "projectName"
   | "executorName"
   | "executionMonth"
-  | "yearPlanFact"
   | "executionYear"
   | "workTypeName"
   | "amount"
@@ -323,8 +326,8 @@ export function IssuedWorksClient() {
       {(rows.length > 0 || selectedIds.size > 0) && (
         <div className="flex items-center gap-4 px-1 py-1.5 text-xs text-neutral-500">
           <span>{displayCount} {selectedIds.size > 0 ? "выбрано" : "записей"}</span>
-          <span className="text-neutral-800 font-semibold tabular-nums">
-            {formatMoney(displaySum)}
+          <span className="text-xs font-medium tabular-nums text-neutral-800">
+            {formatMoneyRub(displaySum)}
           </span>
         </div>
       )}
@@ -357,7 +360,7 @@ export function IssuedWorksClient() {
       )}
 
       <Table
-        className="min-w-[1700px]"
+        className="min-w-[1200px]"
         containerClassName="rounded-md border bg-white flex-1 min-h-0 overflow-auto"
       >
           <TableHeader>
@@ -366,24 +369,11 @@ export function IssuedWorksClient() {
                 <Checkbox checked={selectedIds.size === rows.length && rows.length > 0} onCheckedChange={() => toggleAll(orderedRowIds)} />
               </TableHead>
               <SortableHead
-                field="yearPlanFact"
-                sortBy={activeSortField()}
-                sortDir={activeSortDir()}
-                onSort={handleSort}
-                className="w-12 max-w-12 px-1 text-left !whitespace-normal"
-              >
-                <span className="block text-[10px] leading-tight font-medium tracking-tight normal-case text-left">
-                  Год
-                  <br />
-                  план-факт
-                </span>
-              </SortableHead>
-              <SortableHead
                 field="executionYear"
                 sortBy={activeSortField()}
                 sortDir={activeSortDir()}
                 onSort={handleSort}
-                className="w-16 max-w-16 px-1 text-left !whitespace-normal"
+                className="w-12 max-w-12 px-1 text-left !whitespace-normal"
               >
                 <span className="block text-[10px] leading-tight font-medium tracking-tight normal-case text-left">
                   Год
@@ -396,18 +386,26 @@ export function IssuedWorksClient() {
                 sortBy={activeSortField()}
                 sortDir={activeSortDir()}
                 onSort={handleSort}
-                className="w-11 max-w-11 px-0.5"
+                className={cn("w-14 max-w-14 px-1", compactPeriodHead)}
               >
-                Месяц
+                <span className="block text-left">
+                  Месяц
+                  <br />
+                  выполнения
+                </span>
               </SortableHead>
               <SortableHead
                 field="weekPlanFact"
                 sortBy={activeSortField()}
                 sortDir={activeSortDir()}
                 onSort={handleSort}
-                className="border-r-2 border-neutral-300"
+                className={cn("w-14 max-w-14 px-1", compactPeriodHead)}
               >
-                Неделя
+                <span className="block text-left">
+                  Неделя
+                  <br />
+                  оплаты
+                </span>
               </SortableHead>
               <SortableHead
                 field="executorName"
@@ -447,16 +445,12 @@ export function IssuedWorksClient() {
                 sortBy={activeSortField()}
                 sortDir={activeSortDir()}
                 onSort={handleSort}
-                className="border-r-2 border-neutral-300"
               >
                 Статус
               </SortableHead>
               <TableHead>Дата проверки</TableHead>
+              <TableHead>Дата оплаты план</TableHead>
               <TableHead>Дата оплаты факт</TableHead>
-              <TableHead className="border-r-2 border-neutral-300">Дата оплаты план</TableHead>
-              <TableHead>Тип проекта</TableHead>
-              <TableHead>Сегмент работ</TableHead>
-              <TableHead>Тип исполнителя</TableHead>
               <TableHead>Тип сметы</TableHead>
               <TableHead className="w-24" />
             </TableRow>
@@ -464,13 +458,13 @@ export function IssuedWorksClient() {
           <BulkSelectTableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={18} className="text-center text-neutral-500 py-8">
+                <TableCell colSpan={14} className="text-center text-neutral-500 py-8">
                   Загрузка...
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={18} className="text-center text-neutral-500 py-12">
+                <TableCell colSpan={14} className="text-center text-neutral-500 py-12">
                   Пока нет ни одной работы. Они появятся после создания строк в Личных сметах
                   и Прочих тратах (Phase 3).
                 </TableCell>
@@ -486,31 +480,21 @@ export function IssuedWorksClient() {
                       onSelect={handleRowSelect}
                     />
                   </TableCell>
-                  <TableCell className="text-xs tabular-nums w-12 max-w-12 px-1 text-left">{r.yearPlanFact ?? "—"}</TableCell>
-                  <TableCell className="text-xs tabular-nums w-16 max-w-16 px-1 text-left">{r.executionYear}</TableCell>
-                  <TableCell className="text-xs w-11 max-w-11 px-0.5 whitespace-nowrap">{monthLabel(r.executionMonth)}</TableCell>
-                  <TableCell className="border-r-2 border-neutral-300 text-sm">
+                  <TableCell className="text-xs tabular-nums w-12 max-w-12 px-1 text-left">{r.executionYear}</TableCell>
+                  <TableCell className="text-xs w-14 max-w-14 px-1 whitespace-nowrap">{monthLabel(r.executionMonth)}</TableCell>
+                  <TableCell className="text-xs w-14 max-w-14 px-1 whitespace-nowrap">
                     {r.weekPlanFact != null ? weekLabel(r.weekPlanFact) : "—"}
                   </TableCell>
                   <TableCell>{r.executorName}</TableCell>
                   <TableCell>{r.projectName}</TableCell>
                   <TableCell>{r.workTypeName}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold text-sm">{formatMoney(r.amount)}</TableCell>
-                  <TableCell className="border-r-2 border-neutral-300">
+                  <TableCell>
                     <StatusBadge dict={WORK_STATUSES} value={r.workStatus} />
                   </TableCell>
                   <TableCell>{formatDateShort(r.checkedAt)}</TableCell>
+                  <TableCell>{formatDateShort(r.plannedPayAt)}</TableCell>
                   <TableCell>{formatDateShort(r.paidAt)}</TableCell>
-                  <TableCell className="border-r-2 border-neutral-300">
-                    {formatDateShort(r.plannedPayAt)}
-                  </TableCell>
-                  <TableCell className="text-sm">
-                    {PROJECT_TYPES[r.projectType as keyof typeof PROJECT_TYPES] ?? "—"}
-                  </TableCell>
-                  <TableCell className="text-sm">{r.workTypeSegment}</TableCell>
-                  <TableCell className="text-sm">
-                    {EXECUTOR_TYPES[r.executorType as keyof typeof EXECUTOR_TYPES] ?? r.executorType}
-                  </TableCell>
                   <TableCell className="text-sm">{SMETA_LABEL[r.sourceType]}</TableCell>
                   <TableCell className="text-right whitespace-nowrap">
                     <Button size="sm" variant="ghost" onClick={() => setEditing(r)} title="Редактировать">

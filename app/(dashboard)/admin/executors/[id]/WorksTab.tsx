@@ -99,7 +99,7 @@ function StatusBadge({ status, type }: { status: string; type: "work" | "payment
   if (!entry) return <span className="text-[10px] text-neutral-400">—</span>;
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-medium whitespace-nowrap ${BADGE_TONE_CLASS[entry.tone]}`}
+      className={`inline-flex max-w-full items-center rounded-full border px-2 py-0.5 text-[10px] font-medium leading-tight whitespace-nowrap ${BADGE_TONE_CLASS[entry.tone]}`}
     >
       {type === "work" ? WORK_STATUS_LABELS[status] : PAYMENT_STATUS_LABELS[status]}
     </span>
@@ -506,20 +506,24 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
           ri += cnt;
         }
 
-        const th = "border-b border-neutral-200 px-2 py-2 text-left text-xs font-medium text-neutral-600 bg-neutral-100 uppercase tracking-wide";
-        const thr = "border-b border-neutral-200 px-2 py-2 text-right text-xs font-medium text-neutral-600 bg-neutral-100 uppercase tracking-wide";
-        const td = "border-b border-neutral-100 px-2 py-2 text-xs";
-        const tdDim = "border-b border-neutral-100 px-2 py-2 text-xs text-neutral-300";
+        const th =
+          "border-b border-neutral-200 px-1 py-1 text-left text-[10px] leading-tight font-medium text-neutral-600 bg-neutral-100 uppercase tracking-tight";
+        const thr =
+          "border-b border-neutral-200 px-1 py-1 text-right text-[10px] leading-tight font-medium text-neutral-600 bg-neutral-100 uppercase tracking-tight";
+        const td = "border-b border-neutral-100 px-1 py-1 text-[10px] leading-tight";
+        const tdDim = "border-b border-neutral-100 px-1 py-1 text-[10px] leading-tight text-neutral-300";
+        const tdStatus = `${td} min-w-[8.25rem] w-[8.25rem] px-1.5 overflow-hidden`;
+        const tdStatusPay = `${td} min-w-[10rem] w-[10rem] px-1.5 overflow-hidden`;
 
         const showWorks = filterType !== "payments";
         const showPayments = filterType !== "works";
 
         return (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs border-separate border-spacing-0">
+          <div className="overflow-x-auto min-w-0">
+            <table className="w-full table-fixed text-[10px] border-separate border-spacing-0">
               <thead>
                 <tr>
-                  <th className={`${th} w-8 px-1`}>
+                  <th className={`${th} w-7 px-0.5`}>
                     {(() => {
                       const allWorkIds = flatRows.filter((r) => r.kind === "work").map((r) => r.data.id);
                       const allSelected = allWorkIds.length > 0 && allWorkIds.every((id) => selectedIds.has(id));
@@ -539,39 +543,51 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
                       );
                     })()}
                   </th>
-                  <th className={`${th} min-w-[40px]`}>Год</th>
-                  <th className={`${th} min-w-[72px]`}>Месяц</th>
+                  <th className={`${th} w-[2.5%]`}>Год</th>
+                  <th className={`${th} w-[5%]`}>Месяц</th>
                   {showWorks && <>
-                    <th className={`${th} min-w-[120px]`}>Проект</th>
-                    <th className={`${th} min-w-[180px]`}>Техническое задание</th>
-                    <th className={`${th} min-w-[100px]`}>Вид работ</th>
-                    <th className={`${th} min-w-[55px]`}>Отчёт</th>
-                    <th className={`${th} min-w-[55px]`}>Ссылка</th>
-                    <th className={`${th} min-w-[72px]`}>Заполн. ТЗ</th>
-                    <th className={`${th} min-w-[72px]`}>Заполн. акт</th>
-                    <th className={`${thr} min-w-[55px]`}>Объём</th>
-                    <th className={`${thr} min-w-[65px]`}>Ставка</th>
-                    <EditableColHead className={`${thr} min-w-[80px]`} showPencil={isAdmin} align="right">
+                    <th className={`${th} w-[6%]`}>Проект</th>
+                    <th className={`${th} w-[8%]`}>
+                      <span className="block normal-case">Тех. задание</span>
+                    </th>
+                    <th className={`${th} w-[5.5%]`}>Вид работ</th>
+                    <th className={`${th} w-[3.5%]`}>Отчёт</th>
+                    <th className={`${th} w-[3.5%]`}>Ссылка</th>
+                    <th className={`${thr} w-[3.5%]`}>Объём</th>
+                    <th className={`${thr} w-[4.5%]`}>Ставка</th>
+                    <EditableColHead className={`${thr} w-[5%]`} showPencil={isAdmin} align="right">
                       Сумма
                     </EditableColHead>
-                    <EditableColHead className={`${th} min-w-[95px]`} showPencil={isAdmin}>
-                      Дата план (р)
+                    <EditableColHead className={`${th} w-[5.5%]`} showPencil={isAdmin}>
+                      <span className="block normal-case whitespace-normal leading-tight">Дата план (р)</span>
                     </EditableColHead>
-                    <th className={`${th} min-w-[110px]`}>Статус работы</th>
+                    <th className={`${th} min-w-[8.25rem] w-[8.25rem] px-1.5`}>Статус работы</th>
                   </>}
                   {showPayments && <>
-                    <th className={`${thr} min-w-[80px]`}>Выплата</th>
-                    <th className={`${th} min-w-[85px]`}>Дата оплаты</th>
-                    <EditableColHead className={`${th} min-w-[95px]`} showPencil={isAdmin}>
-                      Дата план (в)
+                    <th className={`${thr} w-[5%]`}>Выплата</th>
+                    <th className={`${th} w-[5%]`}>
+                      <span className="block normal-case whitespace-normal leading-tight">Дата оплаты</span>
+                    </th>
+                    <EditableColHead className={`${th} w-[5%]`} showPencil={isAdmin}>
+                      <span className="block normal-case whitespace-normal leading-tight">Дата план (в)</span>
                     </EditableColHead>
-                    <th className={`${th} min-w-[110px]`}>Статус выплаты</th>
-                    <th className={`${th} min-w-[90px]`}>Счёт</th>
+                    <th className={`${th} min-w-[10rem] w-[10rem] px-1.5`}>Статус выплаты</th>
+                    <th className={`${th} w-[5.5rem] min-w-[5.5rem]`}>
+                      <span className="block normal-case whitespace-normal leading-tight">Счёт в выплате</span>
+                    </th>
                   </>}
                   {showWorks && (
-                    <th className={`${th} min-w-[85px]`}>Проверена</th>
+                    <>
+                      <th className={`${th} w-[4%]`}>
+                        <span className="block normal-case whitespace-normal leading-tight">Заполн. ТЗ</span>
+                      </th>
+                      <th className={`${th} w-[4%]`}>
+                        <span className="block normal-case whitespace-normal leading-tight">Заполн. акт</span>
+                      </th>
+                      <th className={`${th} w-[5%]`}>Проверена</th>
+                    </>
                   )}
-                  <th className={`${th} w-16`}></th>
+                  <th className={`${th} w-[3.5%]`}></th>
                 </tr>
               </thead>
               <tbody>
@@ -604,30 +620,16 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
                         {isFirst && <td className={ymClass} rowSpan={span}>{row.year}</td>}
                         {isFirst && <td className={`${ymClass} whitespace-nowrap`} rowSpan={span}>{monthFullLabel(row.month)}</td>}
                         {showWorks && <>
-                          <td className={`${td} max-w-[120px] truncate`} title={w.project.name}>{w.project.name}</td>
-                          <td className={`${td} max-w-[180px]`}>
+                          <td className={`${td} truncate`} title={w.project.name}>{w.project.name}</td>
+                          <td className={td}>
                             <div className="truncate" title={w.techTask ?? ""}>{w.techTask || "—"}</div>
                           </td>
-                          <td className={`${td} text-neutral-600`}>{w.workType.name}</td>
-                          <td className={td}>{w.report ? <a href={w.report} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">отчёт</a> : <span className="text-neutral-300">—</span>}</td>
-                          <td className={td}>{w.link ? <a href={w.link} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">ссылка</a> : <span className="text-neutral-300">—</span>}</td>
-                          <td className={td}>
-                            {w.filledTechTask ? (
-                              <a href={w.filledTechTask} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">ТЗ</a>
-                            ) : (
-                              <span className="text-neutral-300">—</span>
-                            )}
-                          </td>
-                          <td className={td}>
-                            {w.filledAct ? (
-                              <a href={w.filledAct} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">акт</a>
-                            ) : (
-                              <span className="text-neutral-300">—</span>
-                            )}
-                          </td>
-                          <td className={`${td} text-right text-neutral-600`}>{w.volume ?? "—"}</td>
-                          <td className={`${td} text-right text-neutral-600`}>{w.rate ? formatMoney(w.rate) : "—"}</td>
-                          <td className={`${td} text-right font-medium`}>
+                          <td className={`${td} truncate text-neutral-600`} title={w.workType.name}>{w.workType.name}</td>
+                          <td className={td}>{w.report ? <a href={w.report} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">отч.</a> : <span className="text-neutral-300">—</span>}</td>
+                          <td className={td}>{w.link ? <a href={w.link} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">ссыл.</a> : <span className="text-neutral-300">—</span>}</td>
+                          <td className={`${td} text-right text-neutral-600 tabular-nums`}>{w.volume ?? "—"}</td>
+                          <td className={`${td} text-right text-neutral-600 tabular-nums`}>{w.rate ? formatMoney(w.rate) : "—"}</td>
+                          <td className={`${td} text-right font-medium tabular-nums`}>
                             <InlineAmountInput
                               value={w.amount}
                               disabled={!canEdit}
@@ -641,7 +643,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
                               onSave={(d) => patchWorkPlannedDate(w.id, d)}
                             />
                           </td>
-                          <td className={td}><StatusBadge status={w.workStatus} type="work" /></td>
+                          <td className={tdStatus}><StatusBadge status={w.workStatus} type="work" /></td>
                         </>}
                         {showPayments && <>
                           <td className={dim}>—</td>
@@ -651,7 +653,23 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
                           <td className={dim}>—</td>
                         </>}
                         {showWorks && (
-                          <td className={`${td} text-neutral-500`}>{formatDate(w.checkedAt)}</td>
+                          <>
+                            <td className={td}>
+                              {w.filledTechTask ? (
+                                <a href={w.filledTechTask} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">ТЗ</a>
+                              ) : (
+                                <span className="text-neutral-300">—</span>
+                              )}
+                            </td>
+                            <td className={td}>
+                              {w.filledAct ? (
+                                <a href={w.filledAct} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">акт</a>
+                              ) : (
+                                <span className="text-neutral-300">—</span>
+                              )}
+                            </td>
+                            <td className={`${td} text-neutral-500 whitespace-nowrap`}>{formatDate(w.checkedAt)}</td>
+                          </>
                         )}
                         <td className={td}>
                           <div className="flex gap-1 items-center">
@@ -676,13 +694,13 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
                       {isFirst && <td className={`${ymClass} whitespace-nowrap`} rowSpan={span}>{monthFullLabel(row.month)}</td>}
                       {showWorks && <>
                         <td className={dim}>—</td><td className={dim}>—</td><td className={dim}>—</td>
+                        <td className={dim}>—</td><td className={dim}>—</td>
                         <td className={dim}>—</td><td className={dim}>—</td><td className={dim}>—</td>
-                        <td className={dim}>—</td><td className={dim}>—</td><td className={dim}>—</td>
-                        <td className={dim}>—</td><td className={dim}>—</td><td className={dim}>—</td>
+                        <td className={dim}>—</td><td className={dim}>—</td>
                       </>}
                       {showPayments && <>
-                        <td className={`${td} text-right font-semibold text-green-800`}>{formatMoney(p.amount)}</td>
-                        <td className={td}>{formatDate(p.paidAt)}</td>
+                        <td className={`${td} text-right font-semibold text-green-800 tabular-nums`}>{formatMoney(p.amount)}</td>
+                        <td className={`${td} whitespace-nowrap`}>{formatDate(p.paidAt)}</td>
                         <td className={td}>
                           <InlineDateInput
                             value={p.plannedPayAt ? new Date(p.plannedPayAt).toISOString().slice(0, 10) : ""}
@@ -690,10 +708,16 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
                             onSave={(d) => patchPaymentPlannedDate(p.id, d)}
                           />
                         </td>
-                        <td className={td}><StatusBadge status={p.paymentStatus} type="payment" /></td>
-                        <td className={`${td} text-neutral-600 text-[11px]`}>{p.bankAccount?.name ?? "—"}</td>
+                        <td className={tdStatusPay}><StatusBadge status={p.paymentStatus} type="payment" /></td>
+                        <td className={`${td} w-[5.5rem] min-w-[5.5rem] truncate text-neutral-600`} title={p.bankAccount?.name ?? undefined}>{p.bankAccount?.name ?? "—"}</td>
                       </>}
-                      {showWorks && <td className={dim}>—</td>}
+                      {showWorks && (
+                        <>
+                          <td className={dim}>—</td>
+                          <td className={dim}>—</td>
+                          <td className={dim}>—</td>
+                        </>
+                      )}
                       <td className={td}>
                         {isAdmin && (
                           <div className="flex gap-1 items-center">

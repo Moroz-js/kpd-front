@@ -9,7 +9,7 @@ import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import { ConfirmDialog } from "@/components/ui-custom/ConfirmDialog";
 import { PAYMENT_STATUSES } from "@/lib/statuses";
-import { formatMoney, formatDateShort, weekLabel, monthLabel, MONTHS } from "@/lib/format";
+import { formatMoney, formatMoneyRub, formatDateShort, weekLabel, monthLabel, MONTHS } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -25,6 +25,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { SortableHead } from "@/components/ui-custom/SortableHead";
 import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
 import { useTableRowSelection } from "@/lib/useTableRowSelection";
+import { cn } from "@/lib/utils";
 import { PayoutEditDialog } from "./PayoutEditDialog";
 
 type Row = {
@@ -64,6 +65,11 @@ const SMETA_LABEL: Record<Row["sourceType"], string> = {
   personal: "Личная смета",
   "other-expense": "Прочие траты",
 };
+
+const compactPeriodHead =
+  "text-[10px] leading-tight font-medium whitespace-normal normal-case align-bottom !whitespace-normal";
+const yearColHead = "w-12 max-w-12 px-1 text-left";
+const yearColCell = "text-xs tabular-nums w-12 max-w-12 px-1 text-left";
 
 function rowKey(r: Row) { return `${r.sourceType}:${r.sourceId}`; }
 
@@ -289,7 +295,7 @@ export function PayoutsClient() {
       {selectedIds.size > 0 && (
         <div className="flex flex-wrap items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200">
           <span className="text-xs font-medium text-blue-700">{selectedIds.size} выбрано</span>
-          <span className="text-sm font-bold tabular-nums text-blue-900">{formatMoney(selectedSum)}</span>
+          <span className="text-xs font-medium tabular-nums text-blue-900">{formatMoneyRub(selectedSum)}</span>
           <Select value={bulkStatus} onValueChange={(v) => v && setBulkStatus(v)}>
             <SelectTrigger className="h-7 w-44 text-xs">
               <SelectValue>{bulkStatus ? (PAYMENT_STATUSES[bulkStatus as keyof typeof PAYMENT_STATUSES]?.label ?? "Статус") : "Статус"}</SelectValue>
@@ -331,7 +337,7 @@ export function PayoutsClient() {
       {rows.length > 0 && (
         <div className="flex flex-wrap items-center gap-3 mb-3 px-3 py-2 rounded-lg bg-neutral-50 border border-neutral-200">
           <span className="text-xs text-neutral-500">{rows.length} записей</span>
-          <span className="text-sm font-bold tabular-nums text-neutral-900">{formatMoney(aggregations.total)}</span>
+          <span className="text-xs font-medium tabular-nums text-neutral-900">{formatMoneyRub(aggregations.total)}</span>
           {Object.entries(PAYMENT_STATUSES).map(([k, v]) => {
             const amt = aggregations.byStatus[k];
             if (!amt) return null;
@@ -340,7 +346,7 @@ export function PayoutsClient() {
               <span key={k} className="flex items-center gap-1 text-xs tabular-nums">
                 <span className={`inline-block h-2 w-2 rounded-full ${dotCls}`} />
                 <span className="text-neutral-500">{v.label}:</span>
-                <span className="font-semibold text-neutral-700">{formatMoney(amt)}</span>
+                <span className="font-semibold text-neutral-700">{formatMoneyRub(amt)}</span>
               </span>
             );
           })}
@@ -348,7 +354,7 @@ export function PayoutsClient() {
       )}
 
       <Table
-        className="min-w-[1500px]"
+        className="min-w-[1420px]"
         containerClassName="rounded-md border bg-white flex-1 min-h-0 overflow-auto"
       >
           <TableHeader>
@@ -359,19 +365,12 @@ export function PayoutsClient() {
                   onCheckedChange={() => toggleAll(orderedRowIds)}
                 />
               </TableHead>
-              <TableHead className="w-12 max-w-12 px-1 text-left align-middle whitespace-normal">
-                <span className="block text-[10px] leading-tight font-medium tracking-tight normal-case text-left">
-                  Год
-                  <br />
-                  план-факт
-                </span>
-              </TableHead>
               <SortableHead
                 field="periodYear"
                 sortBy={activeSortField()}
                 sortDir={activeSortDir()}
                 onSort={handleSort}
-                className="w-16 max-w-16 px-1 text-left !whitespace-normal"
+                className={cn(yearColHead, "!whitespace-normal")}
               >
                 <span className="block text-[10px] leading-tight font-medium tracking-tight normal-case text-left">
                   Год
@@ -379,8 +378,32 @@ export function PayoutsClient() {
                   выполнения
                 </span>
               </SortableHead>
-              <SortableHead field="periodMonth" sortBy={activeSortField()} sortDir={activeSortDir()} onSort={handleSort} className="w-11 max-w-11 px-0.5">Месяц</SortableHead>
-              <SortableHead field="weekPlanFact" sortBy={activeSortField()} sortDir={activeSortDir()} onSort={handleSort}>Неделя</SortableHead>
+              <SortableHead
+                field="periodMonth"
+                sortBy={activeSortField()}
+                sortDir={activeSortDir()}
+                onSort={handleSort}
+                className={cn("w-14 max-w-14 px-1", compactPeriodHead)}
+              >
+                <span className="block text-left">
+                  Месяц
+                  <br />
+                  выполнения
+                </span>
+              </SortableHead>
+              <SortableHead
+                field="weekPlanFact"
+                sortBy={activeSortField()}
+                sortDir={activeSortDir()}
+                onSort={handleSort}
+                className={cn("w-14 max-w-14 px-1", compactPeriodHead)}
+              >
+                <span className="block text-left">
+                  Неделя
+                  <br />
+                  оплаты
+                </span>
+              </SortableHead>
               <SortableHead field="executorName" sortBy={activeSortField()} sortDir={activeSortDir()} onSort={handleSort}>Исполнитель</SortableHead>
               <TableHead>Комментарий</TableHead>
               <SortableHead field="paymentStatus" sortBy={activeSortField()} sortDir={activeSortDir()} onSort={handleSort}><span className="flex items-center gap-1">Статус <Pencil className="h-3 w-3 text-neutral-400" /></span></SortableHead>
@@ -394,9 +417,9 @@ export function PayoutsClient() {
           </TableHeader>
           <BulkSelectTableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={14} className="text-center text-neutral-500 py-8">Загрузка...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={13} className="text-center text-neutral-500 py-8">Загрузка...</TableCell></TableRow>
             ) : rows.length === 0 ? (
-              <TableRow><TableCell colSpan={14} className="text-center text-neutral-500 py-12">Нет выплат.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={13} className="text-center text-neutral-500 py-12">Нет выплат.</TableCell></TableRow>
             ) : (
               rows.map((r, rowIndex) => {
                 const key = rowKey(r);
@@ -411,10 +434,9 @@ export function PayoutsClient() {
                         onSelect={handleRowSelect}
                       />
                     </TableCell>
-                    <TableCell className="text-xs tabular-nums w-12 max-w-12 px-1 text-left">{r.yearPlanFact ?? "—"}</TableCell>
-                    <TableCell className="text-xs tabular-nums w-16 max-w-16 px-1 text-left">{r.periodYear}</TableCell>
-                    <TableCell className="text-xs w-11 max-w-11 px-0.5 whitespace-nowrap">{monthLabel(r.periodMonth)}</TableCell>
-                    <TableCell>{r.weekPlanFact != null ? weekLabel(r.weekPlanFact) : "—"}</TableCell>
+                    <TableCell className={yearColCell}>{r.periodYear}</TableCell>
+                    <TableCell className="text-xs w-14 max-w-14 px-1 whitespace-nowrap">{monthLabel(r.periodMonth)}</TableCell>
+                    <TableCell className="text-xs w-14 max-w-14 px-1 whitespace-nowrap">{r.weekPlanFact != null ? weekLabel(r.weekPlanFact) : "—"}</TableCell>
                     <TableCell>{r.executorName}</TableCell>
                     <TableCell className="max-w-48 truncate" title={r.comment ?? ""}>{r.comment ?? "—"}</TableCell>
 

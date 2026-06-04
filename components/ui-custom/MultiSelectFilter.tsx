@@ -15,6 +15,10 @@ export type MultiSelectFilterProps = {
   value: string[];
   onChange: (value: string[]) => void;
   className?: string;
+  /** Ширина popover (например, для длинных названий проектов). */
+  popoverClassName?: string;
+  /** Классы подписи пункта (например, `whitespace-normal`). */
+  optionLabelClassName?: string;
 };
 
 export function MultiSelectFilter({
@@ -23,6 +27,8 @@ export function MultiSelectFilter({
   value,
   onChange,
   className,
+  popoverClassName,
+  optionLabelClassName,
 }: MultiSelectFilterProps) {
   const [open, setOpen] = React.useState(false);
   const valueSet = React.useMemo(() => new Set(value), [value]);
@@ -88,7 +94,7 @@ export function MultiSelectFilter({
           </Button>
         }
       />
-      <PopoverContent className="w-72 p-1" align="start">
+      <PopoverContent className={cn("w-72 p-1", popoverClassName)} align="start">
         <div className="max-h-72 overflow-y-auto">
           {options.length === 0 && (
             <div className="px-3 py-2 text-xs text-neutral-500">Нет вариантов</div>
@@ -107,10 +113,13 @@ export function MultiSelectFilter({
                     key={opt.value}
                     type="button"
                     onClick={() => toggle(opt.value)}
-                    className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs whitespace-nowrap hover:bg-neutral-100"
+                    className={cn(
+                      "flex w-full items-start gap-2 rounded-sm px-2 py-1.5 text-xs hover:bg-neutral-100",
+                      !optionLabelClassName && "whitespace-nowrap"
+                    )}
                   >
                     <Checkbox checked={checked} onCheckedChange={() => toggle(opt.value)} />
-                    <span className="flex-1 text-left">{opt.label}</span>
+                    <span className={cn("flex-1 text-left", optionLabelClassName)}>{opt.label}</span>
                     {checked && <Check className="h-3 w-3 shrink-0 text-neutral-500" />}
                   </button>
                 );

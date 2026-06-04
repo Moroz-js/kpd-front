@@ -60,7 +60,15 @@ const fetcher = <T,>(url: string): Promise<T> =>
     return r.json() as Promise<T>;
   });
 
-type SortField = "name" | "createdAt" | "debt" | "paid" | "charged" | "responsibleName" | "clientName";
+type SortField =
+  | "name"
+  | "createdAt"
+  | "debt"
+  | "paid"
+  | "charged"
+  | "responsibleName"
+  | "clientName"
+  | "status";
 type SortDir = "asc" | "desc";
 
 export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
@@ -81,7 +89,7 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
 
   const [responsibleFilter, setResponsibleFilter] = React.useState<string[]>([]);
   const [statusFilter, setStatusFilter] = React.useState<string[]>(["active"]);
-  const [companyFilter, setCompanyFilter] = React.useState<string[]>([]);
+  const [clientFilter, setClientFilter] = React.useState<string[]>([]);
   const [typeFilter, setTypeFilter] = React.useState<string[]>([]);
   const [sort, setSort] = React.useState<{ field: SortField; dir: SortDir }>({
     field: "createdAt",
@@ -100,10 +108,8 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
       );
     }
     if (statusFilter.length) list = list.filter((r) => statusFilter.includes(r.status));
-    if (companyFilter.length) {
-      list = list.filter((r) =>
-        companyFilter.includes(r.company ?? "__empty__")
-      );
+    if (clientFilter.length) {
+      list = list.filter((r) => clientFilter.includes(r.clientId ?? "__empty__"));
     }
     if (typeFilter.length) list = list.filter((r) => typeFilter.includes(r.type));
 
@@ -117,7 +123,7 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
       return sort.dir === "asc" ? cmp : -cmp;
     });
     return list;
-  }, [data, responsibleFilter, statusFilter, companyFilter, typeFilter, sort]);
+  }, [data, responsibleFilter, statusFilter, clientFilter, typeFilter, sort]);
 
   function handleSort(field: string, dir: SortDir) {
     setSort({ field: field as SortField, dir });
@@ -148,13 +154,16 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
     return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
   }, [data]);
 
-  const companyOptions = React.useMemo(() => {
+  const clientOptions = React.useMemo(() => {
     const list = data ?? [];
-    const companies = Array.from(new Set(list.map((r) => r.company ?? "__empty__")));
-    return companies.map((c) => ({
-      value: c,
-      label: c === "__empty__" ? "Пусто" : c,
-    }));
+    const map = new Map<string, string>();
+    for (const r of list) {
+      const id = r.clientId ?? "__empty__";
+      map.set(id, r.clientName ?? "Пусто");
+    }
+    return Array.from(map.entries())
+      .sort((a, b) => a[1].localeCompare(b[1], "ru"))
+      .map(([value, label]) => ({ value, label }));
   }, [data]);
 
   const isAdmin = scope === "all";
@@ -212,10 +221,10 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
           onChange={setResponsibleFilter}
         />
         <MultiSelectFilter
-          label="Компания"
-          options={companyOptions}
-          value={companyFilter}
-          onChange={setCompanyFilter}
+          label="Клиент"
+          options={clientOptions}
+          value={clientFilter}
+          onChange={setClientFilter}
         />
         <MultiSelectFilter
           label="Тип"
@@ -245,7 +254,6 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
               >
                 Руководитель
               </SortableHead>
-              <TableHead>Статус</TableHead>
               <SortableHead
                 field="debt"
                 sortBy={sort.field}
@@ -273,7 +281,22 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
               >
                 Начислено
               </SortableHead>
-              <TableHead>Компания</TableHead>
+              <SortableHead
+                field="clientName"
+                sortBy={sort.field}
+                sortDir={sort.dir}
+                onSort={handleSort}
+              >
+                Клиент
+              </SortableHead>
+              <SortableHead
+                field="status"
+                sortBy={sort.field}
+                sortDir={sort.dir}
+                onSort={handleSort}
+              >
+                Статус
+              </SortableHead>
               <TableHead>Тип</TableHead>
               <TableHead className="w-24" />
             </TableRow>
@@ -281,13 +304,13 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-neutral-500 py-8">
+                <TableCell colSpan={9} className="text-center text-neutral-500 py-8">
                   Загрузка...
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-neutral-500 py-8">
+                <TableCell colSpan={9} className="text-center text-neutral-500 py-8">
                   {scope === "mine"
                     ? "Вы пока не назначены руководителем ни на один проект."
                     : "Нет проектов"}
@@ -310,13 +333,13 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
                   <TableCell>
                     {r.responsibleName ?? <span className="text-neutral-400">—</span>}
                   </TableCell>
-                  <TableCell>
-                    <StatusBadge dict={ENTITY_STATUSES} value={r.status} />
-                  </TableCell>
                   <TableCell className="text-right tabular-nums font-semibold text-sm">{formatMoney(r.debt)}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold text-sm">{formatMoney(r.paid)}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold text-sm">{formatMoney(r.charged)}</TableCell>
-                  <TableCell>{r.company ?? "—"}</TableCell>
+                  <TableCell>{r.clientName ?? "—"}</TableCell>
+                  <TableCell>
+                    <StatusBadge dict={ENTITY_STATUSES} value={r.status} />
+                  </TableCell>
                   <TableCell className="text-sm">
                     <StatusBadge
                       tone={r.type === "internal" ? "blue" : r.type === "client" ? "slate" : "gray"}

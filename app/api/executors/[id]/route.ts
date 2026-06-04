@@ -42,6 +42,7 @@ const patchSchema = z.object({
   inTgChat: z.boolean().optional(),
   contractFile: z.string().nullable().optional(),
   ndaFile: z.string().nullable().optional(),
+  recipientTypes: z.array(z.string()).optional(),
   recipientType: z.string().nullable().optional(),
   responsibleUserId: z.string().nullable().optional(),
   defaultBankAccountId: z.string().nullable().optional(),

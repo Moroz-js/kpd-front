@@ -109,11 +109,19 @@ export function PayoutEditDialog({
         </DialogHeader>
 
         <form onSubmit={submit} className="space-y-4">
-          <div className="rounded-md bg-neutral-50 border border-neutral-200 px-3 py-2 text-sm">
-            <span className="text-neutral-500">Тип сметы: </span>
-            <span className="font-medium">
-              {isPersonal ? "Личная смета" : "Прочие траты"}
-            </span>
+          <div className="rounded-md bg-neutral-50 border border-neutral-200 px-3 py-2 text-sm space-y-1">
+            <div>
+              <span className="text-neutral-500">Тип сметы: </span>
+              <span className="font-medium">
+                {isPersonal ? "Личная смета" : "Прочие траты"}
+              </span>
+            </div>
+            <div>
+              <span className="text-neutral-500">Год оплаты (план-факт): </span>
+              <span className="font-medium tabular-nums">
+                {row.yearPlanFact ?? "—"}
+              </span>
+            </div>
           </div>
 
           {!isPersonal && (

@@ -17,22 +17,22 @@ import { hash } from "bcryptjs";
 import { logActivity, diff } from "@/lib/audit/log";
 import { seedOnboardingTasks } from "@/lib/services/tasks";
 import { assertCanUnsetResponsible } from "@/lib/services/responsibles";
+import { parseRecipientTypes, serializeRecipientTypes } from "@/lib/executor-recipient-type";
 
 
 export type ExecutorListRow = {
   id: string;
   name: string; // A
   companyStatus: string | null; // B
-  workOpsCount: number; // C: works + otherExpenses
   type: string; // D
   workTypeIds: string[]; // E (raw ids)
   workTypeNames: string[]; // E (resolved labels)
-  projectNames: string[]; // F (через ProjectExecutor)
+  projectNames: string[]; // F (из плана расходов, как plan-projects)
   responsibleUserId: string | null;
   responsibleName: string | null; // G
   defaultBankAccountId: string | null;
   defaultBankAccountName: string | null; // H
-  recipientType: string | null; // I
+  recipientTypes: string[]; // I (из recipientType JSON / legacy)
   requisites: string | null; // J
   contacts: string | null; // K
   userId: string | null;
@@ -50,23 +50,41 @@ export type ExecutorListRow = {
 };
 
 export async function listExecutors(): Promise<ExecutorListRow[]> {
-  const executors = await prisma.executor.findMany({
-    orderBy: [{ name: "asc" }],
-    include: {
-      user: { select: { id: true, email: true } },
-      responsibleUser: { select: { id: true, fullName: true } },
-      defaultBankAccount: { select: { id: true, name: true } },
-      executorWorkTypes: { include: { workType: { select: { id: true, name: true } } } },
-      projectExecutors: { include: { project: { select: { name: true } } } },
-      _count: { select: { works: true, otherExpenses: true } },
-      payments: {
-        where: { paymentStatus: "paid" },
-        orderBy: { paidAt: "desc" },
-        take: 1,
-        select: { paidAt: true },
+  const [executors, planLines] = await Promise.all([
+    prisma.executor.findMany({
+      orderBy: [{ name: "asc" }],
+      include: {
+        user: { select: { id: true, email: true } },
+        responsibleUser: { select: { id: true, fullName: true } },
+        defaultBankAccount: { select: { id: true, name: true } },
+        executorWorkTypes: { include: { workType: { select: { id: true, name: true } } } },
+        payments: {
+          where: { paymentStatus: "paid" },
+          orderBy: { paidAt: "desc" },
+          take: 1,
+          select: { paidAt: true },
+        },
       },
-    },
-  });
+    }),
+    prisma.spendingPlanLine.findMany({
+      select: {
+        executorId: true,
+        projectId: true,
+        project: { select: { name: true, status: true } },
+      },
+    }),
+  ]);
+
+  const planByExecutorId = new Map<string, Map<string, string>>();
+  for (const line of planLines) {
+    if (line.project.status === "archived") continue;
+    let byProject = planByExecutorId.get(line.executorId);
+    if (!byProject) {
+      byProject = new Map();
+      planByExecutorId.set(line.executorId, byProject);
+    }
+    byProject.set(line.projectId, line.project.name);
+  }
 
   // Доп: последняя дата выплаты также может быть через OtherExpense.paymentDate (paid).
   const otherPayments = await prisma.otherExpense.groupBy({
@@ -89,15 +107,14 @@ export async function listExecutors(): Promise<ExecutorListRow[]> {
         : lastFromPayments ?? lastFromOther;
 
     const workTypes = e.executorWorkTypes.map((ewt) => ewt.workType);
-    const projects = e.projectExecutors
-      .map((pe) => pe.project.name)
-      .sort((a, b) => a.localeCompare(b, "ru"));
+    const projects = Array.from(planByExecutorId.get(e.id)?.values() ?? []).sort((a, b) =>
+      a.localeCompare(b, "ru")
+    );
 
     return {
       id: e.id,
       name: e.name,
       companyStatus: e.companyStatus,
-      workOpsCount: e._count.works + e._count.otherExpenses,
       type: e.type,
       workTypeIds: workTypes.map((wt) => wt.id),
       workTypeNames: workTypes.map((wt) => wt.name).sort((a, b) => a.localeCompare(b, "ru")),
@@ -106,7 +123,7 @@ export async function listExecutors(): Promise<ExecutorListRow[]> {
       responsibleName: e.responsibleUser?.fullName ?? null,
       defaultBankAccountId: e.defaultBankAccountId,
       defaultBankAccountName: e.defaultBankAccount?.name ?? null,
-      recipientType: e.recipientType,
+      recipientTypes: parseRecipientTypes(e.recipientType),
       requisites: e.requisites,
       contacts: e.contacts,
       userId: e.user?.id ?? null,
@@ -136,6 +153,7 @@ export type CreateExecutorInput =
       responsibleUserId?: string | null;
       specialty?: string | null;
       defaultBankAccountId?: string | null;
+      recipientTypes?: string[];
       recipientType?: string | null;
     }
   | {
@@ -143,6 +161,7 @@ export type CreateExecutorInput =
       legalName: string;
       legalForm: string;
       responsibleUserId?: string | null;
+      recipientTypes?: string[];
       recipientType?: string | null;
       defaultBankAccountId?: string | null;
     }
@@ -150,9 +169,23 @@ export type CreateExecutorInput =
       type: "service";
       legalName: string;
       responsibleUserId?: string | null;
+      recipientTypes?: string[];
       recipientType?: string | null;
       defaultBankAccountId?: string | null;
     };
+
+function recipientTypeForCreate(input: {
+  recipientTypes?: string[];
+  recipientType?: string | null;
+}): string | null {
+  if (input.recipientTypes !== undefined) {
+    return serializeRecipientTypes(input.recipientTypes);
+  }
+  if (input.recipientType) {
+    return serializeRecipientTypes(parseRecipientTypes(input.recipientType));
+  }
+  return null;
+}
 
 export function executorDisplayName(input: CreateExecutorInput): string {
   if (input.type === "permanent" || input.type === "external-person") {
@@ -191,7 +224,7 @@ export async function createExecutor(input: CreateExecutorInput, userId: string)
         userId: userIdToLink,
         companyStatus: "companyStatus" in input ? input.companyStatus ?? null : null,
         legalForm: input.type === "external-legal" ? input.legalForm : null,
-        recipientType: input.recipientType ?? null,
+        recipientType: recipientTypeForCreate(input),
         specialty: "specialty" in input ? input.specialty ?? null : null,
         responsibleUserId: input.responsibleUserId ?? null,
         defaultBankAccountId: input.defaultBankAccountId ?? null,
@@ -226,6 +259,7 @@ export type UpdateExecutorInput = {
   inTgChat?: boolean;
   contractFile?: string | null;
   ndaFile?: string | null;
+  recipientTypes?: string[];
   recipientType?: string | null;
   responsibleUserId?: string | null;
   defaultBankAccountId?: string | null;
@@ -276,7 +310,15 @@ export async function updateExecutor(id: string, patch: UpdateExecutorInput, use
         ...(patch.inTgChat !== undefined && { inTgChat: patch.inTgChat }),
         ...(patch.contractFile !== undefined && { contractFile: patch.contractFile }),
         ...(patch.ndaFile !== undefined && { ndaFile: patch.ndaFile }),
-        ...(patch.recipientType !== undefined && { recipientType: patch.recipientType }),
+        ...(patch.recipientTypes !== undefined && {
+          recipientType: serializeRecipientTypes(patch.recipientTypes),
+        }),
+        ...(patch.recipientType !== undefined &&
+          patch.recipientTypes === undefined && {
+            recipientType: patch.recipientType
+              ? serializeRecipientTypes(parseRecipientTypes(patch.recipientType))
+              : null,
+          }),
         ...(patch.responsibleUserId !== undefined && { responsibleUserId: patch.responsibleUserId }),
         ...(patch.defaultBankAccountId !== undefined && {
           defaultBankAccountId: patch.defaultBankAccountId,

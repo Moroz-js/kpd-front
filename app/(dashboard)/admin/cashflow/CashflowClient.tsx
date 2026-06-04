@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import useSWR from "swr";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { getISOWeek, getISOWeekYear, getISOWeeksInYear } from "@/lib/iso-weeks";
+import { getISOWeek, getISOWeekYear, firstVisibleCashflowWeek } from "@/lib/iso-weeks";
 import { CashflowChart } from "./CashflowChart";
 import { CashflowCommentCell } from "@/components/ui-custom/CashflowCommentCell";
 import {
@@ -188,7 +188,7 @@ export function CashflowClient() {
   const weeks = (data && !("error" in data)) ? data.weeks : [];
   const visibleWeeks = React.useMemo(() => {
     if (!weeks.length || showOldWeeks || year !== currentISOYear) return weeks;
-    return weeks.filter((wh) => wh.week >= currentISOWeek - 2);
+    return weeks.filter((wh) => wh.week >= firstVisibleCashflowWeek(currentISOWeek));
   }, [weeks, showOldWeeks, year, currentISOYear, currentISOWeek]);
 
   const visibleWeekIndices = React.useMemo(
@@ -343,7 +343,7 @@ export function CashflowClient() {
         )}
         <div className="overflow-x-auto">
           <table className="min-w-max border-collapse text-sm">
-            <thead className="sticky top-0 z-20">
+            <thead>
               <tr className="bg-neutral-50 border-b border-neutral-100">
                 <th className={cn(compactLbl, "z-30 font-medium text-neutral-600 bg-neutral-50 py-0.5")}>
                   Показатель / Проект

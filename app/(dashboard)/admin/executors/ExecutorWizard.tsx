@@ -20,11 +20,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  EXECUTOR_COMPANY_STATUSES,
-  LEGAL_FORMS,
-  RECIPIENT_TYPES,
-} from "@/lib/statuses";
+import { EXECUTOR_COMPANY_STATUSES, LEGAL_FORMS } from "@/lib/statuses";
+import { RecipientTypesPicker } from "@/components/ui-custom/RecipientTypesPicker";
 
 function generatePassword(): string {
   const chars = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789!@#$%";
@@ -65,7 +62,7 @@ export function ExecutorWizard({
   // common
   const [responsibleUserId, setResponsibleUserId] = React.useState("");
   const [defaultBankAccountId, setDefaultBankAccountId] = React.useState("");
-  const [recipientType, setRecipientType] = React.useState("");
+  const [recipientTypes, setRecipientTypes] = React.useState<string[]>([]);
 
   const [submitting, setSubmitting] = React.useState(false);
 
@@ -123,7 +120,7 @@ export function ExecutorWizard({
 
     if (responsibleUserId) payload.responsibleUserId = responsibleUserId;
     if (defaultBankAccountId) payload.defaultBankAccountId = defaultBankAccountId;
-    if (recipientType) payload.recipientType = recipientType;
+    if (recipientTypes.length > 0) payload.recipientTypes = recipientTypes;
 
     setSubmitting(true);
     const res = await fetch("/api/executors", {
@@ -393,27 +390,10 @@ export function ExecutorWizard({
               </Select>
             </div>
 
-            {type !== "service" && <div className="space-y-1.5">
-              <Label htmlFor="recipientType">Тип получателя</Label>
-              <Select
-                value={recipientType || "__none__"}
-                onValueChange={(v) => setRecipientType(v === "__none__" ? "" : (v ?? ""))}
-              >
-                <SelectTrigger id="recipientType">
-                  <SelectValue>
-                    {recipientType || "— Не задан —"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">— Не задан —</SelectItem>
-                  {RECIPIENT_TYPES.map((r) => (
-                    <SelectItem key={r} value={r}>
-                      {r}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>}
+            <div className="space-y-1.5">
+              <Label>Тип получателя</Label>
+              <RecipientTypesPicker value={recipientTypes} onChange={setRecipientTypes} />
+            </div>
 
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={back} disabled={submitting}>

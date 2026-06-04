@@ -22,7 +22,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { WorkTypesMultiSelect } from "@/components/ui-custom/WorkTypesMultiSelect";
-import { EXECUTOR_COMPANY_STATUSES, EXECUTOR_TYPES, RECIPIENT_TYPES } from "@/lib/statuses";
+import { EXECUTOR_COMPANY_STATUSES, EXECUTOR_TYPES } from "@/lib/statuses";
+import { RecipientTypesPicker } from "@/components/ui-custom/RecipientTypesPicker";
 import type { ExecutorRow } from "./ExecutorsClient";
 
 type BankOption = { id: string; name: string; status: string };
@@ -53,7 +54,7 @@ export function ExecutorEditDialog({
   const [inTgChat, setInTgChat] = React.useState(row.inTgChat);
   const [contractFile, setContractFile] = React.useState(row.contractFile ?? "");
   const [ndaFile, setNdaFile] = React.useState(row.ndaFile ?? "");
-  const [recipientType, setRecipientType] = React.useState(row.recipientType ?? "");
+  const [recipientTypes, setRecipientTypes] = React.useState<string[]>(row.recipientTypes);
   const [responsibleUserId, setResponsibleUserId] = React.useState(row.responsibleUserId ?? "");
   const [defaultBankAccountId, setDefaultBankAccountId] = React.useState(
     row.defaultBankAccountId ?? ""
@@ -91,7 +92,7 @@ export function ExecutorEditDialog({
         inTgChat,
         contractFile: contractFile.trim() || null,
         ndaFile: ndaFile.trim() || null,
-        recipientType: recipientType || null,
+        recipientTypes,
         responsibleUserId: responsibleUserId || null,
         defaultBankAccountId: defaultBankAccountId || null,
         workTypeIds,
@@ -227,27 +228,12 @@ export function ExecutorEditDialog({
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            {!isService && <div className="space-y-1.5">
-              <Label htmlFor="recipientType">Тип получателя</Label>
-              <Select
-                value={recipientType || "__none__"}
-                onValueChange={(v) => setRecipientType(v === "__none__" ? "" : (v ?? ""))}
-              >
-                <SelectTrigger id="recipientType">
-                  <SelectValue>
-                    {recipientType || "— Не задан —"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">— Не задан —</SelectItem>
-                  {RECIPIENT_TYPES.map((r) => (
-                    <SelectItem key={r} value={r}>
-                      {r}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>}
+            {!isService && (
+              <div className="space-y-1.5 col-span-2">
+                <Label>Тип получателя</Label>
+                <RecipientTypesPicker value={recipientTypes} onChange={setRecipientTypes} />
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label htmlFor="specialty">Специальность</Label>
               <Input

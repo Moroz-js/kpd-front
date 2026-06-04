@@ -85,12 +85,18 @@ export function isoWeekDays(year: number, week: number): Date[] {
   return Array.from({ length: 7 }, (_, i) => addDays(start, i));
 }
 
-/** Сколько прошлых ISO-недель оставлять видимыми на дашборде проекта (плюс текущая и будущие). */
+/** Сколько прошлых ISO-недель оставлять видимыми (плюс текущая и будущие). */
 export const PROJECT_DASHBOARD_WEEKS_BACK = 4;
+export const CASHFLOW_WEEKS_BACK = 4;
 
-/** Первая видимая неделя года при свёрнутых «старых» неделях. */
+/** Первая видимая неделя года при свёрнутых «старых» неделях (дашборд проекта). */
 export function firstVisibleDashboardWeek(currentWeek: number): number {
   return Math.max(1, currentWeek - PROJECT_DASHBOARD_WEEKS_BACK);
+}
+
+/** Первая видимая неделя в таблице кэшфлоу при свёрнутых «старых» неделях. */
+export function firstVisibleCashflowWeek(currentWeek: number): number {
+  return Math.max(1, currentWeek - CASHFLOW_WEEKS_BACK);
 }
 
 const MONTH_SHORT = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"] as const;
