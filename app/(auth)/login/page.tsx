@@ -44,7 +44,7 @@ export default function LoginPage() {
         u?.isResponsible === true &&
         u?.responsibleActive !== false);
 
-    if (role === "admin") router.push("/admin/projects");
+    if (role === "admin") router.push("/admin/cashflow");
     else if (isPm) router.push("/responsible/projects");
     else if (role === "executor") router.push("/me");
     else router.refresh();

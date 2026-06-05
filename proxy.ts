@@ -24,7 +24,7 @@ export default auth((req) => {
     if (role) {
       const redirectPath =
         role === "admin"
-          ? "/admin/projects"
+          ? "/admin/cashflow"
           : isPm
           ? "/responsible/projects"
           : "/me";
