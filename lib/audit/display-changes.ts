@@ -39,6 +39,7 @@ const FIELD_LABELS: Record<string, string> = {
   workTypeId: "Вид работ",
   bankAccountId: "Банковский счёт",
   defaultBankAccountId: "Счёт по умолчанию",
+  orderId: "Заказ",
   responsibleUserId: "Ответственный",
   companyStatus: "Статус в компании",
   specialty: "Специальность",
@@ -48,7 +49,6 @@ const FIELD_LABELS: Record<string, string> = {
   note: "Примечание",
   inTgChat: "В Telegram-чате",
   recipientType: "Тип получателя",
-  entityForm: "Форма",
   contractFile: "Договор",
   ndaFile: "NDA",
   contractNumber: "Номер договора",
@@ -155,6 +155,7 @@ export function formatChangeValue(value: unknown, field: string): string {
     if (str in PROJECT_TYPES) {
       return PROJECT_TYPES[str as keyof typeof PROJECT_TYPES];
     }
+    if (str === "external-person" || str === "external-legal") return EXECUTOR_TYPES.external;
     if (str in EXECUTOR_TYPES) {
       return EXECUTOR_TYPES[str as keyof typeof EXECUTOR_TYPES];
     }

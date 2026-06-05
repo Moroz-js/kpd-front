@@ -30,9 +30,6 @@ import { IssuedWorkEditDialog, type SmetaType } from "./IssuedWorkEditDialog";
 const compactPeriodHead =
   "text-[10px] leading-tight font-medium whitespace-normal normal-case align-bottom !whitespace-normal";
 
-/** Вертикальный разделитель блоков колонок (1px). */
-const colDivider = "border-r border-neutral-300";
-
 const periodYearMonthClass = "w-24 max-w-24 px-1";
 const weekPayClass = "w-18 max-w-18 px-1";
 
@@ -405,7 +402,7 @@ export function IssuedWorksClient() {
                 sortBy={activeSortField()}
                 sortDir={activeSortDir()}
                 onSort={handleSort}
-                className={cn(weekPayClass, compactPeriodHead, colDivider)}
+                className={cn(weekPayClass, compactPeriodHead)}
               >
                 <span className="block text-left">
                   Неделя
@@ -451,12 +448,11 @@ export function IssuedWorksClient() {
                 sortBy={activeSortField()}
                 sortDir={activeSortDir()}
                 onSort={handleSort}
-                className={colDivider}
               >
                 Статус
               </SortableHead>
               <TableHead>Дата проверки</TableHead>
-              <TableHead className={colDivider}>Дата оплаты план</TableHead>
+              <TableHead>Дата оплаты план</TableHead>
               <TableHead>Дата оплаты факт</TableHead>
               <TableHead>Тип сметы</TableHead>
               <TableHead className="w-24" />
@@ -493,18 +489,18 @@ export function IssuedWorksClient() {
                   <TableCell className={cn("text-xs whitespace-nowrap", periodYearMonthClass)}>
                     {monthLabel(r.executionMonth)}
                   </TableCell>
-                  <TableCell className={cn("text-xs whitespace-nowrap", weekPayClass, colDivider)}>
+                  <TableCell className={cn("text-xs whitespace-nowrap", weekPayClass)}>
                     {r.weekPlanFact != null ? weekLabel(r.weekPlanFact) : "—"}
                   </TableCell>
                   <TableCell>{r.executorName}</TableCell>
                   <TableCell>{r.projectName}</TableCell>
                   <TableCell>{r.workTypeName}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold text-sm">{formatMoney(r.amount)}</TableCell>
-                  <TableCell className={colDivider}>
+                  <TableCell>
                     <StatusBadge dict={WORK_STATUSES} value={r.workStatus} />
                   </TableCell>
                   <TableCell>{formatDateShort(r.checkedAt)}</TableCell>
-                  <TableCell className={colDivider}>{formatDateShort(r.plannedPayAt)}</TableCell>
+                  <TableCell>{formatDateShort(r.plannedPayAt)}</TableCell>
                   <TableCell>{formatDateShort(r.paidAt)}</TableCell>
                   <TableCell className="text-sm">{SMETA_LABEL[r.sourceType]}</TableCell>
                   <TableCell className="text-right whitespace-nowrap">

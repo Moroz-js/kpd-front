@@ -68,8 +68,9 @@ const SMETA_LABEL: Record<Row["sourceType"], string> = {
 
 const compactPeriodHead =
   "text-[10px] leading-tight font-medium whitespace-normal normal-case align-bottom !whitespace-normal";
-const yearColHead = "w-12 max-w-12 px-1 text-left";
-const yearColCell = "text-xs tabular-nums w-12 max-w-12 px-1 text-left";
+const periodYearMonthClass = "w-24 max-w-24 px-1";
+const weekColClass = "w-18 max-w-18 px-1";
+const yearColCell = "text-xs tabular-nums text-left";
 
 function rowKey(r: Row) { return `${r.sourceType}:${r.sourceId}`; }
 
@@ -370,7 +371,7 @@ export function PayoutsClient() {
                 sortBy={activeSortField()}
                 sortDir={activeSortDir()}
                 onSort={handleSort}
-                className={cn(yearColHead, "!whitespace-normal")}
+                className={cn(periodYearMonthClass, "!whitespace-normal")}
               >
                 <span className="block text-[10px] leading-tight font-medium tracking-tight normal-case text-left">
                   Год
@@ -383,7 +384,7 @@ export function PayoutsClient() {
                 sortBy={activeSortField()}
                 sortDir={activeSortDir()}
                 onSort={handleSort}
-                className={cn("w-14 max-w-14 px-1", compactPeriodHead)}
+                className={cn(periodYearMonthClass, compactPeriodHead)}
               >
                 <span className="block text-left">
                   Месяц
@@ -396,7 +397,7 @@ export function PayoutsClient() {
                 sortBy={activeSortField()}
                 sortDir={activeSortDir()}
                 onSort={handleSort}
-                className={cn("w-14 max-w-14 px-1", compactPeriodHead)}
+                className={cn(weekColClass, compactPeriodHead)}
               >
                 <span className="block text-left">
                   Неделя
@@ -434,9 +435,9 @@ export function PayoutsClient() {
                         onSelect={handleRowSelect}
                       />
                     </TableCell>
-                    <TableCell className={yearColCell}>{r.periodYear}</TableCell>
-                    <TableCell className="text-xs w-14 max-w-14 px-1 whitespace-nowrap">{monthLabel(r.periodMonth)}</TableCell>
-                    <TableCell className="text-xs w-14 max-w-14 px-1 whitespace-nowrap">{r.weekPlanFact != null ? weekLabel(r.weekPlanFact) : "—"}</TableCell>
+                    <TableCell className={cn(periodYearMonthClass, yearColCell)}>{r.periodYear}</TableCell>
+                    <TableCell className={cn(periodYearMonthClass, "text-xs whitespace-nowrap")}>{monthLabel(r.periodMonth)}</TableCell>
+                    <TableCell className={cn(weekColClass, "text-xs whitespace-nowrap")}>{r.weekPlanFact != null ? weekLabel(r.weekPlanFact) : "—"}</TableCell>
                     <TableCell>{r.executorName}</TableCell>
                     <TableCell className="max-w-48 truncate" title={r.comment ?? ""}>{r.comment ?? "—"}</TableCell>
 

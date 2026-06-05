@@ -47,7 +47,7 @@ const patchSchema = z.object({
   responsibleUserId: z.string().nullable().optional(),
   defaultBankAccountId: z.string().nullable().optional(),
   oldEstimateUrl: z.string().nullable().optional(),
-  entityForm: z.string().nullable().optional(),
+  type: z.enum(["permanent", "external", "service", "bank"]).optional(),
   specialties: z.string().nullable().optional(),
   isResponsible: z.boolean().optional(),
   workTypeIds: z.array(z.string()).optional(),

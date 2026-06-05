@@ -370,14 +370,21 @@ async function seedExecutors(hash: string) {
   const wt  = (name: string) => wts.find(w => w.name === name);
 
   type SE = {
-    name: string; type: string; email?: string;
-    companyStatus?: string; legalForm?: string; recipientType?: string;
-    resp?: typeof ivanov; specialty?: string; workTypes?: string[];
-    status?: string; hasAccess?: boolean; inTgChat?: boolean;
+    name: string;
+    type: "permanent" | "external" | "service" | "bank";
+    email?: string;
+    companyStatus?: string;
+    recipientType?: string;
+    resp?: typeof ivanov;
+    specialty?: string;
+    workTypes?: string[];
+    status?: string;
+    hasAccess?: boolean;
+    inTgChat?: boolean;
   };
 
   const list: SE[] = [
-    // ── permanent core ───────────────────────────────────────────────────────
+    // ── permanent ────────────────────────────────────────────────────────────
     { name: "Смирнов Алексей",    type: "permanent",       email: "executor.smirnov@kpd.local",
       companyStatus: "core",   recipientType: "З/П в РФ налог 30%",
       resp: ivanov,   specialty: "Дизайнер",      workTypes: ["Дизайн посадочной","Инфографика"],        hasAccess: true, inTgChat: true },
@@ -387,32 +394,33 @@ async function seedExecutors(hash: string) {
     { name: "Волков Кирилл",      type: "permanent",       email: "executor.volkov@kpd.local",
       companyStatus: "orbit",  recipientType: "З/П в РФ налог 15%",
       resp: ivanov,   specialty: "Дизайнер",      workTypes: ["Дизайн посадочной","Инфографика"],        hasAccess: true, inTgChat: false },
-    // ── external person ──────────────────────────────────────────────────────
-    { name: "Козлова Анна",       type: "external-person", email: "executor.kozlova@kpd.local",
+    // ── external (с логином) ─────────────────────────────────────────────────
+    { name: "Козлова Анна",       type: "external", email: "executor.kozlova@kpd.local",
       recipientType: "Самозанятый в РФ",
       resp: ivanov,   specialty: "Копирайтер",    workTypes: ["Лонгрид","Сценарий ролика"],              hasAccess: true, inTgChat: true },
-    { name: "Захаров Дмитрий",    type: "external-person", email: "executor.zakharov@kpd.local",
+    { name: "Захаров Дмитрий",    type: "external", email: "executor.zakharov@kpd.local",
       recipientType: "Самозанятый в РФ",
       resp: petrov,   specialty: "Аналитик",      workTypes: ["PR-аналитика","Стратегия"],               hasAccess: true, inTgChat: true },
-    { name: "Орлова Виктория",    type: "external-person", email: "executor.orlova@kpd.local",
+    { name: "Орлова Виктория",    type: "external", email: "executor.orlova@kpd.local",
       recipientType: "Самозанятый в РФ",
       resp: sokolova, specialty: "Копирайтер",    workTypes: ["Лонгрид","Email-маркетинг"],              hasAccess: true, inTgChat: false },
-    { name: "Петров Иван",        type: "external-person", email: "executor.petrov@kpd.local",
+    { name: "Петров Иван",        type: "external", email: "executor.petrov@kpd.local",
       recipientType: "Самозанятый в РФ",
       resp: petrov,   specialty: "Видеомонтаж",   workTypes: ["Монтаж видео"],                           hasAccess: false },
-    { name: "Сидорова Наталья",   type: "external-person", email: "executor.sidorova@kpd.local",
+    { name: "Сидорова Наталья",   type: "external", email: "executor.sidorova@kpd.local",
       recipientType: "Физлицо на карту РФ",
       resp: ivanov,   specialty: "PR-специалист", workTypes: ["PR-аналитика","Экспертный комментарий"],  hasAccess: true, inTgChat: true },
-    // ── external legal ───────────────────────────────────────────────────────
-    { name: "Рога и Копыта ООО",  type: "external-legal",  legalForm: "ООО",
+    // ── external (без логина) ────────────────────────────────────────────────
+    { name: "Рога и Копыта ООО",  type: "external",
       recipientType: "Юрлицо в РФ", resp: petrov, workTypes: ["Поддержка сайта"] },
-    { name: "Медиа Старт ИП",     type: "external-legal",  legalForm: "ИП",
+    { name: "Медиа Старт ИП",     type: "external",
       recipientType: "ИП в РФ",     resp: sokolova, workTypes: ["SMM-ведение","Контекстная реклама"] },
-    // ── services ─────────────────────────────────────────────────────────────
+    // ── service / bank (без логина) ──────────────────────────────────────────
     { name: "MIDJOURNEY",  type: "service", recipientType: "Сервис заруб." },
     { name: "FIGMA",       type: "service", recipientType: "Сервис заруб." },
+    { name: "Тинькофф",    type: "bank",    recipientType: "Юрлицо в РФ" },
     // ── archived ─────────────────────────────────────────────────────────────
-    { name: "Старый исполнитель",  type: "external-person", email: "old.executor@kpd.local",
+    { name: "Старый исполнитель",  type: "external", email: "old.executor@kpd.local",
       recipientType: "Самозанятый в РФ", status: "archived" },
     { name: "Ушедший дизайнер",    type: "permanent", email: "old.designer@kpd.local",
       companyStatus: "core",  recipientType: "З/П в РФ налог 30%",
@@ -424,7 +432,7 @@ async function seedExecutors(hash: string) {
     if (ex) continue;
 
     let userId: string | null = null;
-    if (e.email && (e.type === "permanent" || e.type === "external-person")) {
+    if (e.email && (e.type === "permanent" || e.type === "external")) {
       const u = await prisma.user.upsert({
         where:  { email: e.email },
         update: {},
@@ -435,7 +443,7 @@ async function seedExecutors(hash: string) {
 
     const exec = await prisma.executor.create({ data: {
       name: e.name, type: e.type, userId,
-      companyStatus: e.companyStatus ?? null, legalForm: e.legalForm ?? null,
+      companyStatus: e.companyStatus ?? null,
       recipientType: e.recipientType ?? null, specialty: e.specialty ?? null,
       responsibleUserId: e.resp?.id ?? null,
       defaultBankAccountId: opsAcc?.id ?? null,

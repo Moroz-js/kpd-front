@@ -11,8 +11,8 @@ export async function GET() {
   return NextResponse.json(await listExecutors());
 }
 
-const personSchema = z.object({
-  type: z.enum(["permanent", "external-person"]),
+const permanentSchema = z.object({
+  type: z.literal("permanent"),
   firstName: z.string().min(1),
   lastName: z.string().min(1),
   email: z.string().email("Некорректный email"),
@@ -25,26 +25,16 @@ const personSchema = z.object({
   recipientType: z.string().nullable().optional(),
 });
 
-const legalSchema = z.object({
-  type: z.literal("external-legal"),
-  legalName: z.string().min(1),
-  legalForm: z.string().min(1),
+const namedSchema = z.object({
+  type: z.enum(["external", "service", "bank"]),
+  name: z.string().min(1),
   responsibleUserId: z.string().nullable().optional(),
   recipientTypes: z.array(z.string()).optional(),
   recipientType: z.string().nullable().optional(),
   defaultBankAccountId: z.string().nullable().optional(),
 });
 
-const serviceSchema = z.object({
-  type: z.literal("service"),
-  legalName: z.string().min(1),
-  responsibleUserId: z.string().nullable().optional(),
-  recipientTypes: z.array(z.string()).optional(),
-  recipientType: z.string().nullable().optional(),
-  defaultBankAccountId: z.string().nullable().optional(),
-});
-
-const createSchema = z.union([personSchema, legalSchema, serviceSchema]);
+const createSchema = z.union([permanentSchema, namedSchema]);
 
 export async function POST(req: Request) {
   const me = await getSessionUser();

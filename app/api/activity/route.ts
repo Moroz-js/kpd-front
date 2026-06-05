@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
 import { prisma } from "@/lib/db";
+import { resolveDisplayChangesForItems } from "@/lib/audit/resolve-display-changes";
 
 export async function GET(req: NextRequest) {
   const user = await getSessionUser();
@@ -11,11 +12,11 @@ export async function GET(req: NextRequest) {
   const page = Math.max(1, parseInt(sp.get("page") ?? "1"));
   const pageSize = 50;
   const entityType = sp.get("entityType") ?? undefined;
-  const userId = sp.get("userId") ?? undefined;
+  const userIds = sp.getAll("userId").filter(Boolean);
 
   const where = {
     ...(entityType ? { entityType } : {}),
-    ...(userId ? { userId } : {}),
+    ...(userIds.length > 0 ? { userId: { in: userIds } } : {}),
   };
 
   const [items, total] = await Promise.all([
@@ -29,5 +30,15 @@ export async function GET(req: NextRequest) {
     prisma.activityLog.count({ where }),
   ]);
 
-  return NextResponse.json({ items, total, page, pageSize });
+  const displayChangesList = await resolveDisplayChangesForItems(items);
+
+  return NextResponse.json({
+    items: items.map((item, i) => ({
+      ...item,
+      displayChanges: displayChangesList[i] ?? [],
+    })),
+    total,
+    page,
+    pageSize,
+  });
 }

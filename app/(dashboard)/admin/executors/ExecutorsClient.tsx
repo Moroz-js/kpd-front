@@ -18,6 +18,7 @@ import {
   EXECUTOR_TYPE_FILTER_GROUPS,
   RECIPIENT_TYPES,
 } from "@/lib/statuses";
+import { normalizeExecutorType } from "@/lib/executor-type";
 import { formatDate } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,9 +34,6 @@ import { ExpandableListCell } from "@/components/ui-custom/ExpandableListCell";
 import { ExecutorWizard } from "./ExecutorWizard";
 import { hasPersonalSmeta } from "@/lib/executor-personal-estimate";
 import { EXECUTOR_COMPANY_STATUSES } from "@/lib/statuses";
-/** Вертикальный разделитель блоков колонок (1px). */
-const colDivider = "border-r border-neutral-300";
-
 type Row = {
   id: string;
   name: string;
@@ -131,7 +129,7 @@ export function ExecutorsClient() {
           EXECUTOR_TYPE_FILTER_GROUPS[group as keyof typeof EXECUTOR_TYPE_FILTER_GROUPS] ?? [];
         for (const t of dbTypes) flatTypes.add(t);
       }
-      list = list.filter((r) => flatTypes.has(r.type));
+      list = list.filter((r) => flatTypes.has(normalizeExecutorType(r.type)));
     }
 
     if (workTypeFilter.length) {
@@ -384,12 +382,14 @@ export function ExecutorsClient() {
               <SortableHead field="name" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
                 Исполнитель
               </SortableHead>
-              <TableHead className="w-[4.5rem] text-[10px] leading-tight font-medium whitespace-normal align-bottom">
-                Статус
-                <br />
-                в компании
+              <TableHead className="w-20 min-w-20 px-1 leading-tight align-bottom !whitespace-normal">
+                <span className="block text-left">
+                  Статус
+                  <br />
+                  <span className="whitespace-nowrap">в компании</span>
+                </span>
               </TableHead>
-              <TableHead className={colDivider}>Тип</TableHead>
+              <TableHead>Тип</TableHead>
               <TableHead>Виды работ</TableHead>
               <TableHead>Специальность</TableHead>
               <TableHead>Проекты</TableHead>
@@ -404,7 +404,7 @@ export function ExecutorsClient() {
               <TableHead>Источник оплаты</TableHead>
               <TableHead>Тип получателя</TableHead>
               <TableHead>В чате ТГ</TableHead>
-              <TableHead className={colDivider}>Доступ</TableHead>
+              <TableHead>Доступ</TableHead>
               <TableHead>Статус</TableHead>
               <SortableHead
                 field="lastPaidAt"
@@ -459,15 +459,15 @@ export function ExecutorsClient() {
                     </div>
                     {r.email && <div className="text-xs text-neutral-500">{r.email}</div>}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="w-20 min-w-20 px-1">
                     {r.companyStatus === "core"
                       ? "Ядро"
                       : r.companyStatus === "orbit"
                         ? "Орбита"
                         : "—"}
                   </TableCell>
-                  <TableCell className={colDivider}>
-                    {EXECUTOR_TYPES[r.type as keyof typeof EXECUTOR_TYPES] ?? r.type}
+                  <TableCell>
+                    {EXECUTOR_TYPES[normalizeExecutorType(r.type)] ?? r.type}
                   </TableCell>
                   <TableCell>
                     <ExpandableListCell items={r.workTypeNames} />
@@ -490,7 +490,7 @@ export function ExecutorsClient() {
                       <X className="h-4 w-4 text-neutral-300 inline" />
                     )}
                   </TableCell>
-                  <TableCell className={colDivider}>
+                  <TableCell>
                     {r.email && r.type !== "service" ? (
                       <button
                         type="button"

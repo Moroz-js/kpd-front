@@ -13,7 +13,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -23,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { WorkTypesMultiSelect } from "@/components/ui-custom/WorkTypesMultiSelect";
 import { EXECUTOR_COMPANY_STATUSES, EXECUTOR_TYPES } from "@/lib/statuses";
+import { normalizeExecutorType } from "@/lib/executor-type";
 import { RecipientTypesPicker } from "@/components/ui-custom/RecipientTypesPicker";
 import type { ExecutorRow } from "./ExecutorsClient";
 
@@ -50,10 +50,6 @@ export function ExecutorEditDialog({
   const [specialty, setSpecialty] = React.useState(row.specialty ?? "");
   const [contacts, setContacts] = React.useState(row.contacts ?? "");
   const [requisites, setRequisites] = React.useState(row.requisites ?? "");
-  const [note, setNote] = React.useState(row.note ?? "");
-  const [inTgChat, setInTgChat] = React.useState(row.inTgChat);
-  const [contractFile, setContractFile] = React.useState(row.contractFile ?? "");
-  const [ndaFile, setNdaFile] = React.useState(row.ndaFile ?? "");
   const [recipientTypes, setRecipientTypes] = React.useState<string[]>(row.recipientTypes);
   const [responsibleUserId, setResponsibleUserId] = React.useState(row.responsibleUserId ?? "");
   const [defaultBankAccountId, setDefaultBankAccountId] = React.useState(
@@ -62,9 +58,9 @@ export function ExecutorEditDialog({
   const [workTypeIds, setWorkTypeIds] = React.useState<string[]>(row.workTypeIds);
   const [submitting, setSubmitting] = React.useState(false);
 
-  const isPerson = row.type === "permanent" || row.type === "external-person";
-  const isService = row.type === "service";
-  const typeName = EXECUTOR_TYPES[row.type as keyof typeof EXECUTOR_TYPES] ?? row.type;
+  const normalizedType = normalizeExecutorType(row.type);
+  const isPermanent = normalizedType === "permanent";
+  const typeName = EXECUTOR_TYPES[normalizedType] ?? row.type;
 
   const workTypeOptions = React.useMemo(
     () =>
@@ -88,10 +84,6 @@ export function ExecutorEditDialog({
         specialty: specialty || null,
         contacts: contacts || null,
         requisites: requisites || null,
-        note: note || null,
-        inTgChat,
-        contractFile: contractFile.trim() || null,
-        ndaFile: ndaFile.trim() || null,
         recipientTypes,
         responsibleUserId: responsibleUserId || null,
         defaultBankAccountId: defaultBankAccountId || null,
@@ -130,7 +122,7 @@ export function ExecutorEditDialog({
                 required
               />
             </div>
-            {isPerson && (
+            {isPermanent && (
               <div className="space-y-1.5">
                 <Label htmlFor="companyStatus">Статус в компании</Label>
                 <Select
@@ -228,12 +220,10 @@ export function ExecutorEditDialog({
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            {!isService && (
-              <div className="space-y-1.5 col-span-2">
-                <Label>Тип получателя</Label>
-                <RecipientTypesPicker value={recipientTypes} onChange={setRecipientTypes} />
-              </div>
-            )}
+            <div className="space-y-1.5 col-span-2">
+              <Label>Тип получателя</Label>
+              <RecipientTypesPicker value={recipientTypes} onChange={setRecipientTypes} />
+            </div>
             <div className="space-y-1.5">
               <Label htmlFor="specialty">Специальность</Label>
               <Input
@@ -264,52 +254,6 @@ export function ExecutorEditDialog({
               placeholder="Мессенджеры, телефоны и т.п. (email — на вкладке учётной записи)"
             />
           </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="note">Примечание</Label>
-            <Textarea
-              id="note"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              rows={2}
-            />
-          </div>
-
-          {!isService && (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="contractFile">Договор (ссылка)</Label>
-                <Input
-                  id="contractFile"
-                  value={contractFile}
-                  onChange={(e) => setContractFile(e.target.value)}
-                  placeholder="https://..."
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="ndaFile">NDA (ссылка)</Label>
-                <Input
-                  id="ndaFile"
-                  value={ndaFile}
-                  onChange={(e) => setNdaFile(e.target.value)}
-                  placeholder="https://..."
-                />
-              </div>
-            </div>
-          )}
-
-          {!isService && (
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="inTgChat"
-                checked={inTgChat}
-                onCheckedChange={(c) => setInTgChat(!!c)}
-              />
-              <Label htmlFor="inTgChat" className="text-sm font-normal cursor-pointer">
-                Добавлен в чат «КПД: Контент-производители»
-              </Label>
-            </div>
-          )}
 
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>

@@ -1,15 +1,9 @@
 /**
  * ExecutorService (TDNB-18).
  *
- * Создание — wizard:
- *  - permanent / external-person → создаём `User` (login) + `Executor`
- *  - external-legal / service / bank → только `Executor` (userId = null)
- *
- * Имя (A) формируется по типу:
- *  - permanent / external-person: "Фамилия Имя"
- *  - external-legal: "Название ТипЮрлица" (например, "Рога и Копыта ООО")
- *  - service: UPPER CASE
- *  - bank: как есть
+ * Типы: permanent | external | service | bank
+ *  - permanent → User (login) + Executor
+ *  - external / service / bank → Executor без логина (legacy external-person с userId сохраняется)
  */
 
 import { prisma } from "@/lib/db";
@@ -18,6 +12,12 @@ import { logActivity, diff } from "@/lib/audit/log";
 import { seedOnboardingTasks } from "@/lib/services/tasks";
 import { assertCanUnsetResponsible } from "@/lib/services/responsibles";
 import { parseRecipientTypes, serializeRecipientTypes } from "@/lib/executor-recipient-type";
+import {
+  canBeResponsible,
+  formatNameForExecutorType,
+  normalizeExecutorType,
+} from "@/lib/executor-type";
+import type { ExecutorType } from "@/lib/statuses";
 
 
 export type ExecutorListRow = {
@@ -144,7 +144,7 @@ export async function listExecutors(): Promise<ExecutorListRow[]> {
 
 export type CreateExecutorInput =
   | {
-      type: "permanent" | "external-person";
+      type: "permanent";
       firstName: string;
       lastName: string;
       email: string;
@@ -157,17 +157,8 @@ export type CreateExecutorInput =
       recipientType?: string | null;
     }
   | {
-      type: "external-legal";
-      legalName: string;
-      legalForm: string;
-      responsibleUserId?: string | null;
-      recipientTypes?: string[];
-      recipientType?: string | null;
-      defaultBankAccountId?: string | null;
-    }
-  | {
-      type: "service";
-      legalName: string;
+      type: "external" | "service" | "bank";
+      name: string;
       responsibleUserId?: string | null;
       recipientTypes?: string[];
       recipientType?: string | null;
@@ -188,13 +179,10 @@ function recipientTypeForCreate(input: {
 }
 
 export function executorDisplayName(input: CreateExecutorInput): string {
-  if (input.type === "permanent" || input.type === "external-person") {
+  if (input.type === "permanent") {
     return `${input.lastName.trim()} ${input.firstName.trim()}`;
   }
-  if (input.type === "external-legal") {
-    return `${input.legalName.trim()} ${input.legalForm.trim()}`;
-  }
-  return (input as { legalName: string }).legalName.trim().toUpperCase();
+  return formatNameForExecutorType(input.type, input.name);
 }
 
 export async function createExecutor(input: CreateExecutorInput, userId: string) {
@@ -203,7 +191,7 @@ export async function createExecutor(input: CreateExecutorInput, userId: string)
   const created = await prisma.$transaction(async (tx) => {
     let userIdToLink: string | null = null;
 
-    if (input.type === "permanent" || input.type === "external-person") {
+    if (input.type === "permanent") {
       const passwordHash = await hash(input.password ?? "Welcome2026!", 10);
       const user = await tx.user.create({
         data: {
@@ -222,10 +210,9 @@ export async function createExecutor(input: CreateExecutorInput, userId: string)
         name,
         type: input.type,
         userId: userIdToLink,
-        companyStatus: "companyStatus" in input ? input.companyStatus ?? null : null,
-        legalForm: input.type === "external-legal" ? input.legalForm : null,
+        companyStatus: input.type === "permanent" ? input.companyStatus ?? null : null,
         recipientType: recipientTypeForCreate(input),
-        specialty: "specialty" in input ? input.specialty ?? null : null,
+        specialty: input.type === "permanent" ? input.specialty ?? null : null,
         responsibleUserId: input.responsibleUserId ?? null,
         defaultBankAccountId: input.defaultBankAccountId ?? null,
         status: "active",
@@ -241,8 +228,7 @@ export async function createExecutor(input: CreateExecutorInput, userId: string)
     entityLabel: created.name,
   });
 
-  // Онбординг — только для исполнителей с учёткой (permanent / external-person)
-  if (input.type === "permanent" || input.type === "external-person") {
+  if (input.type === "permanent") {
     await seedOnboardingTasks(created.id, userId);
   }
 
@@ -250,6 +236,7 @@ export async function createExecutor(input: CreateExecutorInput, userId: string)
 }
 
 export type UpdateExecutorInput = {
+  type?: ExecutorType;
   name?: string;
   companyStatus?: string | null;
   specialty?: string | null;
@@ -264,10 +251,9 @@ export type UpdateExecutorInput = {
   responsibleUserId?: string | null;
   defaultBankAccountId?: string | null;
   oldEstimateUrl?: string | null;
-  entityForm?: string | null;
   specialties?: string | null;
   isResponsible?: boolean;
-  workTypeIds?: string[]; // полная замена
+  workTypeIds?: string[];
 };
 
 export async function updateExecutor(id: string, patch: UpdateExecutorInput, userId: string) {
@@ -277,8 +263,14 @@ export async function updateExecutor(id: string, patch: UpdateExecutorInput, use
   });
   if (!before) throw new Error("Executor not found");
 
+  const nextType = patch.type ?? normalizeExecutorType(before.type);
+
   if (patch.isResponsible === true && before.status === "archived") {
     throw new Error("Нельзя назначить ответственным архивного исполнителя");
+  }
+
+  if (patch.isResponsible === true && !canBeResponsible(nextType)) {
+    throw new Error("Ответственным может быть только исполнитель типа «Постоянный»");
   }
 
   if (patch.isResponsible === false && before.isResponsible) {
@@ -298,10 +290,21 @@ export async function updateExecutor(id: string, patch: UpdateExecutorInput, use
       }
     }
 
+    const resolvedName =
+      patch.name !== undefined
+        ? formatNameForExecutorType(nextType, patch.name)
+        : undefined;
+
+    const clearResponsible =
+      patch.type !== undefined && !canBeResponsible(nextType) && before.isResponsible;
+
     return tx.executor.update({
       where: { id },
       data: {
-        ...(patch.name !== undefined && { name: patch.name.trim() }),
+        ...(patch.type !== undefined && { type: nextType }),
+        ...(resolvedName !== undefined && { name: resolvedName }),
+        ...(patch.type !== undefined &&
+          nextType !== "permanent" && { companyStatus: null }),
         ...(patch.companyStatus !== undefined && { companyStatus: patch.companyStatus }),
         ...(patch.specialty !== undefined && { specialty: patch.specialty }),
         ...(patch.contacts !== undefined && { contacts: patch.contacts }),
@@ -324,11 +327,11 @@ export async function updateExecutor(id: string, patch: UpdateExecutorInput, use
           defaultBankAccountId: patch.defaultBankAccountId,
         }),
         ...(patch.oldEstimateUrl !== undefined && { oldEstimateUrl: patch.oldEstimateUrl }),
-        ...(patch.entityForm !== undefined && { entityForm: patch.entityForm }),
         ...(patch.specialties !== undefined && { specialties: patch.specialties }),
+        ...(clearResponsible && { isResponsible: false }),
         ...(patch.isResponsible !== undefined && {
-          isResponsible: patch.isResponsible,
-          ...(patch.isResponsible && { responsibleActive: true }),
+          isResponsible: canBeResponsible(nextType) ? patch.isResponsible : false,
+          ...(patch.isResponsible && canBeResponsible(nextType) && { responsibleActive: true }),
         }),
       },
     });
@@ -336,6 +339,7 @@ export async function updateExecutor(id: string, patch: UpdateExecutorInput, use
 
   const changes = diff(
     {
+      type: before.type,
       name: before.name,
       companyStatus: before.companyStatus,
       specialty: before.specialty,
@@ -350,6 +354,7 @@ export async function updateExecutor(id: string, patch: UpdateExecutorInput, use
       defaultBankAccountId: before.defaultBankAccountId,
     },
     {
+      type: updated.type,
       name: updated.name,
       companyStatus: updated.companyStatus,
       specialty: updated.specialty,

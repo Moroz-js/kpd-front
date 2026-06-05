@@ -2,10 +2,11 @@
 
 import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -13,31 +14,39 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
 import { WorkTypesMultiSelect } from "@/components/ui-custom/WorkTypesMultiSelect";
 import { RecipientTypesPicker } from "@/components/ui-custom/RecipientTypesPicker";
-import { WORK_TYPE_SEGMENTS } from "@/lib/statuses";
+import { EXECUTOR_COMPANY_STATUSES, WORK_TYPE_SEGMENTS } from "@/lib/statuses";
 import { parseRecipientTypes } from "@/lib/executor-recipient-type";
+import {
+  canBeResponsible,
+  EXECUTOR_TYPE_OPTIONS,
+  normalizeExecutorType,
+} from "@/lib/executor-type";
+import type { ExecutorType } from "@/lib/statuses";
 
 type BankAccount = { id: string; name: string };
 type WorkType = { id: string; name: string; segment?: string };
 type PlanProject = { id: string; name: string };
 
-  type ExecutorDetail = {
+type ExecutorDetail = {
   id: string;
   name: string;
   type: string;
   status: string;
+  companyStatus: string | null;
   accessRevokedAt: string | null;
   contacts: string | null;
   requisites: string | null;
   recipientType: string | null;
   defaultBankAccountId: string | null;
   specialties: string | null;
-  entityForm: string | null;
+  contractFile: string | null;
+  ndaFile: string | null;
+  note: string | null;
+  inTgChat: boolean;
   isResponsible: boolean;
   responsibleActive: boolean;
-  onboardingSeeded: boolean;
   user: { id: string; email: string; fullName: string; isActive: boolean } | null;
   executorWorkTypes: { workType: WorkType }[];
 };
@@ -51,18 +60,33 @@ type Props = {
 };
 
 export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, onChanged }: Props) {
-  const isService = executor.type === "service";
+  const [executorType, setExecutorType] = useState<ExecutorType>(() =>
+    normalizeExecutorType(executor.type)
+  );
+  const isPermanent = executorType === "permanent";
+  const isService = executorType === "service";
+
   const [fullName, setFullName] = useState(executor.user?.fullName ?? executor.name);
   const [email, setEmail] = useState(executor.user?.email ?? "");
+  const [companyStatus, setCompanyStatus] = useState(executor.companyStatus ?? "");
   const [contacts, setContacts] = useState(executor.contacts ?? "");
   const [requisites, setRequisites] = useState(executor.requisites ?? "");
+  const [note, setNote] = useState(executor.note ?? "");
+  const [contractFile, setContractFile] = useState(executor.contractFile ?? "");
+  const [ndaFile, setNdaFile] = useState(executor.ndaFile ?? "");
+  const [inTgChat, setInTgChat] = useState(executor.inTgChat);
   const [recipientTypes, setRecipientTypes] = useState<string[]>(() =>
     parseRecipientTypes(executor.recipientType)
   );
-  const [defaultBankAccountId, setDefaultBankAccountId] = useState(executor.defaultBankAccountId ?? "");
-  const [entityForm, setEntityForm] = useState(executor.entityForm ?? "");
+  const [defaultBankAccountId, setDefaultBankAccountId] = useState(
+    executor.defaultBankAccountId ?? ""
+  );
   const [selectedSpecialties, setSelectedSpecialties] = useState<string[]>(() => {
-    try { return JSON.parse(executor.specialties ?? "[]"); } catch { return []; }
+    try {
+      return JSON.parse(executor.specialties ?? "[]");
+    } catch {
+      return [];
+    }
   });
   const [selectedWorkTypeIds, setSelectedWorkTypeIds] = useState<string[]>(
     executor.executorWorkTypes.map((ewt) => ewt.workType.id)
@@ -72,6 +96,30 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
   const [planProjects, setPlanProjects] = useState<PlanProject[]>([]);
   const [loadingPlanProjects, setLoadingPlanProjects] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [togglingAccess, setTogglingAccess] = useState(false);
+  const hasAccess = !executor.accessRevokedAt;
+
+  useEffect(() => {
+    setExecutorType(normalizeExecutorType(executor.type));
+    setFullName(executor.user?.fullName ?? executor.name);
+    setEmail(executor.user?.email ?? "");
+    setCompanyStatus(executor.companyStatus ?? "");
+    setContacts(executor.contacts ?? "");
+    setRequisites(executor.requisites ?? "");
+    setNote(executor.note ?? "");
+    setContractFile(executor.contractFile ?? "");
+    setNdaFile(executor.ndaFile ?? "");
+    setInTgChat(executor.inTgChat);
+    setRecipientTypes(parseRecipientTypes(executor.recipientType));
+    setDefaultBankAccountId(executor.defaultBankAccountId ?? "");
+    setIsResponsible(executor.isResponsible ?? false);
+    setSelectedWorkTypeIds(executor.executorWorkTypes.map((ewt) => ewt.workType.id));
+    try {
+      setSelectedSpecialties(JSON.parse(executor.specialties ?? "[]"));
+    } catch {
+      setSelectedSpecialties([]);
+    }
+  }, [executor]);
 
   useEffect(() => {
     setLoadingPlanProjects(true);
@@ -82,9 +130,10 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
       .finally(() => setLoadingPlanProjects(false));
   }, [executorId]);
 
-  // Access toggle
-  const [togglingAccess, setTogglingAccess] = useState(false);
-  const hasAccess = !executor.accessRevokedAt;
+  function handleTypeChange(next: ExecutorType) {
+    setExecutorType(next);
+    if (!canBeResponsible(next)) setIsResponsible(false);
+  }
 
   async function handleToggleAccess() {
     setTogglingAccess(true);
@@ -109,14 +158,19 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          type: executorType,
           name: fullName.trim(),
+          companyStatus: isPermanent ? companyStatus || null : null,
           contacts: contacts || null,
           requisites: requisites || null,
+          note: note || null,
+          inTgChat: isService ? false : inTgChat,
+          contractFile: isService ? null : contractFile.trim() || null,
+          ndaFile: isService ? null : ndaFile.trim() || null,
           recipientTypes,
           defaultBankAccountId: defaultBankAccountId || null,
-          entityForm: entityForm || null,
           specialties: JSON.stringify(selectedSpecialties),
-          isResponsible,
+          isResponsible: canBeResponsible(executorType) ? isResponsible : false,
           workTypeIds: selectedWorkTypeIds,
         }),
       });
@@ -125,7 +179,6 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
         throw new Error((body as { error?: string }).error ?? "Ошибка сохранения");
       }
 
-      // Update user fields if exists
       if (executor.user) {
         const ur = await fetch(`/api/users/${executor.user.id}`, {
           method: "PATCH",
@@ -140,6 +193,7 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Ошибка");
       setIsResponsible(executor.isResponsible ?? false);
+      setExecutorType(normalizeExecutorType(executor.type));
     } finally {
       setSaving(false);
     }
@@ -153,46 +207,103 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
 
   return (
     <div className="space-y-6 max-w-xl">
-      {!isService && (
+      <div className="border rounded-lg p-4 space-y-3">
+        <h3 className="text-sm font-semibold text-neutral-800">Тип исполнителя</h3>
+        <Select
+          value={executorType}
+          onValueChange={(v) => v && handleTypeChange(v as ExecutorType)}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {EXECUTOR_TYPE_OPTIONS.map(([value, label]) => (
+              <SelectItem key={value} value={value}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {!isService && executor.user && (
         <div className="border rounded-lg p-4 space-y-3">
           <h3 className="text-sm font-semibold text-neutral-800">Доступ к системе</h3>
           <div className="flex items-center justify-between">
             <div>
-              <span className={`text-sm font-medium ${hasAccess ? "text-green-700" : "text-red-600"}`}>
+              <span
+                className={`text-sm font-medium ${hasAccess ? "text-green-700" : "text-red-600"}`}
+              >
                 {hasAccess ? "Доступ активен" : "Доступ отозван"}
               </span>
-              {executor.user?.email && (
+              {executor.user.email && (
                 <p className="text-xs text-neutral-400 mt-0.5">Логин: {executor.user.email}</p>
               )}
             </div>
-            {executor.user && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleToggleAccess}
-                disabled={togglingAccess}
-                className={hasAccess ? "border-red-300 text-red-600 hover:bg-red-50" : "border-green-300 text-green-700 hover:bg-green-50"}
-              >
-                {hasAccess ? "Отозвать доступ" : "Выдать доступ"}
-              </Button>
-            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleToggleAccess}
+              disabled={togglingAccess}
+              className={
+                hasAccess
+                  ? "border-red-300 text-red-600 hover:bg-red-50"
+                  : "border-green-300 text-green-700 hover:bg-green-50"
+              }
+            >
+              {hasAccess ? "Отозвать доступ" : "Выдать доступ"}
+            </Button>
           </div>
         </div>
       )}
 
-      {/* Profile block */}
       <div className="border rounded-lg p-4 space-y-3">
         <h3 className="text-sm font-semibold text-neutral-800">Профиль</h3>
-        {(executor.user || isService) && (
-          <div className="space-y-1.5">
-            <Label>Исполнитель <span className="font-normal text-neutral-400">(ФИО, название компании, сервиса и т.д.)</span></Label>
-            <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
-          </div>
-        )}
+        <div className="space-y-1.5">
+          <Label>
+            Исполнитель{" "}
+            <span className="font-normal text-neutral-400">
+              (ФИО, название компании, сервиса и т.д.)
+            </span>
+          </Label>
+          <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
+          {isService && fullName.trim() && (
+            <p className="text-xs text-neutral-500">
+              Сохранится как: <span className="font-medium">{fullName.trim().toUpperCase()}</span>
+            </p>
+          )}
+        </div>
         {executor.user && (
           <div className="space-y-1.5">
             <Label>Email (логин)</Label>
             <Input value={email} onChange={(e) => setEmail(e.target.value)} />
+          </div>
+        )}
+        {isPermanent && (
+          <div className="space-y-1.5">
+            <Label>Статус в компании</Label>
+            <Select
+              value={companyStatus || "__none__"}
+              onValueChange={(v) => setCompanyStatus(v === "__none__" ? "" : (v ?? ""))}
+            >
+              <SelectTrigger>
+                <SelectValue>
+                  {companyStatus
+                    ? (EXECUTOR_COMPANY_STATUSES[
+                        companyStatus as keyof typeof EXECUTOR_COMPANY_STATUSES
+                      ] ?? companyStatus)
+                    : "— Не задан —"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">— Не задан —</SelectItem>
+                {Object.entries(EXECUTOR_COMPANY_STATUSES).map(([v, l]) => (
+                  <SelectItem key={v} value={v}>
+                    {l}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         )}
         <div className="space-y-1.5">
@@ -203,54 +314,48 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
             placeholder="Телеграм, телефон и т.д."
           />
         </div>
-        <div className="flex flex-col gap-1 pt-1">
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="isResponsible"
-              checked={isResponsible}
-              disabled={executorArchived}
-              onCheckedChange={(v) => setIsResponsible(Boolean(v))}
-            />
-            <Label
-              htmlFor="isResponsible"
-              className={executorArchived ? "text-neutral-400" : "cursor-pointer"}
-            >
-              Является ответственным
-            </Label>
+        {canBeResponsible(executorType) && (
+          <div className="flex flex-col gap-1 pt-1">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="isResponsible"
+                checked={isResponsible}
+                disabled={executorArchived}
+                onCheckedChange={(v) => setIsResponsible(Boolean(v))}
+              />
+              <Label
+                htmlFor="isResponsible"
+                className={executorArchived ? "text-neutral-400" : "cursor-pointer"}
+              >
+                Является ответственным
+              </Label>
+            </div>
+            {executorArchived && (
+              <p className="text-xs text-neutral-500 pl-6">
+                Архивного исполнителя нельзя назначить ответственным.
+              </p>
+            )}
+            {isResponsible &&
+              !executorArchived &&
+              executor.isResponsible &&
+              !executor.responsibleActive && (
+                <p className="text-xs text-amber-700 pl-6">
+                  Роль ответственного в архиве — исполнитель при этом может оставаться активным.
+                </p>
+              )}
           </div>
-          {executorArchived && (
-            <p className="text-xs text-neutral-500 pl-6">
-              Архивного исполнителя нельзя назначить ответственным. Статус ответственного меняется в разделе «Ответственные».
-            </p>
-          )}
-          {isResponsible && !executorArchived && executor.isResponsible && !executor.responsibleActive && (
-            <p className="text-xs text-amber-700 pl-6">
-              Роль ответственного в архиве — исполнитель при этом может оставаться активным.
-            </p>
-          )}
-        </div>
+        )}
       </div>
 
-      {/* Payment block */}
       <div className="border rounded-lg p-4 space-y-3">
         <h3 className="text-sm font-semibold text-neutral-800">Оплата</h3>
         <div className="space-y-1.5">
           <Label>Реквизиты</Label>
-          <Input value={requisites} onChange={(e) => setRequisites(e.target.value)} placeholder="ИНН, расчётный счёт и т.д." />
-        </div>
-        <div className="space-y-1.5">
-          <Label>Форма юридического лица</Label>
           <Input
-            value={entityForm}
-            onChange={(e) => setEntityForm(e.target.value)}
-            placeholder="ИП, ООО, ОАО, самозанятый и т.д."
-            list="entity-form-options"
+            value={requisites}
+            onChange={(e) => setRequisites(e.target.value)}
+            placeholder="ИНН, расчётный счёт и т.д."
           />
-          <datalist id="entity-form-options">
-            {["ИП", "ООО", "ОАО", "ПАО", "АО", "Самозанятый", "Физлицо"].map(v => (
-              <option key={v} value={v} />
-            ))}
-          </datalist>
         </div>
         <div className="space-y-1.5">
           <Label>Источник оплаты по умолчанию</Label>
@@ -265,7 +370,9 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
             <SelectContent>
               <SelectItem value="">— Не задан —</SelectItem>
               {bankAccounts.map((b) => (
-                <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                <SelectItem key={b.id} value={b.id}>
+                  {b.name}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -276,7 +383,48 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
         </div>
       </div>
 
-      {/* Specialties block */}
+      {!isService && (
+        <div className="border rounded-lg p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-neutral-800">Документы</h3>
+          <div className="space-y-1.5">
+            <Label>Договор (ссылка)</Label>
+            <Input
+              value={contractFile}
+              onChange={(e) => setContractFile(e.target.value)}
+              placeholder="https://..."
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>NDA (ссылка)</Label>
+            <Input
+              value={ndaFile}
+              onChange={(e) => setNdaFile(e.target.value)}
+              placeholder="https://..."
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="inTgChat"
+              checked={inTgChat}
+              onCheckedChange={(v) => setInTgChat(Boolean(v))}
+            />
+            <Label htmlFor="inTgChat" className="cursor-pointer">
+              В чате Telegram
+            </Label>
+          </div>
+        </div>
+      )}
+
+      <div className="border rounded-lg p-4 space-y-3">
+        <h3 className="text-sm font-semibold text-neutral-800">Примечание</h3>
+        <Textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={2}
+          placeholder="Внутренние заметки"
+        />
+      </div>
+
       <div className="border rounded-lg p-4 space-y-3">
         <h3 className="text-sm font-semibold text-neutral-800">Специальности</h3>
         <div className="flex flex-wrap gap-2">
@@ -300,7 +448,6 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
         </div>
       </div>
 
-      {/* Work types block */}
       <div className="border rounded-lg p-4 space-y-3">
         <h3 className="text-sm font-semibold text-neutral-800">Виды работ</h3>
         {allWorkTypes.length === 0 ? (
@@ -318,14 +465,14 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
         )}
       </div>
 
-      {/* Projects from spending plan (same as work create dropdown) */}
       <div className="border rounded-lg p-4 space-y-3">
         <h3 className="text-sm font-semibold text-neutral-800">Проекты</h3>
         {loadingPlanProjects ? (
           <p className="text-xs text-neutral-400">Загрузка…</p>
         ) : planProjects.length === 0 ? (
           <p className="text-xs text-neutral-400">
-            Нет проектов в плане расходов. Руководитель добавляет строку с этим исполнителем в дашборде проекта.
+            Нет проектов в плане расходов. Руководитель добавляет строку с этим исполнителем в
+            дашборде проекта.
           </p>
         ) : (
           <div className="flex flex-wrap gap-2">
@@ -339,9 +486,6 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
             ))}
           </div>
         )}
-        <p className="text-xs text-neutral-400">
-          Тот же список, что при создании работы — проекты из плана расходов, где указан этот исполнитель.
-        </p>
       </div>
 
       <div className="flex justify-end">

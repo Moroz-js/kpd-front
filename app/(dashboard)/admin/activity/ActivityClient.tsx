@@ -3,10 +3,11 @@
 import { useState } from "react";
 import useSWR from "swr";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { parseDisplayChanges } from "@/lib/audit/display-changes";
+import type { DisplayChange } from "@/lib/audit/display-changes";
 import { formatDateTime } from "@/lib/format";
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
@@ -56,6 +57,8 @@ const ACTION_COLORS: Record<string, string> = {
   access_revoke: "bg-rose-100 text-rose-700",
 };
 
+type UserOption = { id: string; fullName: string };
+
 type LogItem = {
   id: string;
   userId: string;
@@ -64,6 +67,7 @@ type LogItem = {
   entityId: string;
   entityLabel: string | null;
   changes: string | null;
+  displayChanges: DisplayChange[];
   createdAt: string;
   user: { fullName: string; role: string };
 };
@@ -76,15 +80,21 @@ function entityTypeFilterLabel(value: string): string {
 export function ActivityClient() {
   const [page, setPage] = useState(1);
   const [entityType, setEntityType] = useState("_all");
+  const [userFilter, setUserFilter] = useState<string[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const { data: users } = useSWR<UserOption[]>("/api/users", fetcher);
 
   const params = new URLSearchParams({ page: String(page) });
   if (entityType !== "_all") params.set("entityType", entityType);
+  userFilter.forEach((id) => params.append("userId", id));
 
   const { data } = useSWR<{ items: LogItem[]; total: number; pageSize: number }>(
     `/api/activity?${params}`,
     fetcher
   );
+
+  const userOptions = (users ?? []).map((u) => ({ value: u.id, label: u.fullName }));
 
   const totalPages = data ? Math.ceil(data.total / data.pageSize) : 1;
 
@@ -99,24 +109,35 @@ export function ActivityClient() {
 
   return (
     <div className="flex flex-col gap-4 h-[calc(100vh-3rem)] min-h-0">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <h1 className="text-xl font-semibold">История действий</h1>
-        <Select
-          value={entityType}
-          onValueChange={v => { if (v) { setEntityType(v); setPage(1); } }}
-        >
-          <SelectTrigger className="w-44 h-8 text-sm">
-            <SelectValue placeholder="Все объекты">
-              {entityTypeFilterLabel(entityType)}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="_all">Все объекты</SelectItem>
-            {Object.entries(ENTITY_LABELS).map(([k, v]) => (
-              <SelectItem key={k} value={k}>{v}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex flex-wrap items-center gap-2">
+          <MultiSelectFilter
+            label="Пользователь"
+            options={userOptions}
+            value={userFilter}
+            onChange={(v) => {
+              setUserFilter(v);
+              setPage(1);
+            }}
+          />
+          <Select
+            value={entityType}
+            onValueChange={v => { if (v) { setEntityType(v); setPage(1); } }}
+          >
+            <SelectTrigger className="w-44 h-8 text-sm">
+              <SelectValue placeholder="Все объекты">
+                {entityTypeFilterLabel(entityType)}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_all">Все объекты</SelectItem>
+              {Object.entries(ENTITY_LABELS).map(([k, v]) => (
+                <SelectItem key={k} value={k}>{v}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <div className="rounded-lg border border-neutral-200 bg-white overflow-auto flex-1 min-h-0">
@@ -136,7 +157,7 @@ export function ActivityClient() {
             </thead>
             <tbody>
               {data.items.map(item => {
-                const changes = parseDisplayChanges(item.changes);
+                const changes = item.displayChanges ?? [];
                 const isOpen = expanded.has(item.id);
                 return (
                   <>

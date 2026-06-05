@@ -39,9 +39,9 @@ model Executor {
   userId          String?   @unique // NULL для юрлиц/сервисов/банков (без логина)
   user            User?     @relation(fields: [userId], references: [id])
   name            String // computed по типу: "Фамилия Имя" / "Название ТипЮрлица" / UPPER для сервисов
-  type            String    @default("permanent") // permanent | external-person | external-legal | service | bank
+  type            String    @default("permanent") // permanent | external | service | bank
   companyStatus   String? // Ядро | Орбита (для permanent)
-  legalForm       String? // ООО | ИП | АО | ОАО | ... (для external-legal)
+  legalForm       String? // legacy, не используется в UI
   recipientType   String? // физлицо | юрлицо | самозанятый | ...
   specialty       String?
   contractFile    String? // URL
@@ -58,7 +58,6 @@ model Executor {
   responsibleActive Boolean   @default(true) // статус ответственного (≠ Executor.status)
   oldEstimateUrl  String?
   specialties     String?   // JSON array of segments
-  entityForm      String?   // ИП | ООО | ОАО | ПАО | ...
   status          String    @default("active") // active | archived
   accessRevokedAt DateTime?
   onboardingSeeded Boolean  @default(false)

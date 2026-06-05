@@ -10,6 +10,7 @@ import { VacationsTab } from "./VacationsTab";
 import { TasksTab } from "./TasksTab";
 import { SettingsTab } from "./SettingsTab";
 import { EXECUTOR_TYPES } from "@/lib/statuses";
+import { hasEstimateTabs, normalizeExecutorType } from "@/lib/executor-type";
 
 type WorkType = { id: string; name: string };
 type Project = { id: string; name: string; status: string };
@@ -27,7 +28,11 @@ type ExecutorDetail = {
   defaultBankAccountId: string | null;
   oldEstimateUrl: string | null;
   specialties: string | null;
-  entityForm: string | null;
+  companyStatus: string | null;
+  contractFile: string | null;
+  ndaFile: string | null;
+  note: string | null;
+  inTgChat: boolean;
   isResponsible: boolean;
   responsibleActive: boolean;
   onboardingSeeded: boolean;
@@ -124,8 +129,8 @@ export function ExecutorEstimateClient({
     }
   }, [executorId, loadExecutor]);
 
-  const isService = executor?.type === "service";
-  const hasPersonalSmeta = !!executor?.user && !isService;
+  const hasPersonalSmeta =
+    executor != null && hasEstimateTabs(executor.type, executor.user?.id ?? null);
   const settingsOnly = !hasPersonalSmeta;
 
   useEffect(() => {
@@ -170,7 +175,7 @@ export function ExecutorEstimateClient({
           <div>
             <h1 className="text-xl font-semibold text-neutral-900">{executor.name}</h1>
             <p className="text-sm text-neutral-500">
-              {EXECUTOR_TYPES[executor.type as keyof typeof EXECUTOR_TYPES] ?? executor.type}
+              {EXECUTOR_TYPES[normalizeExecutorType(executor.type)] ?? executor.type}
               {executor.user?.email ? ` · ${executor.user.email}` : ""}
             </p>
           </div>

@@ -37,13 +37,14 @@ const compactPeriodHead =
 const compactHead =
   "text-[10px] leading-tight font-medium whitespace-normal normal-case align-bottom";
 /** Ширины колонок (19) — table-fixed, иначе правые колонки сжимаются и наезжают друг на друга */
+const ACTIONS_COL_WIDTH = 96;
 const COL_WIDTHS = [
-  36, 48, 84, 64, 168, 128, 180, 100, 108, 92, 88, 80, 108, 108, 88, 80, 104, 120, 72,
+  36, 72, 84, 64, 168, 128, 180, 100, 108, 92, 88, 80, 108, 108, 88, 80, 104, 120, ACTIONS_COL_WIDTH,
 ] as const;
 const TABLE_MIN_WIDTH = COL_WIDTHS.reduce((s, w) => s + w, 0);
 const cellClip = "overflow-hidden max-w-0";
 const stickyActionsHead =
-  "sticky right-0 z-20 bg-neutral-100 border-l border-neutral-200 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.08)] w-16";
+  "sticky right-0 z-20 bg-neutral-100 border-l border-neutral-200 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.08)] min-w-[96px]";
 const stickyActionsCell =
   "sticky right-0 z-10 border-l border-neutral-200 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.08)] bg-white";
 
@@ -553,15 +554,11 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
                 <TableCell className={cn(cellClip, "whitespace-normal")}>
                   <ExpandableListCell items={row.description ? [row.description] : []} />
                 </TableCell>
-                <TableCell className={cn(cellClip, "whitespace-nowrap")}>
-                  <span className="block truncate" title={row.workType.name}>
-                    {row.workType.name}
-                  </span>
+                <TableCell className={cn(cellClip, "whitespace-normal")}>
+                  <ExpandableListCell items={[row.workType.name]} />
                 </TableCell>
-                <TableCell className={cn(cellClip, "whitespace-nowrap")}>
-                  <span className="block truncate" title={row.responsibleUser.fullName}>
-                    {row.responsibleUser.fullName}
-                  </span>
+                <TableCell className={cn(cellClip, "whitespace-normal")}>
+                  <ExpandableListCell items={[row.responsibleUser.fullName]} />
                 </TableCell>
                 <TableCell className={cn(cellClip, "whitespace-normal")}>
                   {row.preferredPayMethod ? (
@@ -625,18 +622,21 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
                     </span>
                   )}
                 </TableCell>
-                <TableCell className={cn(cellClip, "whitespace-nowrap")}>
-                  <span className="block truncate" title={row.bankAccount?.name ?? undefined}>
-                    {row.bankAccount?.name ?? "—"}
-                  </span>
+                <TableCell className={cn(cellClip, "whitespace-nowrap pr-1")}>
+                  <div className="min-w-0 overflow-hidden">
+                    <span className="block truncate" title={row.bankAccount?.name ?? undefined}>
+                      {row.bankAccount?.name ?? "—"}
+                    </span>
+                  </div>
                 </TableCell>
                 <TableCell
                   className={cn(
                     stickyActionsCell,
+                    "min-w-[96px] w-[96px]",
                     selectedIds.has(row.id) && "bg-blue-50"
                   )}
                 >
-                  <div className="flex gap-1 items-center justify-end">
+                  <div className="flex shrink-0 gap-0.5 items-center justify-end">
                     {isAdmin && !row.paymentStatus && row.workStatus === "submitted" && (
                       <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Проверить" onClick={() => setCheckTarget(row)}>
                         <CheckCircle className="h-3.5 w-3.5 text-blue-600" />

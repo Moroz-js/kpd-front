@@ -20,8 +20,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { EXECUTOR_COMPANY_STATUSES, LEGAL_FORMS } from "@/lib/statuses";
+import { EXECUTOR_COMPANY_STATUSES } from "@/lib/statuses";
 import { RecipientTypesPicker } from "@/components/ui-custom/RecipientTypesPicker";
+import type { ExecutorType } from "@/lib/statuses";
 
 function generatePassword(): string {
   const chars = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789!@#$%";
@@ -30,7 +31,6 @@ function generatePassword(): string {
 
 type BankOption = { id: string; name: string; status: string };
 type ResponsibleOption = { id: string; fullName: string; isActive: boolean };
-type WizardType = "permanent" | "external-person" | "external-legal" | "service";
 
 export function ExecutorWizard({
   bankAccounts,
@@ -43,54 +43,28 @@ export function ExecutorWizard({
   onClose: () => void;
   onCreated: () => void;
 }) {
-  const [step, setStep] = React.useState<"type" | "external-kind" | "details">("type");
-  const [type, setType] = React.useState<WizardType | null>(null);
+  const [step, setStep] = React.useState<"type" | "details">("type");
+  const [type, setType] = React.useState<ExecutorType | null>(null);
 
-  // person fields
   const [firstName, setFirstName] = React.useState("");
   const [lastName, setLastName] = React.useState("");
   const [email, setEmail] = React.useState("");
-  const [companyStatus, setCompanyStatus] = React.useState<string>("");
-
-  // legal fields
-  const [legalName, setLegalName] = React.useState("");
-  const [legalForm, setLegalForm] = React.useState("");
-
-  // password (for person types)
+  const [companyStatus, setCompanyStatus] = React.useState("");
   const [password, setPassword] = React.useState(() => generatePassword());
+  const [name, setName] = React.useState("");
 
-  // common
   const [responsibleUserId, setResponsibleUserId] = React.useState("");
   const [defaultBankAccountId, setDefaultBankAccountId] = React.useState("");
   const [recipientTypes, setRecipientTypes] = React.useState<string[]>([]);
-
   const [submitting, setSubmitting] = React.useState(false);
 
-  function chooseType(t: WizardType | "external") {
-    if (t === "external") {
-      setStep("external-kind");
-      return;
-    }
-    if (t === "permanent") {
-      setType("permanent");
-    } else {
-      setType(t);
-    }
-    setStep("details");
-  }
-
-  function chooseExternalKind(kind: "person" | "legal") {
-    setType(kind === "person" ? "external-person" : "external-legal");
+  function chooseType(t: ExecutorType) {
+    setType(t);
     setStep("details");
   }
 
   function back() {
-    if (step === "details") {
-      if (type === "external-person" || type === "external-legal") setStep("external-kind");
-      else setStep("type");
-      return;
-    }
-    if (step === "external-kind") setStep("type");
+    setStep("type");
   }
 
   async function submit(e: React.FormEvent) {
@@ -99,7 +73,7 @@ export function ExecutorWizard({
 
     const payload: Record<string, unknown> = { type };
 
-    if (type === "permanent" || type === "external-person") {
+    if (type === "permanent") {
       if (!firstName.trim() || !lastName.trim()) return toast.error("Введите Имя и Фамилию");
       if (!email.trim()) return toast.error("Введите email");
       if (password.length < 6) return toast.error("Пароль не короче 6 символов");
@@ -107,15 +81,10 @@ export function ExecutorWizard({
       payload.lastName = lastName.trim();
       payload.email = email.trim();
       payload.password = password;
-      if (type === "permanent" && companyStatus) payload.companyStatus = companyStatus;
-    } else if (type === "external-legal") {
-      if (!legalName.trim()) return toast.error("Введите название юрлица");
-      if (!legalForm) return toast.error("Выберите тип юрлица");
-      payload.legalName = legalName.trim();
-      payload.legalForm = legalForm;
+      if (companyStatus) payload.companyStatus = companyStatus;
     } else {
-      if (!legalName.trim()) return toast.error("Введите название");
-      payload.legalName = legalName.trim();
+      if (!name.trim()) return toast.error("Введите название");
+      payload.name = name.trim();
     }
 
     if (responsibleUserId) payload.responsibleUserId = responsibleUserId;
@@ -134,11 +103,7 @@ export function ExecutorWizard({
       toast.error(err.error ?? "Не удалось создать исполнителя");
       return;
     }
-    if (type === "permanent" || type === "external-person") {
-      toast.success("Исполнитель создан");
-    } else {
-      toast.success("Исполнитель создан");
-    }
+    toast.success("Исполнитель создан");
     onCreated();
   }
 
@@ -147,9 +112,7 @@ export function ExecutorWizard({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {step === "type" && "Новый исполнитель: выберите тип"}
-            {step === "external-kind" && "Внешний: физлицо или юрлицо?"}
-            {step === "details" && "Данные исполнителя"}
+            {step === "type" ? "Новый исполнитель: выберите тип" : "Данные исполнителя"}
           </DialogTitle>
         </DialogHeader>
 
@@ -157,40 +120,30 @@ export function ExecutorWizard({
           <div className="grid grid-cols-2 gap-2">
             <TypeCard
               title="Постоянный"
-              hint="Штатный физлицо, есть логин"
+              hint="Штатный сотрудник, есть логин"
               onClick={() => chooseType("permanent")}
             />
             <TypeCard
               title="Внешний"
-              hint="Подрядчик: физлицо или юрлицо"
+              hint="Подрядчик без логина"
               onClick={() => chooseType("external")}
             />
             <TypeCard
               title="Сервис"
-              hint="Подписки, SaaS (MIDJOURNEY, NOTION)"
+              hint="Подписки, SaaS"
               onClick={() => chooseType("service")}
             />
-          </div>
-        )}
-
-        {step === "external-kind" && (
-          <div className="grid grid-cols-2 gap-2">
             <TypeCard
-              title="Физлицо"
-              hint="Создаём учётку"
-              onClick={() => chooseExternalKind("person")}
-            />
-            <TypeCard
-              title="Юрлицо"
-              hint="ООО, ИП, АО — без логина"
-              onClick={() => chooseExternalKind("legal")}
+              title="Банки"
+              hint="Банковские счета / операции"
+              onClick={() => chooseType("bank")}
             />
           </div>
         )}
 
-        {step === "details" && (
+        {step === "details" && type && (
           <form onSubmit={submit} className="space-y-4">
-            {(type === "permanent" || type === "external-person") && (
+            {type === "permanent" ? (
               <>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
@@ -230,7 +183,6 @@ export function ExecutorWizard({
                       id="password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Минимум 6 символов"
                       className="font-mono"
                       required
                     />
@@ -244,110 +196,60 @@ export function ExecutorWizard({
                       <RefreshCw className="h-4 w-4" />
                     </Button>
                   </div>
-                  {password.length > 0 && password.length < 6 && (
-                    <p className="text-xs text-red-600">Пароль слишком короткий</p>
-                  )}
-                </div>
-                {type === "permanent" && (
-                  <div className="space-y-1.5">
-                    <Label htmlFor="companyStatus">Статус в компании</Label>
-                    <Select
-                      value={companyStatus || "__none__"}
-                      onValueChange={(v) => setCompanyStatus(v === "__none__" ? "" : (v ?? ""))}
-                    >
-                      <SelectTrigger id="companyStatus">
-                        <SelectValue>
-                          {companyStatus
-                            ? (EXECUTOR_COMPANY_STATUSES[companyStatus as keyof typeof EXECUTOR_COMPANY_STATUSES] ?? companyStatus)
-                            : "— Не задан —"}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">— Не задан —</SelectItem>
-                        {Object.entries(EXECUTOR_COMPANY_STATUSES).map(([v, l]) => (
-                          <SelectItem key={v} value={v}>
-                            {l}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-              </>
-            )}
-
-            {type === "external-legal" && (
-              <>
-                <div className="space-y-1.5">
-                  <Label htmlFor="legalName">Название юрлица</Label>
-                  <Input
-                    id="legalName"
-                    value={legalName}
-                    onChange={(e) => setLegalName(e.target.value)}
-                    placeholder="Например: Рога и Копыта"
-                    required
-                    autoFocus
-                  />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="legalForm">Тип юрлица</Label>
-                  <Select value={legalForm} onValueChange={(v) => setLegalForm(v ?? "")}>
-                    <SelectTrigger id="legalForm">
-                      <SelectValue placeholder="ООО / ИП / АО / ...">
-                        {legalForm || undefined}
-                      </SelectValue>
+                  <Label htmlFor="companyStatus">Статус в компании</Label>
+                  <Select
+                    value={companyStatus || "__none__"}
+                    onValueChange={(v) => setCompanyStatus(v === "__none__" ? "" : (v ?? ""))}
+                  >
+                    <SelectTrigger id="companyStatus">
+                      <SelectValue placeholder="— Не задан —" />
                     </SelectTrigger>
                     <SelectContent>
-                      {LEGAL_FORMS.map((f) => (
-                        <SelectItem key={f} value={f}>
-                          {f}
+                      <SelectItem value="__none__">— Не задан —</SelectItem>
+                      {Object.entries(EXECUTOR_COMPANY_STATUSES).map(([v, l]) => (
+                        <SelectItem key={v} value={v}>
+                          {l}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
-                {legalName && legalForm && (
-                  <div className="rounded-md bg-neutral-50 border border-neutral-200 px-3 py-2 text-sm">
-                    <span className="text-neutral-500">Имя: </span>
-                    <span className="font-medium">
-                      {legalName.trim()} {legalForm}
-                    </span>
-                  </div>
-                )}
               </>
-            )}
-
-            {type === "service" && (
+            ) : (
               <div className="space-y-1.5">
-                <Label htmlFor="legalName">Название</Label>
+                <Label htmlFor="name">Название</Label>
                 <Input
-                  id="legalName"
-                  value={legalName}
-                  onChange={(e) => setLegalName(e.target.value)}
-                  placeholder="Например: midjourney"
+                  id="name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder={
+                    type === "service"
+                      ? "Например: midjourney"
+                      : type === "bank"
+                        ? "Например: Тинькофф"
+                        : "Например: Рога и Копыта"
+                  }
                   required
                   autoFocus
                 />
-                {type === "service" && legalName && (
+                {type === "service" && name.trim() && (
                   <p className="text-xs text-neutral-500">
-                    Сохранится как: <span className="font-medium">{legalName.toUpperCase()}</span>
+                    Сохранится как: <span className="font-medium">{name.trim().toUpperCase()}</span>
                   </p>
                 )}
               </div>
             )}
 
             <div className="space-y-1.5">
-              <Label htmlFor="responsible">Ответственный (account-менеджер)</Label>
+              <Label htmlFor="responsible">Ответственный</Label>
               <Select
                 value={responsibleUserId || "__none__"}
                 onValueChange={(v) => setResponsibleUserId(v === "__none__" ? "" : (v ?? ""))}
               >
                 <SelectTrigger id="responsible">
-                  <SelectValue>
-                    {responsibleUserId
-                      ? (responsibles.find((r) => r.id === responsibleUserId)?.fullName ?? responsibleUserId)
-                      : "— Не задан —"}
-                  </SelectValue>
+                  <SelectValue placeholder="— Не задан —" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">— Не задан —</SelectItem>
@@ -366,19 +268,13 @@ export function ExecutorWizard({
               <Label htmlFor="defaultBank">Источник оплаты по умолчанию</Label>
               <Select
                 value={defaultBankAccountId || "__none__"}
-                onValueChange={(v) =>
-                  setDefaultBankAccountId(v === "__none__" ? "" : (v ?? ""))
-                }
+                onValueChange={(v) => setDefaultBankAccountId(v === "__none__" ? "" : (v ?? ""))}
               >
                 <SelectTrigger id="defaultBank">
-                  <SelectValue>
-                    {defaultBankAccountId
-                      ? (bankAccounts.find((b) => b.id === defaultBankAccountId)?.name ?? defaultBankAccountId)
-                      : "— Системный по умолчанию —"}
-                  </SelectValue>
+                  <SelectValue placeholder="— Не задан —" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none__">— Системный по умолчанию —</SelectItem>
+                  <SelectItem value="__none__">— Не задан —</SelectItem>
                   {bankAccounts
                     .filter((b) => b.status === "active")
                     .map((b) => (
@@ -406,7 +302,7 @@ export function ExecutorWizard({
           </form>
         )}
 
-        {step !== "details" && (
+        {step === "type" && (
           <DialogFooter>
             <Button variant="ghost" onClick={onClose}>
               Отмена

@@ -80,19 +80,19 @@ export type ChargeStatus = keyof typeof CHARGE_STATUSES;
 
 // ─── EXECUTOR TYPES ───────────────────────────────────────────
 export const EXECUTOR_TYPES = {
-  "permanent":        "Постоянный",
-  "external-person":  "Внешний физлицо",
-  "external-legal":   "Внешний юрлицо",
-  "service":          "Сервис",
+  permanent: "Постоянный",
+  external: "Внешний",
+  service: "Сервис",
+  bank: "Банки",
 } as const;
 export type ExecutorType = keyof typeof EXECUTOR_TYPES;
 
-// Тип, как видит admin в фильтре (4 значения; «Внешний» объединяет 2 БД-типа).
-export const EXECUTOR_TYPE_FILTER_GROUPS = {
-  "Постоянный":       ["permanent"],
-  "Внешний":          ["external-person", "external-legal"],
-  "Сервис":           ["service"],
-} as const;
+export const EXECUTOR_TYPE_FILTER_GROUPS: Record<string, ExecutorType[]> = {
+  Постоянный: ["permanent"],
+  Внешний: ["external"],
+  Сервис: ["service"],
+  Банки: ["bank"],
+};
 
 // «Статус в компании» (для permanent).
 export const EXECUTOR_COMPANY_STATUSES = {
