@@ -254,8 +254,8 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
   useEffect(() => { load(); }, [load]);
 
   const filtered = rows.filter(r => {
-    if (fBankAccount.length && !fBankAccount.includes(r.bankAccountId)) return false;
-    if (fOrder.length && !fOrder.includes(r.orderId)) return false;
+    if (fBankAccount.length && (!r.bankAccountId || !fBankAccount.includes(r.bankAccountId))) return false;
+    if (fOrder.length && (!r.orderId || !fOrder.includes(r.orderId))) return false;
     if (fStatus.length && !fStatus.includes(r.status)) return false;
     if (fClient.length) {
       const clientId = r.order?.project?.client?.id ?? "__empty__";

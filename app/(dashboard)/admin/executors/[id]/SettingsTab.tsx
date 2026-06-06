@@ -319,7 +319,7 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
           <Label>
             Исполнитель{" "}
             <span className="font-normal text-neutral-400">
-              (ФИО, название компании, сервиса и т.д.)
+              (ФИ, название компании, сервиса и т.д.)
             </span>
           </Label>
           <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />

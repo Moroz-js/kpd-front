@@ -45,6 +45,7 @@ export async function GET(req: NextRequest) {
   const chargeByProject = new Map<string, number[]>();
 
   for (const c of charges) {
+    if (!c.order) continue;
     if (!activeProjectIds.has(c.order.projectId)) continue;
     const pf = chargeWeekPF(c);
     if (!pf || pf.year !== year) continue;

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Plus, Pencil, Trash2, CheckCircle, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { DateInput } from "@/components/ui-custom/DateInput";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,

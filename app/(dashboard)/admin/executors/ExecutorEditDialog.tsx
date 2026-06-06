@@ -114,7 +114,7 @@ export function ExecutorEditDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="name">Исполнитель <span className="font-normal text-neutral-400">(ФИО, название компании, сервиса)</span></Label>
+              <Label htmlFor="name">Исполнитель <span className="font-normal text-neutral-400">(ФИ, название компании, сервиса)</span></Label>
               <Input
                 id="name"
                 value={name}
