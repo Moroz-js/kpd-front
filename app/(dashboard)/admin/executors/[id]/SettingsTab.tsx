@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import { WorkTypesMultiSelect } from "@/components/ui-custom/WorkTypesMultiSelect";
 import { RecipientTypesPicker } from "@/components/ui-custom/RecipientTypesPicker";
-import { EXECUTOR_COMPANY_STATUSES, WORK_TYPE_SEGMENTS } from "@/lib/statuses";
+import { EXECUTOR_COMPANY_STATUSES, EXECUTOR_TYPES, WORK_TYPE_SEGMENTS } from "@/lib/statuses";
 import { parseRecipientTypes } from "@/lib/executor-recipient-type";
 import {
   canBeResponsible,
@@ -24,6 +24,12 @@ import {
   normalizeExecutorType,
 } from "@/lib/executor-type";
 import type { ExecutorType } from "@/lib/statuses";
+import { RefreshCw } from "lucide-react";
+
+function generatePassword(): string {
+  const chars = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789!@#$%";
+  return Array.from({ length: 12 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+}
 
 type BankAccount = { id: string; name: string };
 type WorkType = { id: string; name: string; segment?: string };
@@ -65,9 +71,11 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
   );
   const isPermanent = executorType === "permanent";
   const isService = executorType === "service";
+  const needsAccount = isPermanent && !executor.user;
 
   const [fullName, setFullName] = useState(executor.user?.fullName ?? executor.name);
   const [email, setEmail] = useState(executor.user?.email ?? "");
+  const [password, setPassword] = useState(() => generatePassword());
   const [companyStatus, setCompanyStatus] = useState(executor.companyStatus ?? "");
   const [contacts, setContacts] = useState(executor.contacts ?? "");
   const [requisites, setRequisites] = useState(executor.requisites ?? "");
@@ -152,27 +160,38 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
   }
 
   async function handleSave() {
+    if (needsAccount) {
+      if (!email.trim()) return toast.error("Введите email");
+      if (password.length < 6) return toast.error("Пароль не короче 6 символов");
+    }
+
     setSaving(true);
     try {
+      const payload: Record<string, unknown> = {
+        type: executorType,
+        name: fullName.trim(),
+        companyStatus: isPermanent ? companyStatus || null : null,
+        contacts: contacts || null,
+        requisites: requisites || null,
+        note: note || null,
+        inTgChat: isService ? false : inTgChat,
+        contractFile: isService ? null : contractFile.trim() || null,
+        ndaFile: isService ? null : ndaFile.trim() || null,
+        recipientTypes,
+        defaultBankAccountId: defaultBankAccountId || null,
+        specialties: JSON.stringify(selectedSpecialties),
+        isResponsible: canBeResponsible(executorType) ? isResponsible : false,
+        workTypeIds: selectedWorkTypeIds,
+      };
+      if (needsAccount) {
+        payload.email = email.trim();
+        payload.password = password;
+      }
+
       const r = await fetch(`/api/executors/${executorId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: executorType,
-          name: fullName.trim(),
-          companyStatus: isPermanent ? companyStatus || null : null,
-          contacts: contacts || null,
-          requisites: requisites || null,
-          note: note || null,
-          inTgChat: isService ? false : inTgChat,
-          contractFile: isService ? null : contractFile.trim() || null,
-          ndaFile: isService ? null : ndaFile.trim() || null,
-          recipientTypes,
-          defaultBankAccountId: defaultBankAccountId || null,
-          specialties: JSON.stringify(selectedSpecialties),
-          isResponsible: canBeResponsible(executorType) ? isResponsible : false,
-          workTypeIds: selectedWorkTypeIds,
-        }),
+        body: JSON.stringify(payload),
       });
       if (!r.ok) {
         const body = await r.json().catch(() => ({}));
@@ -214,7 +233,7 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
           onValueChange={(v) => v && handleTypeChange(v as ExecutorType)}
         >
           <SelectTrigger>
-            <SelectValue />
+            <SelectValue>{EXECUTOR_TYPES[executorType]}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             {EXECUTOR_TYPE_OPTIONS.map(([value, label]) => (
@@ -225,6 +244,43 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
           </SelectContent>
         </Select>
       </div>
+
+      {needsAccount && (
+        <div className="border border-blue-200 rounded-lg p-4 space-y-3 bg-blue-50/40">
+          <h3 className="text-sm font-semibold text-neutral-800">Учётная запись</h3>
+          <p className="text-xs text-neutral-500">
+            Для постоянного исполнителя нужен логин — после сохранения появится смета и онбординг.
+          </p>
+          <div className="space-y-1.5">
+            <Label>Email (логин) *</Label>
+            <Input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="executor@company.ru"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Пароль *</Label>
+            <div className="flex gap-2">
+              <Input
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="font-mono"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => setPassword(generatePassword())}
+                title="Сгенерировать"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {!isService && executor.user && (
         <div className="border rounded-lg p-4 space-y-3">

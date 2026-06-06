@@ -47,9 +47,9 @@ type Order = {
 type Charge = {
   id: string;
   chargeNumber: string;
-  bankAccountId: string; bankAccount: BankAccount;
+  bankAccountId: string | null; bankAccount: BankAccount | null;
   invoiceNumber: string;
-  orderId: string; order: Order;
+  orderId: string | null; order: Order | null;
   amount: number;
   issuedPlanAt: string | null;
   issuedAt: string | null;
@@ -93,7 +93,14 @@ function weekOfMonth(date: Date): string {
 // ─── Условное форматирование ──────────────────────────────────────────────────
 
 function cellRed(condition: boolean) {
-  return condition ? "bg-red-50 text-red-700" : "";
+  return condition ? "bg-red-100 text-red-700" : "";
+}
+
+function cellEmpty(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  if (typeof value === "string" && !value.trim()) return true;
+  if (typeof value === "number" && value === 0) return true;
+  return false;
 }
 
 function isOverdueH(charge: Charge): boolean {
@@ -118,7 +125,7 @@ function ChargeStatusBadge({ status }: { status: string }) {
   );
 }
 
-function InlineDateCell({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+function InlineDateCell({ value, onSave, highlight }: { value: string; onSave: (v: string) => void; highlight?: boolean }) {
   const ref = useRef<HTMLInputElement>(null);
   const [editing, setEditing] = useState(false);
   const [v, setV] = useState(value);
@@ -129,7 +136,7 @@ function InlineDateCell({ value, onSave }: { value: string; onSave: (v: string) 
         className="inline-flex cursor-pointer hover:bg-neutral-100 rounded px-1 py-0.5 text-neutral-600"
         onClick={() => { setEditing(true); setTimeout(() => { try { ref.current?.showPicker(); } catch { /**/ } }, 50); }}
       >
-        {v ? v.slice(5).split("-").reverse().join(".") : <span className="text-neutral-300">—</span>}
+        {v ? v.slice(5).split("-").reverse().join(".") : <span className={highlight ? "font-medium" : "text-neutral-300"}>—</span>}
       </span>
     );
   }
@@ -141,7 +148,8 @@ function InlineDateCell({ value, onSave }: { value: string; onSave: (v: string) 
       value={v}
       onChange={(e) => setV(e.target.value)}
       onBlur={() => { setEditing(false); onSave(v); }}
-      className="border border-blue-300 rounded px-1 py-0.5 text-xs outline-none w-32"
+      onClick={() => { try { ref.current?.showPicker(); } catch { /**/ } }}
+      className="border border-blue-300 rounded px-1 py-0.5 text-xs outline-none w-32 cursor-pointer"
     />
   );
 }
@@ -286,7 +294,8 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
       body: JSON.stringify({ paidAt: paidAt ? new Date(paidAt).toISOString() : null }),
     });
     if (!res.ok) return toast.error("Не удалось изменить дату");
-    setRows(prev => prev.map(r => r.id === id ? { ...r, paidAt: paidAt || null } : r));
+    const updated = await res.json() as Charge;
+    setRows(prev => prev.map(r => r.id === id ? updated : r));
   }
 
   async function patchInlinePurpose(id: string, paymentPurpose: string) {
@@ -459,8 +468,8 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
                         onSelect={handleRowSelect}
                       />
                     </TableCell>
-                    <TableCell>{row.bankAccount?.name ?? "—"}</TableCell>
-                    <TableCell className="text-right tabular-nums font-semibold text-sm">{row.amount ? formatMoney(row.amount) : "—"}</TableCell>
+                    <TableCell className={cellRed(cellEmpty(row.bankAccount?.name))}>{row.bankAccount?.name ?? "—"}</TableCell>
+                    <TableCell className={`text-right tabular-nums font-semibold text-sm ${cellRed(cellEmpty(row.amount))}`}>{row.amount ? formatMoney(row.amount) : "—"}</TableCell>
                     <TableCell>
                       <Select
                         value={row.status}
@@ -479,17 +488,18 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
                       </Select>
                     </TableCell>
                     <TableCell>{row.order?.project?.client?.name ?? "—"}</TableCell>
-                    <TableCell>{row.order?.project?.name ?? "—"}</TableCell>
+                    <TableCell className={cellRed(cellEmpty(row.order?.project?.name))}>{row.order?.project?.name ?? "—"}</TableCell>
                     <TableCell>{formatDateShort(row.issuedPlanAt)}</TableCell>
                     <TableCell>{formatDateShort(row.issuedAt)}</TableCell>
-                    <TableCell className={overdueH ? "text-red-600" : ""}>{formatDateShort(row.paidPlanAt)}</TableCell>
+                    <TableCell className={cellRed(overdueH)}>{formatDateShort(row.paidPlanAt)}</TableCell>
                     <TableCell>{pd ? MONTH_LABELS[pd.getMonth()] : "—"}</TableCell>
                     <TableCell>{pd ? weekLabel(getISOWeek(pd)) : "—"}</TableCell>
                     <TableCell>{pd ? pd.getFullYear() : "—"}</TableCell>
-                    <TableCell className={missingM ? "text-red-600" : ""}>
+                    <TableCell className={cellRed(missingM)}>
                       <InlineDateCell
                         value={row.paidAt ? row.paidAt.slice(0, 10) : ""}
                         onSave={(v) => patchInlinePaidAt(row.id, v)}
+                        highlight={missingM}
                       />
                     </TableCell>
                     <TableCell className="align-top max-w-[280px]">
@@ -498,9 +508,9 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
                         onSave={(v) => patchInlinePurpose(row.id, v)}
                       />
                     </TableCell>
-                    <TableCell className="tabular-nums">{row.order ? row.order.orderNumber : "—"}</TableCell>
+                    <TableCell className={`tabular-nums ${cellRed(cellEmpty(row.order?.orderNumber))}`}>{row.order ? row.order.orderNumber : "—"}</TableCell>
                     <TableCell className="tabular-nums">{row.chargeNumber}</TableCell>
-                    <TableCell>{row.invoiceNumber || "—"}</TableCell>
+                    <TableCell className={cellRed(cellEmpty(row.invoiceNumber))}>{row.invoiceNumber || "—"}</TableCell>
                     <TableCell>
                       <div className="flex gap-1 items-center">
                         <button title="Редактировать" className="p-0.5 text-neutral-500 hover:text-neutral-800" onClick={() => setEditTarget(row)}>
@@ -583,6 +593,16 @@ function ChargeFormDialog({
 
   const isEdit = !!initial;
 
+  // Авто-синхронизация статуса при изменении paidAt
+  useEffect(() => {
+    if (!paidAt) {
+      if (status === "paid") setStatus("to_pay");
+    } else {
+      setStatus("paid");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paidAt]);
+
   async function handleSave() {
     setSaving(true);
     try {
@@ -628,7 +648,9 @@ function ChargeFormDialog({
           <div className="space-y-1.5">
             <Label>Счёт получения</Label>
             <Select value={bankAccountId} onValueChange={(v) => setBankAccountId(v ?? "")}>
-              <SelectTrigger><SelectValue>{bankAccounts.find(b => b.id === bankAccountId)?.name ?? "Выберите"}</SelectValue></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue>{bankAccounts.find(b => b.id === bankAccountId)?.name ?? "Выберите"}</SelectValue>
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="">—</SelectItem>
                 {bankAccounts.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
@@ -654,7 +676,12 @@ function ChargeFormDialog({
           </div>
           <div className="space-y-1.5">
             <Label>Сумма</Label>
-            <Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
+            <Input
+              type="number"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="0"
+            />
           </div>
           <div className="space-y-1.5">
             <Label>Статус</Label>

@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui-custom/DateInput";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -198,9 +199,8 @@ export function IssuedWorkEditDialog({
           {isPersonal ? (
             <div className="space-y-2">
               <Label htmlFor="plannedPayAt">Дата оплаты — план</Label>
-              <Input
+              <DateInput
                 id="plannedPayAt"
-                type="date"
                 value={plannedPayAt}
                 onChange={(e) => setPlannedPayAt(e.target.value)}
               />
@@ -259,9 +259,8 @@ export function IssuedWorkEditDialog({
               {row.plannedPayAt && (
                 <div className="space-y-2">
                   <Label htmlFor="plannedPayAt">Дата оплаты — план</Label>
-                  <Input
+                  <DateInput
                     id="plannedPayAt"
-                    type="date"
                     value={plannedPayAt}
                     onChange={(e) => setPlannedPayAt(e.target.value)}
                   />

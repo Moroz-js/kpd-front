@@ -37,6 +37,10 @@ export default auth((req) => {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
+  if (pathname === "/admin") {
+    return NextResponse.redirect(new URL("/admin/cashflow", req.url));
+  }
+
   if (pathname.startsWith("/admin") && role !== "admin") {
     return NextResponse.redirect(new URL("/login", req.url));
   }

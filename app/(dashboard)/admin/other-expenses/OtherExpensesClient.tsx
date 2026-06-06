@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Plus, Pencil, Trash2, CheckCircle, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui-custom/DateInput";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -254,11 +254,12 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
           value={inlineVal}
           onChange={(e) => setInlineVal(e.target.value)}
           onBlur={() => commitInline(row)}
+          onClick={(e) => { try { (e.target as HTMLInputElement).showPicker(); } catch { /**/ } }}
           onKeyDown={(e) => {
             if (e.key === "Enter") commitInline(row);
             if (e.key === "Escape") setInlineEdit(null);
           }}
-          className="w-full h-6 rounded border border-blue-300 px-1 text-xs bg-blue-50 focus:outline-none"
+          className="w-full h-6 rounded border border-blue-300 px-1 text-xs bg-blue-50 focus:outline-none cursor-pointer"
         />
       );
     }
@@ -448,11 +449,11 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
           </Select>
           <div className="flex items-center gap-1">
             <span className="text-xs text-neutral-500">Дата план:</span>
-            <Input type="date" className="h-7 text-xs w-36" value={bulkPlannedPayAt} onChange={(e) => setBulkPlannedPayAt(e.target.value)} />
+            <DateInput className="h-7 text-xs w-36" value={bulkPlannedPayAt} onChange={(e) => setBulkPlannedPayAt(e.target.value)} />
           </div>
           <div className="flex items-center gap-1">
             <span className="text-xs text-neutral-500">Дата оплаты:</span>
-            <Input type="date" className="h-7 text-xs w-36" value={bulkPaidAt} onChange={(e) => setBulkPaidAt(e.target.value)} />
+            <DateInput className="h-7 text-xs w-36" value={bulkPaidAt} onChange={(e) => setBulkPaidAt(e.target.value)} />
           </div>
           <div className="flex items-center gap-1">
             <span className="text-xs text-neutral-500">Источник перевода:</span>
@@ -546,10 +547,8 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
                 <TableCell className={cn(cellClip, "whitespace-normal")}>
                   <ExpandableListCell items={[row.project.name]} />
                 </TableCell>
-                <TableCell className={cn(cellClip, "whitespace-nowrap")}>
-                  <span className="block truncate" title={row.executor.name}>
-                    {row.executor.name}
-                  </span>
+                <TableCell className={cn(cellClip, "whitespace-normal")}>
+                  <ExpandableListCell items={[row.executor.name]} />
                 </TableCell>
                 <TableCell className={cn(cellClip, "whitespace-normal")}>
                   <ExpandableListCell items={row.description ? [row.description] : []} />
@@ -601,11 +600,12 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
                       value={inlineVal}
                       onChange={(e) => setInlineVal(e.target.value)}
                       onBlur={() => commitInline(row)}
+                      onClick={(e) => { try { (e.target as HTMLInputElement).showPicker(); } catch { /**/ } }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") commitInline(row);
                         if (e.key === "Escape") setInlineEdit(null);
                       }}
-                      className="w-full h-6 rounded border border-blue-300 px-1 text-xs bg-blue-50 focus:outline-none"
+                      className="w-full h-6 rounded border border-blue-300 px-1 text-xs bg-blue-50 focus:outline-none cursor-pointer"
                     />
                   ) : row.paymentStatus && isAdmin ? (
                     <button
@@ -622,12 +622,8 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
                     </span>
                   )}
                 </TableCell>
-                <TableCell className={cn(cellClip, "whitespace-nowrap pr-1")}>
-                  <div className="min-w-0 overflow-hidden">
-                    <span className="block truncate" title={row.bankAccount?.name ?? undefined}>
-                      {row.bankAccount?.name ?? "—"}
-                    </span>
-                  </div>
+                <TableCell className={cn(cellClip, "whitespace-normal pr-1")}>
+                  <ExpandableListCell items={row.bankAccount?.name ? [row.bankAccount.name] : []} />
                 </TableCell>
                 <TableCell
                   className={cn(
@@ -903,7 +899,7 @@ function OtherExpenseFormDialog({
           {paymentCreated && (
             <div className="space-y-1.5">
               <Label>Дата оплаты — план</Label>
-              <Input type="date" className="h-9" value={plannedPayAt} onChange={(e) => setPlannedPayAt(e.target.value)} />
+              <DateInput className="h-9" value={plannedPayAt} onChange={(e) => setPlannedPayAt(e.target.value)} />
             </div>
           )}
           <div className="space-y-1.5">

@@ -5,8 +5,8 @@ import { createCharge, listCharges } from "@/lib/services/charges";
 import { z } from "zod";
 
 const createSchema = z.object({
-  bankAccountId: z.string().min(1),
-  orderId: z.string().min(1),
+  bankAccountId: z.string().nullable().optional(),
+  orderId: z.string().nullable().optional(),
   amount: z.number().nullable().optional(),
   issuedPlanAt: z.string().nullable().optional(),
   issuedAt: z.string().nullable().optional(),

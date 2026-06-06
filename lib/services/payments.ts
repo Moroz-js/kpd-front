@@ -261,15 +261,9 @@ export async function propagatePlanDate(
   await prisma.$transaction(async (tx) => {
     await tx.payment.update({ where: { id: paymentId }, data: { plannedPayAt } });
 
-    // Каскад на работы с submitted/checked статусом и без paidAt
+    // §1.12 — каскад на все связанные работы (по paymentId), кроме оплаченных
     await tx.work.updateMany({
-      where: {
-        executorId: payment.executorId,
-        executionYear: payment.periodYear,
-        executionMonth: payment.periodMonth,
-        workStatus: { in: ["submitted", "checked"] },
-        paidAt: null,
-      },
+      where: { paymentId, workStatus: { not: "paid" } },
       data: { plannedPayAt },
     });
   });

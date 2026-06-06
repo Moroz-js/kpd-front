@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui-custom/DateInput";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -209,18 +210,16 @@ export function PayoutEditDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label htmlFor="plannedPayAt">Дата оплаты — план</Label>
-              <Input
+              <DateInput
                 id="plannedPayAt"
-                type="date"
                 value={plannedPayAt}
                 onChange={(e) => setPlannedPayAt(e.target.value)}
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="paidAt">Дата оплаты</Label>
-              <Input
+              <DateInput
                 id="paidAt"
-                type="date"
                 value={paidAt}
                 onChange={(e) => setPaidAt(e.target.value)}
               />

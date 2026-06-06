@@ -372,7 +372,12 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
   async function patchPaymentPlannedDate(paymentId: string, date: string | null) {
     const applyDate = (p: AllPaymentRow) => p.id === paymentId ? { ...p, plannedPayAt: date } : p;
     setAllPayments((prev) => prev.map(applyDate));
-    setWorks((prev) => prev.map((w) => w.payment ? { ...w, payment: applyDate(w.payment as AllPaymentRow) } : w));
+    // Каскад в UI: обновляем plannedPayAt у работ, привязанных к этой выплате
+    setWorks((prev) => prev.map((w) => {
+      const updatedPayment = w.payment ? applyDate(w.payment as AllPaymentRow) : w.payment;
+      const updatedWork = w.payment?.id === paymentId ? { ...w, plannedPayAt: date } : w;
+      return { ...updatedWork, payment: updatedPayment };
+    }));
     await fetch(`/api/executors/${executorId}/payments/${paymentId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },

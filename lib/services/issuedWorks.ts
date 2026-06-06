@@ -15,6 +15,7 @@ import { logActivity, diff } from "@/lib/audit/log";
 import type { IssuedWorkSource } from "@/lib/views/issuedWorks";
 import { updateOtherExpense } from "@/lib/services/other-expenses";
 import { hasOtherExpensePayment } from "@/lib/other-expense-payment";
+import { tryCreatePaymentForPeriod } from "@/lib/services/payments";
 function assertSettableWorkStatus(workStatus: string | undefined) {
   if (workStatus === "paid") {
     throw new Error("Статус «Оплачено» проставляется только при выплате");
@@ -65,6 +66,11 @@ async function updatePersonal(workId: string, patch: IssuedWorkPatch, userId: st
   }
 
   const updated = await prisma.work.update({ where: { id: workId }, data });
+
+  // §1.7 — при смене на checked пробуем авто-создать выплату
+  if (patch.workStatus === "checked" && before.workStatus !== "checked") {
+    await tryCreatePaymentForPeriod(before.executorId, before.executionYear, before.executionMonth, userId);
+  }
 
   const changes = diff(
     {

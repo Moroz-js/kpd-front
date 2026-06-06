@@ -316,12 +316,12 @@ model Order {
 model Charge {
   id              String       @id @default(cuid())
   chargeNumber    String       @unique // H001, H002, ... (см. TDNB-20)
-  bankAccountId   String
-  bankAccount     BankAccount  @relation(fields: [bankAccountId], references: [id])
+  bankAccountId   String?
+  bankAccount     BankAccount? @relation(fields: [bankAccountId], references: [id])
   invoiceNumber   String       @unique // № счёта (см. TDNB-20)
-  orderId         String
-  order           Order        @relation(fields: [orderId], references: [id])
-  amount          Float
+  orderId         String?
+  order           Order?       @relation(fields: [orderId], references: [id])
+  amount          Float        @default(0)
   issuedPlanAt    DateTime?
   issuedAt        DateTime?
   paidPlanAt      DateTime?

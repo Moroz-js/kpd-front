@@ -48,6 +48,8 @@ const patchSchema = z.object({
   defaultBankAccountId: z.string().nullable().optional(),
   oldEstimateUrl: z.string().nullable().optional(),
   type: z.enum(["permanent", "external", "service", "bank"]).optional(),
+  email: z.string().email().optional(),
+  password: z.string().min(6).optional(),
   specialties: z.string().nullable().optional(),
   isResponsible: z.boolean().optional(),
   workTypeIds: z.array(z.string()).optional(),

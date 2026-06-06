@@ -20,6 +20,7 @@ import {
   clearOtherExpensePayment,
   updateOtherExpense,
 } from "@/lib/services/other-expenses";
+import { propagatePlanDate } from "@/lib/services/payments";
 
 export type PayoutPatch = {
   amount?: number;
@@ -54,9 +55,13 @@ async function updatePaymentSource(paymentId: string, patch: PayoutPatch, userId
   if (patch.amount !== undefined) data.amount = patch.amount;
   if (patch.paymentStatus !== undefined) data.paymentStatus = patch.paymentStatus;
   if (patch.paidAt !== undefined) data.paidAt = patch.paidAt;
-  if (patch.plannedPayAt !== undefined) data.plannedPayAt = patch.plannedPayAt;
   if (patch.bankAccountId !== undefined) data.bankAccountId = patch.bankAccountId;
   if (patch.comment !== undefined) data.comment = patch.comment;
+
+  // §1.12 — смена plannedPayAt каскадно обновляет все неоплаченные выплаты месяца
+  if (patch.plannedPayAt !== undefined) {
+    await propagatePlanDate(paymentId, patch.plannedPayAt ?? null, userId);
+  }
 
   // Возврат в «Запланировано» → очистить дату оплаты
   if (patch.paymentStatus === "planned" && before.paymentStatus !== "planned") {
@@ -65,18 +70,21 @@ async function updatePaymentSource(paymentId: string, patch: PayoutPatch, userId
 
   const updated = await prisma.payment.update({ where: { id: paymentId }, data });
 
-  // §1.10 каскад: если payment.paidAt становится непустым → у связанных Work проставить paidAt и workStatus=paid
-  if (
-    patch.paidAt !== undefined &&
-    patch.paidAt !== null &&
-    !before.paidAt
-  ) {
-    await prisma.work.updateMany({
-      where: { paymentId },
-      data: { paidAt: patch.paidAt, workStatus: "paid" },
-    });
-  } else if ((patch.paidAt === null || patch.paymentStatus === "planned") && before.paidAt) {
-    // откат факта оплаты → возвращаем работы в checked
+  // §1.10/1.12 факт-факт: paidAt меняется → каскад на связанные работы
+  if (patch.paidAt !== undefined) {
+    if (patch.paidAt !== null) {
+      await prisma.work.updateMany({
+        where: { paymentId },
+        data: { paidAt: patch.paidAt, workStatus: "paid" },
+      });
+    } else {
+      // очистка paidAt → откат работ в checked
+      await prisma.work.updateMany({
+        where: { paymentId, workStatus: "paid" },
+        data: { paidAt: null, workStatus: "checked" },
+      });
+    }
+  } else if (patch.paymentStatus === "planned" && before.paymentStatus !== "planned" && before.paidAt) {
     await prisma.work.updateMany({
       where: { paymentId, workStatus: "paid" },
       data: { paidAt: null, workStatus: "checked" },

@@ -19,8 +19,8 @@ async function nextChargeNumber(): Promise<string> {
 // ─── Типы ─────────────────────────────────────────────────────────────────────
 
 export type CreateChargeInput = {
-  bankAccountId: string;
-  orderId: string;
+  bankAccountId?: string | null;
+  orderId?: string | null;
   amount?: number | null;
   issuedPlanAt?: string | null;
   issuedAt?: string | null;
@@ -63,21 +63,24 @@ export async function listCharges() {
 export async function createCharge(input: CreateChargeInput, userId: string) {
   const chargeNumber = await nextChargeNumber();
 
-  // Автогенерация номера счёта: <chargeNumber>/<bankAccount.name>
-  const bankAccount = await prisma.bankAccount.findUnique({
-    where: { id: input.bankAccountId },
-    select: { name: true },
-  });
-  const invoiceNumber = `${chargeNumber}/${bankAccount?.name ?? input.bankAccountId}`;
+  // № счёта: chargeNumber/bankAccount.name, или просто chargeNumber если счёт не выбран
+  let invoiceNumber = chargeNumber;
+  if (input.bankAccountId) {
+    const bankAccount = await prisma.bankAccount.findUnique({
+      where: { id: input.bankAccountId },
+      select: { name: true },
+    });
+    invoiceNumber = `${chargeNumber}/${bankAccount?.name ?? input.bankAccountId}`;
+  }
 
   const paidAt = input.paidAt ? new Date(input.paidAt) : null;
 
   const charge = await prisma.charge.create({
     data: {
       chargeNumber,
-      bankAccountId: input.bankAccountId,
+      bankAccountId: input.bankAccountId ?? null,
       invoiceNumber,
-      orderId: input.orderId,
+      orderId: input.orderId ?? null,
       amount: input.amount ?? 0,
       issuedPlanAt: input.issuedPlanAt ? new Date(input.issuedPlanAt) : null,
       issuedAt: input.issuedAt ? new Date(input.issuedAt) : null,
@@ -108,9 +111,13 @@ export async function updateCharge(id: string, patch: UpdateChargeInput, userId:
     ? (patch.paidAt ? new Date(patch.paidAt) : null)
     : existing.paidAt;
 
-  // Заполнение paidAt → paid
+  // Заполнение paidAt → paid; очистка paidAt при статусе paid → to_pay
   let status = patch.status ?? existing.status;
-  if (newPaidAt && !existing.paidAt) status = "paid";
+  if (newPaidAt && !existing.paidAt) {
+    status = "paid";
+  } else if (!newPaidAt && patch.paidAt !== undefined && status === "paid") {
+    status = "to_pay";
+  }
 
   const updated = await prisma.charge.update({
     where: { id },

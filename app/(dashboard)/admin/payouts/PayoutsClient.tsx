@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui-custom/DateInput";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SortableHead } from "@/components/ui-custom/SortableHead";
 import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
@@ -307,11 +308,11 @@ export function PayoutsClient() {
           </Select>
           <div className="flex items-center gap-1">
             <span className="text-xs text-neutral-500">Дата план:</span>
-            <Input type="date" className="h-7 text-xs w-36" value={bulkPlannedPayAt} onChange={(e) => setBulkPlannedPayAt(e.target.value)} />
+            <DateInput className="h-7 text-xs w-36" value={bulkPlannedPayAt} onChange={(e) => setBulkPlannedPayAt(e.target.value)} />
           </div>
           <div className="flex items-center gap-1">
             <span className="text-xs text-neutral-500">Дата оплаты:</span>
-            <Input type="date" className="h-7 text-xs w-36" value={bulkPaidAt} onChange={(e) => setBulkPaidAt(e.target.value)} />
+            <DateInput className="h-7 text-xs w-36" value={bulkPaidAt} onChange={(e) => setBulkPaidAt(e.target.value)} />
           </div>
           <div className="flex items-center gap-1">
             <span className="text-xs text-neutral-500">Источник оплаты:</span>
@@ -467,11 +468,12 @@ export function PayoutsClient() {
                           value={inlineVal}
                           onChange={(e) => setInlineVal(e.target.value)}
                           onBlur={() => commitInlineEdit(r)}
+                          onClick={(e) => { try { (e.target as HTMLInputElement).showPicker(); } catch { /**/ } }}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") commitInlineEdit(r);
                             if (e.key === "Escape") setInlineEdit(null);
                           }}
-                          className="w-full h-6 rounded border border-blue-300 px-1 text-xs bg-blue-50 focus:outline-none"
+                          className="w-full h-6 rounded border border-blue-300 px-1 text-xs bg-blue-50 focus:outline-none cursor-pointer"
                         />
                       ) : (
                         <span className="text-xs text-neutral-600">{formatDateShort(r.plannedPayAt)}</span>
@@ -490,11 +492,12 @@ export function PayoutsClient() {
                           value={inlineVal}
                           onChange={(e) => setInlineVal(e.target.value)}
                           onBlur={() => commitInlineEdit(r)}
+                          onClick={(e) => { try { (e.target as HTMLInputElement).showPicker(); } catch { /**/ } }}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") commitInlineEdit(r);
                             if (e.key === "Escape") setInlineEdit(null);
                           }}
-                          className="w-full h-6 rounded border border-blue-300 px-1 text-xs bg-blue-50 focus:outline-none"
+                          className="w-full h-6 rounded border border-blue-300 px-1 text-xs bg-blue-50 focus:outline-none cursor-pointer"
                         />
                       ) : (
                         <span className="text-xs text-neutral-600">{formatDateShort(r.paidAt)}</span>

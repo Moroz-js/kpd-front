@@ -238,6 +238,8 @@ export async function createExecutor(input: CreateExecutorInput, userId: string)
 export type UpdateExecutorInput = {
   type?: ExecutorType;
   name?: string;
+  email?: string;
+  password?: string;
   companyStatus?: string | null;
   specialty?: string | null;
   contacts?: string | null;
@@ -280,6 +282,18 @@ export async function updateExecutor(id: string, patch: UpdateExecutorInput, use
     await assertCanUnsetResponsible(before.userId);
   }
 
+  const needsAccount = nextType === "permanent" && !before.userId;
+  if (needsAccount) {
+    const email = patch.email?.trim().toLowerCase();
+    if (!email) {
+      throw new Error("Укажите email для создания учётной записи");
+    }
+    const password = patch.password ?? "Welcome2026!";
+    if (password.length < 6) {
+      throw new Error("Пароль не короче 6 символов");
+    }
+  }
+
   const updated = await prisma.$transaction(async (tx) => {
     if (patch.workTypeIds) {
       await tx.executorWorkType.deleteMany({ where: { executorId: id } });
@@ -298,9 +312,30 @@ export async function updateExecutor(id: string, patch: UpdateExecutorInput, use
     const clearResponsible =
       patch.type !== undefined && !canBeResponsible(nextType) && before.isResponsible;
 
+    let linkedUserId: string | undefined;
+    if (needsAccount) {
+      const email = patch.email!.trim().toLowerCase();
+      const existing = await tx.user.findUnique({ where: { email } });
+      if (existing) {
+        throw new Error("Пользователь с таким email уже существует");
+      }
+      const displayName = resolvedName ?? before.name;
+      const user = await tx.user.create({
+        data: {
+          email,
+          password: await hash(patch.password ?? "Welcome2026!", 10),
+          fullName: displayName,
+          role: "executor",
+          isActive: true,
+        },
+      });
+      linkedUserId = user.id;
+    }
+
     return tx.executor.update({
       where: { id },
       data: {
+        ...(linkedUserId && { userId: linkedUserId, accessRevokedAt: null }),
         ...(patch.type !== undefined && { type: nextType }),
         ...(resolvedName !== undefined && { name: resolvedName }),
         ...(patch.type !== undefined &&
@@ -378,6 +413,10 @@ export async function updateExecutor(id: string, patch: UpdateExecutorInput, use
       entityLabel: updated.name,
       changes,
     });
+  }
+
+  if (needsAccount) {
+    await seedOnboardingTasks(id, userId);
   }
 
   return updated;
