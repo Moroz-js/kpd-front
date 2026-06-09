@@ -110,7 +110,7 @@ function isOverdueH(charge: Charge): boolean {
 }
 
 function isMissingM(charge: Charge): boolean {
-  return charge.status === "paid" && !charge.paidAt;
+  return !charge.paidAt && (charge.status === "paid" || isOverdueH(charge));
 }
 
 // ─── Компоненты ───────────────────────────────────────────────────────────────
