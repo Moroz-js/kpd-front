@@ -593,8 +593,11 @@ function ChargeFormDialog({
 
   const isEdit = !!initial;
 
-  // Авто-синхронизация статуса при изменении paidAt
+  const paidAtChangedRef = useRef(false);
+
+  // Авто-синхронизация статуса при изменении paidAt (не при открытии диалога)
   useEffect(() => {
+    if (!paidAtChangedRef.current) { paidAtChangedRef.current = true; return; }
     if (!paidAt) {
       if (status === "paid") setStatus("to_pay");
     } else {

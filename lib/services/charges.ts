@@ -112,11 +112,14 @@ export async function updateCharge(id: string, patch: UpdateChargeInput, userId:
     : existing.paidAt;
 
   // Заполнение paidAt → paid; очистка paidAt при статусе paid → to_pay
+  // Авто-логика срабатывает только если статус не передан явно
   let status = patch.status ?? existing.status;
-  if (newPaidAt && !existing.paidAt) {
-    status = "paid";
-  } else if (!newPaidAt && patch.paidAt !== undefined && status === "paid") {
-    status = "to_pay";
+  if (patch.status === undefined) {
+    if (newPaidAt && !existing.paidAt) {
+      status = "paid";
+    } else if (!newPaidAt && patch.paidAt !== undefined && status === "paid") {
+      status = "to_pay";
+    }
   }
 
   const updated = await prisma.charge.update({
