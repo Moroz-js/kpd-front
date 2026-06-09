@@ -19,16 +19,13 @@ export function ExpandableListCell({ items, className }: Props) {
   const preview = items.join(", ");
 
   return (
-    <div className="min-w-0 w-full overflow-hidden">
+    <div className={cn("min-w-0 overflow-hidden", className)}>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger
           render={
             <button
               type="button"
-              className={cn(
-                "block w-full min-w-0 max-w-full text-left text-xs text-neutral-800 hover:text-blue-700 hover:underline cursor-pointer",
-                className
-              )}
+              className="block w-full min-w-0 max-w-full text-left text-xs text-neutral-800 hover:text-blue-700 hover:underline cursor-pointer"
             >
               <span className="block truncate">{preview}</span>
             </button>
