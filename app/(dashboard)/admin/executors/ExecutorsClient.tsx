@@ -390,7 +390,7 @@ export function ExecutorsClient() {
                 </span>
               </TableHead>
               <TableHead>Тип</TableHead>
-              <TableHead className="max-w-48">Виды работ</TableHead>
+              <TableHead className="w-40 max-w-40">Виды работ</TableHead>
               <TableHead>Специальность</TableHead>
               <TableHead>Проекты</TableHead>
               <SortableHead
@@ -469,8 +469,8 @@ export function ExecutorsClient() {
                   <TableCell>
                     {EXECUTOR_TYPES[normalizeExecutorType(r.type)] ?? r.type}
                   </TableCell>
-                  <TableCell className="max-w-48">
-                    <ExpandableListCell items={r.workTypeNames} className="max-w-48" />
+                  <TableCell className="w-40 max-w-40" style={{ maxWidth: "10rem", width: "10rem" }}>
+                    <ExpandableListCell items={r.workTypeNames} className="max-w-full" />
                   </TableCell>
                   <TableCell className="max-w-32 truncate">
                     {r.specialty ?? "—"}
