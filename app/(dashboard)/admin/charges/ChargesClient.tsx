@@ -37,7 +37,7 @@ type BankAccount = { id: string; name: string };
 type Order = {
   id: string;
   orderNumber: string;
-  description: string;
+  description: string | null;
   project: {
     id: string; name: string;
     client: { id: string; name: string } | null;
@@ -362,7 +362,7 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
           />
           <MultiSelectFilter
             label="Заказ"
-            options={orders.map(o => ({ value: o.id, label: `№${o.orderNumber} ${o.description}` }))}
+            options={orders.map(o => ({ value: o.id, label: `№${o.orderNumber}${o.description ? ` ${o.description}` : ""}` }))}
             value={fOrder}
             onChange={setFOrder}
           />
@@ -664,11 +664,11 @@ function ChargeFormDialog({
             <Label>Заказ</Label>
             <Select value={orderId} onValueChange={(v) => setOrderId(v ?? "")}>
               <SelectTrigger>
-                <SelectValue>{selectedOrder ? `№${selectedOrder.orderNumber} — ${selectedOrder.description}` : "Выберите заказ"}</SelectValue>
+                <SelectValue>{selectedOrder ? `№${selectedOrder.orderNumber}${selectedOrder.description ? ` — ${selectedOrder.description}` : ""}` : "Выберите заказ"}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="">—</SelectItem>
-                {orders.map(o => <SelectItem key={o.id} value={o.id}>№{o.orderNumber} — {o.description}</SelectItem>)}
+                {orders.map(o => <SelectItem key={o.id} value={o.id}>№{o.orderNumber}{o.description ? ` — ${o.description}` : ""}</SelectItem>)}
               </SelectContent>
             </Select>
             {selectedOrder && (
