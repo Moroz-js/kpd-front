@@ -297,8 +297,8 @@ model OtherExpense {
 
 model Order {
   id             String   @id @default(cuid())
-  orderNumber    Int      @unique // автоинкремент от 3000 (см. TDNB-19)
-  description    String
+  orderNumber    String   @unique // З001, З002, ... (см. TDNB-19)
+  description    String?
   projectId      String
   project        Project  @relation(fields: [projectId], references: [id])
   contractNumber String?
@@ -318,7 +318,7 @@ model Charge {
   chargeNumber    String       @unique // H001, H002, ... (см. TDNB-20)
   bankAccountId   String?
   bankAccount     BankAccount? @relation(fields: [bankAccountId], references: [id])
-  invoiceNumber   String       @unique // № счёта (см. TDNB-20)
+  invoiceNumber   String?      @unique // № счёта (см. TDNB-20)
   orderId         String?
   order           Order?       @relation(fields: [orderId], references: [id])
   amount          Float        @default(0)

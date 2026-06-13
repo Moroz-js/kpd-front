@@ -17,6 +17,7 @@ export type ClientListRow = {
   company: string;
   department: string;
   status: string;
+  projects: { id: string; name: string }[];
   projectNames: string[];
   projectsStatus: "has_active" | "all_archived" | "none";
   revenue: number;
@@ -71,6 +72,7 @@ export async function listClients(): Promise<ClientListRow[]> {
       department: c.department,
       status: c.status,
       projectNames: sortedProjects.map((p) => p.name),
+      projects: sortedProjects.map((p) => ({ id: p.id, name: p.name })),
       projectsStatus,
       revenue,
       createdAt: c.createdAt,

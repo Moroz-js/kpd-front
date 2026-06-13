@@ -6,10 +6,11 @@ import { cn } from "@/lib/utils";
 
 type Props = {
   items: string[];
+  renderItem?: (item: string) => React.ReactNode;
   className?: string;
 };
 
-export function ExpandableListCell({ items, className }: Props) {
+export function ExpandableListCell({ items, renderItem, className }: Props) {
   const [open, setOpen] = React.useState(false);
 
   if (items.length === 0) {
@@ -34,7 +35,9 @@ export function ExpandableListCell({ items, className }: Props) {
       <PopoverContent className="w-80 max-h-72 overflow-y-auto p-3" align="start">
         <ul className="space-y-1.5 text-sm text-neutral-800">
           {items.map((item) => (
-            <li key={item}>{item}</li>
+            <li key={item}>
+              {renderItem ? renderItem(item) : item}
+            </li>
           ))}
         </ul>
       </PopoverContent>

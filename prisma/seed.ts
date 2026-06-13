@@ -349,14 +349,15 @@ async function seedOrders() {
     "База знаний":          ["Внутренняя БЗ — поддержка и развитие"],
   };
   const last = await prisma.order.findFirst({ orderBy: { orderNumber: "desc" } });
-  let n = last ? last.orderNumber + 1 : 3000;
+  const lastNum = last ? (parseInt(last.orderNumber.replace(/\D/g, "")) || 0) : 2999;
+  let n = lastNum < 3000 ? 3000 : lastNum + 1;
   for (const p of projects) {
     const descList = descs[p.shortName];
     if (!descList) continue;
     for (const desc of descList) {
       const ex = await prisma.order.findFirst({ where: { projectId: p.id, description: desc } });
       if (ex) continue;
-      await prisma.order.create({ data: { orderNumber: n++, description: desc, projectId: p.id, status: p.status === "archived" ? "archived" : "active" } });
+      await prisma.order.create({ data: { orderNumber: `З${n++}`, description: desc, projectId: p.id, status: p.status === "archived" ? "archived" : "active" } });
     }
   }
 }

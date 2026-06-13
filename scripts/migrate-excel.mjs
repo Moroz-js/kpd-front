@@ -441,10 +441,7 @@ function extractOrders(wb, projectMap) {
 
   for (const r of rows) {
     const raw = str(r["Номер заказа"]);
-    if (!raw) continue;
-    // "З001" → 1, "З3001" → 3001
-    const orderNumber = parseInt(raw.replace(/[^\d]/g, ""));
-    if (isNaN(orderNumber)) continue;
+    if (!raw || !raw.startsWith("З")) continue;
 
     const projectName  = str(r["Проект"]);
     const projectId = projectName ? (projectMap[normKey(projectName)] ?? null) : null;
@@ -452,8 +449,8 @@ function extractOrders(wb, projectMap) {
       warnings.push(`Заказ ${raw}: проект "${projectName}" не найден`);
 
     orders.push({
-      orderNumber,
-      description: str(r["Описание заказа"]) ?? "(без описания)",
+      orderNumber: raw,        // сохраняем "З001" как есть
+      description: str(r["Описание заказа"]) || null,
       contractNumber: str(r["Номер договора/допсоглашения"]),
       status: mapV(str(r["Статус"]), STATUS_RU, "active"),
       projectId,
@@ -469,18 +466,29 @@ function extractCharges(wb, bankMap, orderMap) {
   const charges = [];
   const warnings = [];
 
+  // Предварительный подсчёт: одинаковый invoiceNumber у нескольких начислений → null (один счёт, несколько строк)
+  const invCount = {};
+  for (const r of rows) {
+    const rawInv = r["№ счета"];
+    if (rawInv != null && rawInv !== "") {
+      const key = typeof rawInv === "number" ? String(Math.round(rawInv)) : String(rawInv).trim();
+      if (key) invCount[key] = (invCount[key] ?? 0) + 1;
+    }
+  }
+
   for (const r of rows) {
     const chargeNumber = str(r["Номер Начисления"]);
     if (!chargeNumber) continue;
 
-    // invoiceNumber: число → строка, null → авто
+    // invoiceNumber: пусто → null, дубль (один счёт на несколько позиций) → null
     const rawInv = r["№ счета"];
-    const invoiceNumber =
+    const rawKey =
       rawInv == null || rawInv === ""
-        ? `AUTO-${chargeNumber}`
+        ? null
         : typeof rawInv === "number"
         ? String(Math.round(rawInv))
-        : String(rawInv).trim();
+        : String(rawInv).trim() || null;
+    const invoiceNumber = rawKey && invCount[rawKey] === 1 ? rawKey : null;
 
     const bankName = str(r["Банковский счет"]);
     if (bankName && !bankMap[normKey(bankName)])
@@ -511,6 +519,44 @@ function extractCharges(wb, bankMap, orderMap) {
     });
   }
   return { charges, warnings };
+}
+
+function extractSpendingPlan(wb, projectMap, executorMap, workTypeMap) {
+  const rows = readSheet(wb, "БД_План_расходов_полный", { identifyBy: "Год оплаты - план" });
+  const lines = [];
+  const warnings = [];
+
+  for (const r of rows) {
+    const yearRaw     = r["Год оплаты - план"];
+    const weekRaw     = str(r["Неделя оплаты - план"]);
+    const projectName = str(r["Проект"]);
+    const amount      = num(r["Сумма"]) ?? 0;
+    const workTypeName = str(r["Вид работ"]);
+    const executorName = str(r["Исполнитель"]);
+
+    if (!yearRaw || !projectName || !amount) continue;
+
+    const year = parseInt(String(yearRaw));
+    const week = weekRaw ? parseInt(weekRaw.replace(/\D/g, "")) : 0;
+    if (!year || !week) continue;
+
+    if (!projectMap[normKey(projectName)])
+      warnings.push(`План расходов: проект "${projectName}" не найден`);
+    if (workTypeName && !workTypeMap[normKey(workTypeName)])
+      warnings.push(`План расходов: вид работ "${workTypeName}" не найден`);
+    if (executorName && !executorMap[normKey(executorName)])
+      warnings.push(`План расходов: исполнитель "${executorName}" не найден`);
+
+    lines.push({
+      year,
+      week,
+      amount,
+      _projectName:  projectName,
+      _workTypeName: workTypeName,
+      _executorName: executorName,
+    });
+  }
+  return { lines, warnings };
 }
 
 function extractWorks(wb, executorMap, projectMap, workTypeMap) {
@@ -809,6 +855,32 @@ function previewPayments({ payments, warnings }) {
   if (warnings.length > 5) console.log(`     ⋯ ещё ${warnings.length-5} предупреждений`);
 }
 
+function previewSpendingPlan({ lines, warnings }) {
+  section("11. ПЛАН РАСХОДОВ (полный)  ←  БД_План_расходов_полный");
+  const total = lines.reduce((s, l) => s + l.amount, 0);
+  console.log(`  → spending_plan_lines: ${lines.length} строк   сумма: ${total.toLocaleString("ru-RU")} ₽`);
+
+  const poka = lines.filter((l) => (l._executorName ?? "").toLowerCase().includes("пока не известен")).length;
+  const noWt = lines.filter((l) => !l._workTypeName).length;
+  console.log(`  "Пока не известен": ${poka}  |  Без вида работ: ${noWt}`);
+
+  printTable(lines.slice(0, PREVIEW_ROWS), [
+    { key: "year",          label: "год",           max: 6  },
+    { key: "week",          label: "нед",           max: 4  },
+    { key: "_projectName",  label: "проект →",      max: 38 },
+    { key: "_workTypeName", label: "вид работ →",   max: 20 },
+    { key: "_executorName", label: "исполнитель →", max: 26 },
+    { key: "amount",        label: "сумма ₽",       max: 12 },
+  ], { title: "spending_plan_lines", total: lines.length });
+
+  if (warnings.length > 0) {
+    const shown = warnings.slice(0, 8);
+    console.log(`\n  ⚠️  Несовпадения (${warnings.length}):`);
+    for (const w of shown) console.log(`     · ${w}`);
+    if (warnings.length > 8) console.log(`     ⋯ ещё ${warnings.length - 8}`);
+  }
+}
+
 function printSummary(all) {
   section("ИТОГО К ИМПОРТУ");
   const rows = [
@@ -825,6 +897,7 @@ function printSummary(all) {
     { e: "works",               n: all.works.works.length,          note: "выставленные работы" },
     { e: "other_expenses",      n: all.works.otherExpenses.length,  note: "прочие траты" },
     { e: "payments",            n: all.payments.payments.length,    note: "выплаты" },
+    { e: "spending_plan_lines", n: all.spendingPlan.lines.length,   note: "план расходов (полный)" },
   ];
   printTable(rows, [
     { key: "e",    label: "Таблица",   max: 26 },
@@ -841,6 +914,7 @@ function printSummary(all) {
     { section: "charges",       items: all.charges.warnings    ?? [] },
     { section: "works",         items: all.works.warnings      ?? [] },
     { section: "payments",      items: all.payments.warnings   ?? [] },
+    { section: "spendingPlan",  items: all.spendingPlan.warnings ?? [] },
   ];
 
   const totalWarnings = allWarnings.reduce((s, g) => s + g.items.length, 0);
@@ -954,11 +1028,13 @@ async function main() {
   const chargesData   = extractCharges(wb, bankMap, orderMap);
   const worksData     = extractWorks(wb, executorMap, projectMap, workTypeMap);
   const paymentsData  = extractPayments(wb, executorMap, bankMap);
+  const spendingPlanData = extractSpendingPlan(wb, projectMap, executorMap, workTypeMap);
 
   const all = { users, bankAccounts, workTypes, clients,
     projects: projectsData, executors: executorsData,
     orders: ordersData, charges: chargesData,
-    works: worksData, payments: paymentsData };
+    works: worksData, payments: paymentsData,
+    spendingPlan: spendingPlanData };
 
   // ── Preview ─────────────────────────────────────────────────────────────────
   previewUsers(users);
@@ -971,6 +1047,7 @@ async function main() {
   previewCharges(chargesData);
   previewWorks(worksData);
   previewPayments(paymentsData);
+  previewSpendingPlan(spendingPlanData);
   printSummary(all);
 
   // ── Реальная запись ──────────────────────────────────────────────────────────
@@ -1022,7 +1099,7 @@ async function main() {
 // ─── ОЧИСТКА БД (обратный порядок FK) ────────────────────────────────────────
 
 async function dropAll(prisma) {
-  console.log("  [0/12] Очистка БД...");
+  console.log("  [0/13] Очистка БД...");
   const dbUrl = process.env.DATABASE_URL ?? "";
   const isPg = dbUrl.startsWith("postgresql://") || dbUrl.startsWith("postgres://");
 
@@ -1053,14 +1130,14 @@ async function dropAll(prisma) {
     await prisma.bankAccount.deleteMany();
     await prisma.user.deleteMany();
   }
-  console.log("  [0/12] БД очищена ✓");
+  console.log("  [0/13] БД очищена ✓");
 }
 
 // ─── РЕАЛЬНАЯ ЗАПИСЬ (только при --run) ──────────────────────────────────────
 
 async function runMigration(prisma, all) {
   // 1. users
-  console.log("  [1/12] users...");
+  console.log("  [1/13] users...");
   const userIds = {};
   for (const u of all.users) {
     const r = await prisma.user.upsert({
@@ -1072,7 +1149,7 @@ async function runMigration(prisma, all) {
   }
 
   // 2. bank_accounts
-  console.log("  [2/12] bank_accounts...");
+  console.log("  [2/13] bank_accounts...");
   const bankIds = {};
   for (const b of all.bankAccounts) {
     const r = await prisma.bankAccount.upsert({
@@ -1084,7 +1161,7 @@ async function runMigration(prisma, all) {
   }
 
   // 3. work_types
-  console.log("  [3/12] work_types...");
+  console.log("  [3/13] work_types...");
   const wtIds = {};
   for (const w of all.workTypes) {
     const r = await prisma.workType.upsert({
@@ -1096,7 +1173,7 @@ async function runMigration(prisma, all) {
   }
 
   // 4. clients
-  console.log("  [4/12] clients...");
+  console.log("  [4/13] clients...");
   const clientIds = {};
   for (const c of all.clients) {
     const r = await prisma.client.upsert({
@@ -1108,7 +1185,7 @@ async function runMigration(prisma, all) {
   }
 
   // 5. projects
-  console.log("  [5/12] projects...");
+  console.log("  [5/13] projects...");
   const projectIds = {};
   for (const p of all.projects.projects) {
     const clientId = p._clientName ? (clientIds[normKey(p._clientName)] ?? null) : null;
@@ -1122,7 +1199,7 @@ async function runMigration(prisma, all) {
   }
 
   // 6. executors
-  console.log("  [6/12] executors + work_types + project_executors...");
+  console.log("  [6/13] executors + work_types + project_executors...");
   const executorIds = {};
   for (const e of all.executors.executors) {
     const existing = await prisma.executor.findFirst({ where: { name: e.name } });
@@ -1164,7 +1241,7 @@ async function runMigration(prisma, all) {
   }
 
   // 7. orders
-  console.log("  [7/12] orders...");
+  console.log("  [7/13] orders...");
   const orderIds = {};
   for (const o of all.orders.orders) {
     const projectId = o._projectName ? (projectIds[normKey(o._projectName)] ?? null) : null;
@@ -1178,10 +1255,12 @@ async function runMigration(prisma, all) {
   }
 
   // 8. charges
-  console.log("  [8/12] charges...");
+  console.log("  [8/13] charges...");
   for (const c of all.charges.charges) {
     const exists = await prisma.charge.findFirst({
-      where: { OR: [{ chargeNumber: c.chargeNumber }, { invoiceNumber: c.invoiceNumber }] },
+      where: c.invoiceNumber
+        ? { OR: [{ chargeNumber: c.chargeNumber }, { invoiceNumber: c.invoiceNumber }] }
+        : { chargeNumber: c.chargeNumber },
     });
     if (exists) continue;
     await prisma.charge.create({
@@ -1197,7 +1276,7 @@ async function runMigration(prisma, all) {
   }
 
   // 9. payments
-  console.log("  [9/12] payments...");
+  console.log("  [9/13] payments...");
   const paymentIds = {};
   for (const p of all.payments.payments) {
     const executorId = p._executorName ? (executorIds[normKey(p._executorName)] ?? null) : null;
@@ -1215,7 +1294,7 @@ async function runMigration(prisma, all) {
   }
 
   // 10. works
-  console.log("  [10/12] works...");
+  console.log("  [10/13] works...");
   for (const w of all.works.works) {
     const executorId = w._executorName ? (executorIds[normKey(w._executorName)] ?? null) : null;
     const projectId  = w._projectName  ? (projectIds[normKey(w._projectName)]  ?? null) : null;
@@ -1230,7 +1309,7 @@ async function runMigration(prisma, all) {
   }
 
   // 11. other_expenses
-  console.log("  [11/12] other_expenses...");
+  console.log("  [11/13] other_expenses...");
   const defaultUserId = Object.values(userIds)[0];
   for (const o of all.works.otherExpenses) {
     const executorId = o._executorName ? (executorIds[normKey(o._executorName)] ?? null) : null;
@@ -1245,8 +1324,27 @@ async function runMigration(prisma, all) {
     });
   }
 
-  // 12. admin user — всегда создаём/обновляем
-  console.log("  [12/12] admin user...");
+  // 12. spending_plan_lines
+  console.log("  [12/13] spending_plan_lines...");
+  let spSkipped = 0;
+  for (const l of all.spendingPlan.lines) {
+    const projectId  = l._projectName  ? (projectIds[normKey(l._projectName)]  ?? null) : null;
+    const executorId = l._executorName ? (executorIds[normKey(l._executorName)] ?? null) : null;
+    const workTypeId = l._workTypeName ? (wtIds[normKey(l._workTypeName)]       ?? null) : null;
+    if (!projectId || !executorId || !workTypeId) { spSkipped++; continue; }
+    await prisma.spendingPlanLine.create({
+      data: {
+        projectId, executorId, workTypeId,
+        year: l.year, week: l.week, amount: l.amount,
+        createdById: defaultUserId,
+      },
+    });
+  }
+  if (spSkipped) console.log(`     ⚠️  Пропущено ${spSkipped} строк (не найден проект/исполнитель/вид работ)`);
+  console.log(`     ✓ ${all.spendingPlan.lines.length - spSkipped} строк плана расходов загружено`);
+
+  // 13. admin user — всегда создаём/обновляем
+  console.log("  [13/13] admin user...");
   const bcrypt = await import("bcryptjs");
   const adminHash = await bcrypt.hash("Password123!", 10);
   await prisma.user.upsert({
@@ -1254,7 +1352,7 @@ async function runMigration(prisma, all) {
     update: { fullName: "Админ Админов", role: "admin", isActive: true },
     create: { email: "admin@kpd.local", password: adminHash, fullName: "Админ Админов", role: "admin", isActive: true },
   });
-  console.log("  [12/12] admin@kpd.local / Password123! ✓");
+  console.log("  [13/13] admin@kpd.local / Password123! ✓");
 }
 
 main().catch((err) => {

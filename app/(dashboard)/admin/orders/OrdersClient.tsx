@@ -32,7 +32,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 type Row = {
   id: string;
-  orderNumber: number;
+  orderNumber: string;
   description: string;
   contractNumber: string | null;
   status: string;

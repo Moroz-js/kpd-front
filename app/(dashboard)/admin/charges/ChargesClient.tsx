@@ -36,7 +36,7 @@ import { useTableRowSelection } from "@/lib/useTableRowSelection";
 type BankAccount = { id: string; name: string };
 type Order = {
   id: string;
-  orderNumber: number;
+  orderNumber: string;
   description: string;
   project: {
     id: string; name: string;

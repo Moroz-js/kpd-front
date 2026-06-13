@@ -4,10 +4,12 @@ import * as React from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
 import { Plus, Pencil, Archive, ArchiveRestore } from "lucide-react";
+import Link from "next/link";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import { ConfirmDialog } from "@/components/ui-custom/ConfirmDialog";
+import { ExpandableListCell } from "@/components/ui-custom/ExpandableListCell";
 import { CLIENT_DEPARTMENTS, ENTITY_STATUSES } from "@/lib/statuses";
 import { formatMoney, formatDate } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -24,6 +26,7 @@ type Row = {
   company: string;
   department: string;
   status: string;
+  projects: { id: string; name: string }[];
   projectNames: string[];
   projectsStatus: "has_active" | "all_archived" | "none";
   revenue: number;
@@ -146,7 +149,7 @@ export function ClientsClient() {
               <SortableHead field="name" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
                 Клиент
               </SortableHead>
-              <TableHead>Проекты клиента</TableHead>
+              <TableHead className="w-48 max-w-48">Проекты клиента</TableHead>
               <TableHead>Статус проектов</TableHead>
               <SortableHead
                 field="revenue"
@@ -180,8 +183,23 @@ export function ClientsClient() {
               rows.map((r) => (
                 <TableRow key={r.id} className={r.status === "archived" ? "bg-neutral-100 text-neutral-400" : ""}>
                   <TableCell className="font-medium">{r.name}</TableCell>
-                  <TableCell className="text-xs">
-                    {r.projectNames.join(", ") || "—"}
+                  <TableCell className="w-48 max-w-48" style={{ maxWidth: "12rem", width: "12rem" }}>
+                    <ExpandableListCell
+                      items={r.projects.map((p) => p.name)}
+                      renderItem={(name) => {
+                        const p = r.projects.find((x) => x.name === name);
+                        return p ? (
+                          <Link
+                            href={`/admin/projects/${p.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hover:underline text-blue-600"
+                          >
+                            {name}
+                          </Link>
+                        ) : name;
+                      }}
+                    />
                   </TableCell>
                   <TableCell>
                     <StatusBadge

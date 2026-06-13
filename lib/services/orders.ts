@@ -1,7 +1,8 @@
 /**
  * OrderService (TDNB-19).
  *
- * orderNumber — целочисленный, нумерация с 3000 (см. §6.1).
+ * orderNumber — строка формата "З001", "З002", ...
+ * Новые заказы нумеруются с З3000.
  * Используем транзакцию против race conditions.
  */
 
@@ -12,8 +13,8 @@ const ORDER_NUMBER_START = 3000;
 
 export type OrderListRow = {
   id: string;
-  orderNumber: number;
-  description: string;
+  orderNumber: string;
+  description: string | null;
   contractNumber: string | null;
   status: string;
   projectId: string;
@@ -66,7 +67,9 @@ export async function createOrder(input: CreateOrderInput, userId: string) {
       orderBy: { orderNumber: "desc" },
       select: { orderNumber: true },
     });
-    const nextNumber = last ? last.orderNumber + 1 : ORDER_NUMBER_START;
+    const lastNum = last ? (parseInt(last.orderNumber.replace(/\D/g, "")) || 0) : ORDER_NUMBER_START - 1;
+    const nextNum = lastNum < ORDER_NUMBER_START ? ORDER_NUMBER_START : lastNum + 1;
+    const nextNumber = `З${nextNum}`;
     return tx.order.create({
       data: {
         orderNumber: nextNumber,
