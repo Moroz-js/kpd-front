@@ -32,7 +32,7 @@ type Row = {
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json() as Promise<Row[]>);
 
-type SortField = "name" | "segment" | "projectCount" | "issuedWorkCount" | "status";
+type SortField = "name" | "segment" | "status";
 type SortDir = "asc" | "desc";
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -179,25 +179,6 @@ export function WorkTypesClient() {
               <SortableHead field="segment" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
                 Сегмент
               </SortableHead>
-              <TableHead>Использовано в проектах</TableHead>
-              <SortableHead
-                field="projectCount"
-                sortBy={sort.field}
-                sortDir={sort.dir}
-                onSort={handleSort}
-                className="text-right"
-              >
-                Кол-во проектов
-              </SortableHead>
-              <SortableHead
-                field="issuedWorkCount"
-                sortBy={sort.field}
-                sortDir={sort.dir}
-                onSort={handleSort}
-                className="text-right"
-              >
-                Кол-во работ
-              </SortableHead>
               <SortableHead field="status" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
                 Статус
               </SortableHead>
@@ -207,13 +188,13 @@ export function WorkTypesClient() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-neutral-500 py-8">
+                <TableCell colSpan={4} className="text-center text-neutral-500 py-8">
                   Загрузка...
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-neutral-500 py-8">
+                <TableCell colSpan={4} className="text-center text-neutral-500 py-8">
                   Нет видов работ
                 </TableCell>
               </TableRow>
@@ -225,11 +206,6 @@ export function WorkTypesClient() {
                     {r.isUnused && <span className="ml-1.5 text-[10px] text-neutral-400 font-normal">(не используется)</span>}
                   </TableCell>
                   <TableCell>{r.segment}</TableCell>
-                  <TableCell className="max-w-64 truncate" title={r.projectNames.join(", ")}>
-                    {r.projectNames.join(", ") || "—"}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">{r.projectCount}</TableCell>
-                  <TableCell className="text-right tabular-nums">{r.issuedWorkCount}</TableCell>
                   <TableCell>
                     <StatusBadge dict={ENTITY_STATUSES} value={r.status} />
                   </TableCell>
