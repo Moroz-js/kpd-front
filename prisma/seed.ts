@@ -1033,7 +1033,7 @@ async function seedCharges() {
     status: string; paymentPurpose: string;
   };
 
-  const byProject: Record<string, { id: string; description: string }[]> = {};
+  const byProject: Record<string, { id: string; description: string | null }[]> = {};
   for (const o of orders) {
     if (!byProject[o.project.shortName]) byProject[o.project.shortName] = [];
     byProject[o.project.shortName].push({ id: o.id, description: o.description });
