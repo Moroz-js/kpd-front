@@ -203,9 +203,13 @@ export function ExecutorWizard({
                     value={companyStatus || "__none__"}
                     onValueChange={(v) => setCompanyStatus(v === "__none__" ? "" : (v ?? ""))}
                   >
-                    <SelectTrigger id="companyStatus">
-                      <SelectValue placeholder="— Не задан —" />
-                    </SelectTrigger>
+                  <SelectTrigger id="companyStatus">
+                    <SelectValue>
+                      {companyStatus
+                        ? (EXECUTOR_COMPANY_STATUSES[companyStatus as keyof typeof EXECUTOR_COMPANY_STATUSES] ?? companyStatus)
+                        : "— Не задан —"}
+                    </SelectValue>
+                  </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__none__">— Не задан —</SelectItem>
                       {Object.entries(EXECUTOR_COMPANY_STATUSES).map(([v, l]) => (
@@ -249,7 +253,11 @@ export function ExecutorWizard({
                 onValueChange={(v) => setResponsibleUserId(v === "__none__" ? "" : (v ?? ""))}
               >
                 <SelectTrigger id="responsible">
-                  <SelectValue placeholder="— Не задан —" />
+                  <SelectValue>
+                    {responsibleUserId
+                      ? (responsibles.find((r) => r.id === responsibleUserId)?.fullName ?? "— Не задан —")
+                      : "— Не задан —"}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">— Не задан —</SelectItem>
@@ -271,7 +279,11 @@ export function ExecutorWizard({
                 onValueChange={(v) => setDefaultBankAccountId(v === "__none__" ? "" : (v ?? ""))}
               >
                 <SelectTrigger id="defaultBank">
-                  <SelectValue placeholder="— Не задан —" />
+                  <SelectValue>
+                    {defaultBankAccountId
+                      ? (bankAccounts.find((b) => b.id === defaultBankAccountId)?.name ?? "— Не задан —")
+                      : "— Не задан —"}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">— Не задан —</SelectItem>
