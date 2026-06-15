@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { isAdmin, isResponsible } from "@/lib/permissions";
+import { isAdmin } from "@/lib/permissions";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
 import {
@@ -12,7 +12,7 @@ import {
 export async function GET(req: NextRequest) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!isAdmin(user) && !isResponsible(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!isAdmin(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const yearParam = req.nextUrl.searchParams.get("year");
   const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
@@ -47,7 +47,7 @@ const putSchema = z.object({
 export async function PUT(req: NextRequest) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!isAdmin(user) && !isResponsible(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!isAdmin(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await req.json().catch(() => null);
   const parsed = putSchema.safeParse(body);
@@ -82,7 +82,7 @@ const deleteSchema = z.object({
 export async function DELETE(req: NextRequest) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!isAdmin(user) && !isResponsible(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!isAdmin(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await req.json().catch(() => null);
   const parsed = deleteSchema.safeParse(body);

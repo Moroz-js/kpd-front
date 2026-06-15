@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { isAdmin, isResponsible } from "@/lib/permissions";
+import { isAdmin } from "@/lib/permissions";
 import { prisma } from "@/lib/db";
 import { getISOWeek, getISOWeekYear, getISOWeeksInYear, isoWeekStart } from "@/lib/iso-weeks";
 
@@ -19,7 +19,7 @@ function issuedWeekPF(r: { paidAt: Date | null; plannedPayAt: Date | null }) {
 export async function GET(req: NextRequest) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!isAdmin(user) && !isResponsible(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!isAdmin(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const yearParam = req.nextUrl.searchParams.get("year");
   const year = yearParam ? parseInt(yearParam) : new Date().getFullYear();

@@ -93,9 +93,8 @@ function buildNavGroups({
 
   const items: NavItem[] = [];
 
-  // PM: проекты и кэшфлоу (только при наличии проектов)
+  // PM: только свои проекты (кэшфлоу — admin-only, PM смотрит его внутри проекта)
   if (isPm && hasProjects) {
-    items.push({ label: "Кэшфлоу", href: "/responsible/cashflow", icon: TrendingUp });
     items.push({ label: "Мои проекты", href: "/responsible/projects", icon: FolderOpen });
   }
 
