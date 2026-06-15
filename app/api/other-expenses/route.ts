@@ -1,15 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { isAdmin } from "@/lib/permissions";
+import { isAdmin, isResponsible, canAccessOtherExpenses } from "@/lib/permissions";
 import { prisma } from "@/lib/db";
 import { createOtherExpense, listOtherExpenses } from "@/lib/services/other-expenses";
 import { prismaErrorMessage } from "@/lib/prisma-errors";
 import { z } from "zod";
-
-function canAccess(user: Awaited<ReturnType<typeof getSessionUser>>) {
-  if (!user) return false;
-  return user.role === "admin" || user.role === "responsible";
-}
 
 const createSchema = z.object({
   projectId: z.string().min(1),
@@ -30,14 +25,16 @@ const createSchema = z.object({
 
 export async function GET(_req: NextRequest) {
   const user = await getSessionUser();
-  if (!user || !canAccess(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  const data = await listOtherExpenses();
+  if (!user || !canAccessOtherExpenses(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  // Постоянный исполнитель видит только свои строки (создатель/ответственный).
+  const scopeUserId = isAdmin(user) || isResponsible(user) ? undefined : user.id;
+  const data = await listOtherExpenses({ scopeUserId });
   return NextResponse.json(data);
 }
 
 export async function POST(req: NextRequest) {
   const user = await getSessionUser();
-  if (!user || !canAccess(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!user || !canAccessOtherExpenses(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   if (!user.id) return NextResponse.json({ error: "Сессия недействительна" }, { status: 401 });
 
   const body = await req.json().catch(() => null);

@@ -34,8 +34,16 @@ export type UpdateOtherExpenseInput = Partial<Omit<CreateOtherExpenseInput, "res
 
 // ─── List ─────────────────────────────────────────────────────────────────────
 
-export async function listOtherExpenses() {
+export async function listOtherExpenses(opts?: { scopeUserId?: string }) {
   return prisma.otherExpense.findMany({
+    where: opts?.scopeUserId
+      ? {
+          OR: [
+            { createdById: opts.scopeUserId },
+            { responsibleUserId: opts.scopeUserId },
+          ],
+        }
+      : undefined,
     include: {
       project: { select: { id: true, name: true, shortName: true } },
       executor: { select: { id: true, name: true } },

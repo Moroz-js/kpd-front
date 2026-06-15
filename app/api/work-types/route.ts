@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
-import { isAdmin } from "@/lib/permissions";
+import { isAdmin, canViewExecutorsList } from "@/lib/permissions";
 import { createWorkType, listWorkTypes } from "@/lib/services/workTypes";
 
 export async function GET(req: Request) {
@@ -11,8 +11,9 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const statusFilter = searchParams.get("status");
 
-  // Non-admin may only fetch active work types (for dropdowns)
-  if (!isAdmin(me) && statusFilter !== "active") {
+  // Non-admin may only fetch active work types (for dropdowns).
+  // PM/постоянный исполнитель управляют исполнителями — им нужен полный список.
+  if (!isAdmin(me) && statusFilter !== "active" && !canViewExecutorsList(me)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

@@ -15,16 +15,33 @@ export default async function DashboardLayout({
   const role = user.role as string;
   const fullName = user.fullName as string;
   const userId = user.id as string;
+  const executorId = (user.executorId as string | null) ?? null;
+  const executorType = (user.executorType as string | null) ?? null;
+  const isResponsibleFlag = user.isResponsible === true;
+  const responsibleActive = user.responsibleActive !== false;
+
+  const isPm =
+    role === "responsible" ||
+    (role === "executor" && isResponsibleFlag && responsibleActive);
+  const isPermanentExecutor = role === "executor" && executorType === "permanent";
+  const hasProfile = !!executorId;
 
   let hasProjects = true;
-  if (role === "responsible") {
+  if (isPm) {
     const count = await prisma.project.count({ where: { responsibleUserId: userId } });
     hasProjects = count > 0;
   }
 
   return (
     <div className="flex h-screen overflow-hidden bg-neutral-50">
-      <Sidebar role={role} fullName={fullName} hasProjects={hasProjects} />
+      <Sidebar
+        role={role}
+        fullName={fullName}
+        hasProjects={hasProjects}
+        isPm={isPm}
+        isPermanentExecutor={isPermanentExecutor}
+        hasProfile={hasProfile}
+      />
       <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden bg-neutral-50">
         <div className="p-6">{children}</div>
       </main>

@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
-import { isAdmin } from "@/lib/permissions";
+import { canManageExecutors, canViewExecutorsList } from "@/lib/permissions";
 import { createExecutor, listExecutors } from "@/lib/services/executors";
 
 export async function GET() {
   const me = await getSessionUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!isAdmin(me)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!canViewExecutorsList(me)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   return NextResponse.json(await listExecutors());
 }
 
@@ -39,7 +39,7 @@ const createSchema = z.union([permanentSchema, namedSchema]);
 export async function POST(req: Request) {
   const me = await getSessionUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!isAdmin(me)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!canManageExecutors(me)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await req.json().catch(() => null);
   const parsed = createSchema.safeParse(body);

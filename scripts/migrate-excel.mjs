@@ -12,11 +12,35 @@ import { createRequire } from "module";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
+import { execSync } from "child_process";
 
 const require = createRequire(import.meta.url);
 const XLSX = require("xlsx");
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// ─── PROVIDER SWITCH ─────────────────────────────────────────────────────────
+
+function switchSchemaProvider(provider, { generate = true } = {}) {
+  const schemaPath = path.resolve(__dirname, "../prisma/schema.prisma");
+  let schema = fs.readFileSync(schemaPath, "utf8");
+  const updated = schema.replace(
+    /(datasource db \{[\s\S]*?provider\s*=\s*)"(sqlite|postgresql)"/,
+    `$1"${provider}"`
+  );
+  if (updated !== schema) {
+    fs.writeFileSync(schemaPath, updated);
+    if (generate) {
+      console.log(`  [prisma] provider переключён → ${provider}, генерирую клиент...`);
+      execSync("npx prisma generate", {
+        cwd: path.resolve(__dirname, ".."),
+        stdio: "inherit",
+      });
+    } else {
+      console.log(`  [prisma] provider восстановлен → ${provider} (без regenerate)`);
+    }
+  }
+}
 
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 
@@ -476,9 +500,16 @@ function extractCharges(wb, bankMap, orderMap) {
     }
   }
 
+  const seenCharge = new Set();
+  const seenInvoice = new Set();
+
   for (const r of rows) {
     const chargeNumber = str(r["Номер Начисления"]);
     if (!chargeNumber) continue;
+    if (seenCharge.has(chargeNumber)) {
+      warnings.push(`Дубль chargeNumber "${chargeNumber}" — пропущен`);
+      continue;
+    }
 
     // invoiceNumber: пусто → null, дубль (один счёт на несколько позиций) → null
     const rawInv = r["№ счета"];
@@ -500,6 +531,13 @@ function extractCharges(wb, bankMap, orderMap) {
       warnings.push(`Начисление ${chargeNumber}: заказ "${orderRef}" не найден`);
 
     const rawStatus = str(r["Статус"]);
+    if (invoiceNumber && seenInvoice.has(invoiceNumber)) {
+      warnings.push(`Начисление ${chargeNumber}: дубль invoiceNumber "${invoiceNumber}" — пропущен`);
+      continue;
+    }
+    seenCharge.add(chargeNumber);
+    if (invoiceNumber) seenInvoice.add(invoiceNumber);
+
     charges.push({
       chargeNumber,
       invoiceNumber,
@@ -1063,10 +1101,18 @@ async function main() {
 
     console.log("\n  Начинаем запись в БД...");
 
-    // Для NeonDB используем pg-адаптер с прямым URL
-    let prisma;
     const dbUrl = process.env.DATABASE_URL ?? "";
-    if (dbUrl.startsWith("postgresql://") || dbUrl.startsWith("postgres://")) {
+    const isPostgres = dbUrl.startsWith("postgresql://") || dbUrl.startsWith("postgres://");
+
+    // Регистрируем восстановление провайдера при выходе процесса
+    if (isPostgres) {
+      switchSchemaProvider("postgresql");
+      process.on("exit", () => switchSchemaProvider("sqlite", { generate: false }));
+    }
+
+    // NeonDB через WebSocket-адаптер (прямой :5432 недоступен)
+    let prisma;
+    if (isPostgres) {
       const { PrismaClient } = await import("@prisma/client");
       const { Pool, neonConfig } = await import("@neondatabase/serverless").catch(() => null) ?? {};
       if (Pool && neonConfig) {
@@ -1078,7 +1124,6 @@ async function main() {
         const adapter = new PrismaNeon(pool);
         prisma = new PrismaClient({ adapter });
       } else {
-        const { PrismaClient } = await import("@prisma/client");
         prisma = new PrismaClient();
       }
     } else {
@@ -1108,7 +1153,7 @@ async function dropAll(prisma) {
     await prisma.$executeRawUnsafe(`
       TRUNCATE TABLE
         works, other_expenses, payments,
-        charges, orders,
+        charges, orders, spending_plan_lines,
         project_executors, executor_work_types, executors,
         projects, clients,
         work_types, bank_accounts, users
@@ -1121,6 +1166,7 @@ async function dropAll(prisma) {
     await prisma.payment.deleteMany();
     await prisma.charge.deleteMany();
     await prisma.order.deleteMany();
+    await prisma.spendingPlanLine.deleteMany();
     await prisma.projectExecutor.deleteMany();
     await prisma.executorWorkType.deleteMany();
     await prisma.executor.deleteMany();
@@ -1133,226 +1179,347 @@ async function dropAll(prisma) {
   console.log("  [0/13] БД очищена ✓");
 }
 
+// ─── BATCH INSERT (после TRUNCATE — без upsert/findFirst) ───────────────────
+
+const BATCH_SIZE = 1000;
+
+async function createManyBatched(model, rows, { skipDuplicates = false } = {}) {
+  if (!rows.length) return 0;
+  let n = 0;
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const chunk = rows.slice(i, i + BATCH_SIZE);
+    const r = await model.createMany({ data: chunk, skipDuplicates });
+    n += r.count;
+  }
+  return n;
+}
+
+async function createManyAndReturnBatched(model, rows) {
+  if (!rows.length) return [];
+  const out = [];
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const chunk = rows.slice(i, i + BATCH_SIZE);
+    const created = await model.createManyAndReturn({ data: chunk });
+    out.push(...created);
+  }
+  return out;
+}
+
 // ─── РЕАЛЬНАЯ ЗАПИСЬ (только при --run) ──────────────────────────────────────
 
 async function runMigration(prisma, all) {
+  const t0 = Date.now();
+  const step = (label, fn) => fn().then((n) => {
+    const sec = ((Date.now() - t0) / 1000).toFixed(1);
+    const count = typeof n === "number" ? ` (${n})` : "";
+    console.log(`  ${label}${count} — ${sec}s`);
+    return n;
+  });
+
   // 1. users
-  console.log("  [1/13] users...");
   const userIds = {};
-  for (const u of all.users) {
-    const r = await prisma.user.upsert({
-      where: { email: u.email },
-      update: {},
-      create: { email: u.email, password: u.password, fullName: u.fullName, role: u.role, isActive: u.isActive },
-    });
-    userIds[normKey(u.fullName)] = r.id;
-  }
+  await step("[1/13] users", async () => {
+    const created = await createManyAndReturnBatched(
+      prisma.user,
+      all.users.map((u) => ({
+        email: u.email,
+        password: u.password,
+        fullName: u.fullName,
+        role: u.role,
+        isActive: u.isActive,
+      }))
+    );
+    for (const r of created) userIds[normKey(r.fullName)] = r.id;
+    return created.length;
+  });
 
   // 2. bank_accounts
-  console.log("  [2/13] bank_accounts...");
   const bankIds = {};
-  for (const b of all.bankAccounts) {
-    const r = await prisma.bankAccount.upsert({
-      where: { name: b.name },
-      update: {},
-      create: { name: b.name, status: b.status },
-    });
-    bankIds[normKey(b.name)] = r.id;
-  }
+  await step("[2/13] bank_accounts", async () => {
+    const created = await createManyAndReturnBatched(
+      prisma.bankAccount,
+      all.bankAccounts.map((b) => ({ name: b.name, status: b.status }))
+    );
+    for (const r of created) bankIds[normKey(r.name)] = r.id;
+    return created.length;
+  });
 
   // 3. work_types
-  console.log("  [3/13] work_types...");
   const wtIds = {};
-  for (const w of all.workTypes) {
-    const r = await prisma.workType.upsert({
-      where: { name: w.name },
-      update: {},
-      create: { name: w.name, segment: w.segment, status: w.status },
-    });
-    wtIds[normKey(w.name)] = r.id;
-  }
+  await step("[3/13] work_types", async () => {
+    const created = await createManyAndReturnBatched(
+      prisma.workType,
+      all.workTypes.map((w) => ({ name: w.name, segment: w.segment, status: w.status }))
+    );
+    for (const r of created) wtIds[normKey(r.name)] = r.id;
+    return created.length;
+  });
 
   // 4. clients
-  console.log("  [4/13] clients...");
   const clientIds = {};
-  for (const c of all.clients) {
-    const r = await prisma.client.upsert({
-      where: { name: c.name },
-      update: {},
-      create: { name: c.name, company: c.company, department: c.department, status: c.status },
-    });
-    clientIds[normKey(c.name)] = r.id;
-  }
+  await step("[4/13] clients", async () => {
+    const created = await createManyAndReturnBatched(
+      prisma.client,
+      all.clients.map((c) => ({
+        name: c.name,
+        company: c.company,
+        department: c.department,
+        status: c.status,
+      }))
+    );
+    for (const r of created) clientIds[normKey(r.name)] = r.id;
+    return created.length;
+  });
 
   // 5. projects
-  console.log("  [5/13] projects...");
   const projectIds = {};
-  for (const p of all.projects.projects) {
-    const clientId = p._clientName ? (clientIds[normKey(p._clientName)] ?? null) : null;
-    const responsibleUserId = p._responsibleName ? (userIds[normKey(p._responsibleName)] ?? null) : null;
-    const r = await prisma.project.upsert({
-      where: { clientId_shortName: { clientId: clientId ?? "", shortName: p.shortName } },
-      update: {},
-      create: { name: p.name, shortName: p.shortName, type: p.type, status: p.status, responsibleUserId, clientId },
-    });
-    projectIds[normKey(p.name)] = r.id;
-  }
-
-  // 6. executors
-  console.log("  [6/13] executors + work_types + project_executors...");
-  const executorIds = {};
-  for (const e of all.executors.executors) {
-    const existing = await prisma.executor.findFirst({ where: { name: e.name } });
-    let r;
-    if (existing) {
-      r = existing;
-    } else {
-      r = await prisma.executor.create({
-        data: {
-          name: e.name, type: e.type, companyStatus: e.companyStatus,
-          recipientType: e.recipientType, specialty: e.specialty,
-          contractFile: e.contractFile, ndaFile: e.ndaFile,
-          inTgChat: e.inTgChat ?? false, contacts: e.contacts,
-          requisites: e.requisites, note: e.note,
-          status: e.status, accessRevokedAt: e.accessRevokedAt,
-          oldEstimateUrl: e.oldEstimateUrl,
-          defaultBankAccountId: e._bankName ? (bankIds[normKey(e._bankName)] ?? null) : null,
-          responsibleUserId: e._responsibleName ? (userIds[normKey(e._responsibleName)] ?? null) : null,
-        },
-      });
+  await step("[5/13] projects", async () => {
+    const rows = all.projects.projects.map((p) => ({
+      name: p.name,
+      shortName: p.shortName,
+      type: p.type,
+      status: p.status,
+      clientId: p._clientName ? (clientIds[normKey(p._clientName)] ?? null) : null,
+      responsibleUserId: p._responsibleName ? (userIds[normKey(p._responsibleName)] ?? null) : null,
+    }));
+    const created = await createManyAndReturnBatched(prisma.project, rows);
+    for (let i = 0; i < created.length; i++) {
+      projectIds[normKey(all.projects.projects[i].name)] = created[i].id;
     }
-    executorIds[normKey(e.name)] = r.id;
-  }
-  for (const lnk of all.executors.executorWorkTypes) {
-    const eId = executorIds[normKey(lnk.executorName)], wId = wtIds[normKey(lnk.workTypeName)];
-    if (!eId || !wId) continue;
-    await prisma.executorWorkType.upsert({
-      where: { executorId_workTypeId: { executorId: eId, workTypeId: wId } },
-      update: {}, create: { executorId: eId, workTypeId: wId },
-    });
-  }
-  for (const lnk of all.executors.projectExecutors) {
-    const eId = executorIds[normKey(lnk.executorName)], pId = projectIds[normKey(lnk.projectName)];
-    if (!eId || !pId) continue;
-    await prisma.projectExecutor.upsert({
-      where: { projectId_executorId: { projectId: pId, executorId: eId } },
-      update: {}, create: { projectId: pId, executorId: eId },
-    });
-  }
+    return created.length;
+  });
+
+  // 6. executors + links
+  const executorIds = {};
+  await step("[6/13] executors + links", async () => {
+    const created = await createManyAndReturnBatched(
+      prisma.executor,
+      all.executors.executors.map((e) => ({
+        name: e.name,
+        type: e.type,
+        companyStatus: e.companyStatus,
+        recipientType: e.recipientType,
+        specialty: e.specialty,
+        contractFile: e.contractFile,
+        ndaFile: e.ndaFile,
+        inTgChat: e.inTgChat ?? false,
+        contacts: e.contacts,
+        requisites: e.requisites,
+        note: e.note,
+        status: e.status,
+        accessRevokedAt: e.accessRevokedAt,
+        oldEstimateUrl: e.oldEstimateUrl,
+        defaultBankAccountId: e._bankName ? (bankIds[normKey(e._bankName)] ?? null) : null,
+        responsibleUserId: e._responsibleName ? (userIds[normKey(e._responsibleName)] ?? null) : null,
+      }))
+    );
+    for (const r of created) executorIds[normKey(r.name)] = r.id;
+
+    const ewtRows = [];
+    for (const lnk of all.executors.executorWorkTypes) {
+      const eId = executorIds[normKey(lnk.executorName)];
+      const wId = wtIds[normKey(lnk.workTypeName)];
+      if (eId && wId) ewtRows.push({ executorId: eId, workTypeId: wId });
+    }
+    const peRows = [];
+    for (const lnk of all.executors.projectExecutors) {
+      const eId = executorIds[normKey(lnk.executorName)];
+      const pId = projectIds[normKey(lnk.projectName)];
+      if (eId && pId) peRows.push({ projectId: pId, executorId: eId });
+    }
+    await createManyBatched(prisma.executorWorkType, ewtRows, { skipDuplicates: true });
+    await createManyBatched(prisma.projectExecutor, peRows, { skipDuplicates: true });
+    return created.length;
+  });
 
   // 7. orders
-  console.log("  [7/13] orders...");
   const orderIds = {};
-  for (const o of all.orders.orders) {
-    const projectId = o._projectName ? (projectIds[normKey(o._projectName)] ?? null) : null;
-    if (!projectId) continue;
-    const r = await prisma.order.upsert({
-      where: { orderNumber: o.orderNumber },
-      update: {},
-      create: { orderNumber: o.orderNumber, description: o.description, projectId, contractNumber: o.contractNumber, status: o.status },
-    });
-    orderIds[o._rawNumber] = r.id;
-  }
+  await step("[7/13] orders", async () => {
+    const rows = [];
+    const keys = [];
+    for (const o of all.orders.orders) {
+      const projectId = o._projectName ? (projectIds[normKey(o._projectName)] ?? null) : null;
+      if (!projectId) continue;
+      rows.push({
+        orderNumber: o.orderNumber,
+        description: o.description,
+        projectId,
+        contractNumber: o.contractNumber,
+        status: o.status,
+      });
+      keys.push(o._rawNumber);
+    }
+    const created = await createManyAndReturnBatched(prisma.order, rows);
+    for (let i = 0; i < created.length; i++) orderIds[keys[i]] = created[i].id;
+    return created.length;
+  });
 
   // 8. charges
-  console.log("  [8/13] charges...");
-  for (const c of all.charges.charges) {
-    const exists = await prisma.charge.findFirst({
-      where: c.invoiceNumber
-        ? { OR: [{ chargeNumber: c.chargeNumber }, { invoiceNumber: c.invoiceNumber }] }
-        : { chargeNumber: c.chargeNumber },
-    });
-    if (exists) continue;
-    await prisma.charge.create({
-      data: {
-        chargeNumber: c.chargeNumber, invoiceNumber: c.invoiceNumber,
+  await step("[8/13] charges", async () => {
+    const seenCharge = new Set();
+    const seenInvoice = new Set();
+    const rows = [];
+    let skipped = 0;
+    for (const c of all.charges.charges) {
+      if (seenCharge.has(c.chargeNumber)) {
+        skipped++;
+        continue;
+      }
+      if (c.invoiceNumber && seenInvoice.has(c.invoiceNumber)) {
+        skipped++;
+        continue;
+      }
+      seenCharge.add(c.chargeNumber);
+      if (c.invoiceNumber) seenInvoice.add(c.invoiceNumber);
+      rows.push({
+        chargeNumber: c.chargeNumber,
+        invoiceNumber: c.invoiceNumber,
         bankAccountId: c._bankName ? (bankIds[normKey(c._bankName)] ?? null) : null,
         orderId: c._orderRef ? (orderIds[c._orderRef] ?? null) : null,
-        amount: c.amount, issuedPlanAt: c.issuedPlanAt, issuedAt: c.issuedAt,
-        paidPlanAt: c.paidPlanAt, paidAt: c.paidAt,
-        paymentPurpose: c.paymentPurpose, status: c.status, documents: c.documents,
-      },
-    });
-  }
+        amount: c.amount,
+        issuedPlanAt: c.issuedPlanAt,
+        issuedAt: c.issuedAt,
+        paidPlanAt: c.paidPlanAt,
+        paidAt: c.paidAt,
+        paymentPurpose: c.paymentPurpose,
+        status: c.status,
+        documents: c.documents,
+      });
+    }
+    if (skipped) console.log(`     ⚠️  Пропущено ${skipped} дублей начислений`);
+    return createManyBatched(prisma.charge, rows);
+  });
 
   // 9. payments
-  console.log("  [9/13] payments...");
   const paymentIds = {};
-  for (const p of all.payments.payments) {
-    const executorId = p._executorName ? (executorIds[normKey(p._executorName)] ?? null) : null;
-    if (!executorId) continue;
-    const r = await prisma.payment.create({
-      data: {
-        executorId, periodYear: p.periodYear, periodMonth: p.periodMonth,
-        amount: p.amount, paymentStatus: p.paymentStatus,
-        plannedPayAt: p.plannedPayAt, paidAt: p.paidAt,
+  await step("[9/13] payments", async () => {
+    const rows = [];
+    const meta = [];
+    for (const p of all.payments.payments) {
+      const executorId = p._executorName ? (executorIds[normKey(p._executorName)] ?? null) : null;
+      if (!executorId) continue;
+      rows.push({
+        executorId,
+        periodYear: p.periodYear,
+        periodMonth: p.periodMonth,
+        amount: p.amount,
+        paymentStatus: p.paymentStatus,
+        plannedPayAt: p.plannedPayAt,
+        paidAt: p.paidAt,
         bankAccountId: p._bankName ? (bankIds[normKey(p._bankName)] ?? null) : null,
         comment: p.comment,
-      },
-    });
-    paymentIds[`${p._executorName}|${p.periodYear}|${p.periodMonth}`] = r.id;
-  }
+      });
+      meta.push({ nameKey: normKey(p._executorName), year: p.periodYear, month: p.periodMonth });
+    }
+    const created = await createManyAndReturnBatched(prisma.payment, rows);
+    for (let i = 0; i < created.length; i++) {
+      const m = meta[i];
+      paymentIds[`${m.nameKey}|${m.year}|${m.month}`] = created[i].id;
+    }
+    return created.length;
+  });
 
   // 10. works
-  console.log("  [10/13] works...");
-  for (const w of all.works.works) {
-    const executorId = w._executorName ? (executorIds[normKey(w._executorName)] ?? null) : null;
-    const projectId  = w._projectName  ? (projectIds[normKey(w._projectName)]  ?? null) : null;
-    const workTypeId = w._workTypeName ? (wtIds[normKey(w._workTypeName)]       ?? null) : null;
-    if (!executorId || !projectId || !workTypeId) continue;
-    const paymentId  = paymentIds[`${w._executorName}|${w.executionYear}|${w.executionMonth}`] ?? null;
-    await prisma.work.create({
-      data: { executorId, projectId, workTypeId, executionYear: w.executionYear, executionMonth: w.executionMonth,
-        amount: w.amount, workStatus: w.workStatus, comment: w.comment,
-        checkedAt: w.checkedAt, paidAt: w.paidAt, plannedPayAt: w.plannedPayAt, paymentId },
-    });
-  }
+  await step("[10/13] works", async () => {
+    const rows = [];
+    for (const w of all.works.works) {
+      const executorId = w._executorName ? (executorIds[normKey(w._executorName)] ?? null) : null;
+      const projectId = w._projectName ? (projectIds[normKey(w._projectName)] ?? null) : null;
+      const workTypeId = w._workTypeName ? (wtIds[normKey(w._workTypeName)] ?? null) : null;
+      if (!executorId || !projectId || !workTypeId) continue;
+      rows.push({
+        executorId,
+        projectId,
+        workTypeId,
+        executionYear: w.executionYear,
+        executionMonth: w.executionMonth,
+        amount: w.amount,
+        workStatus: w.workStatus,
+        comment: w.comment,
+        checkedAt: w.checkedAt,
+        paidAt: w.paidAt,
+        plannedPayAt: w.plannedPayAt,
+        paymentId: paymentIds[`${normKey(w._executorName)}|${w.executionYear}|${w.executionMonth}`] ?? null,
+      });
+    }
+    return createManyBatched(prisma.work, rows);
+  });
 
   // 11. other_expenses
-  console.log("  [11/13] other_expenses...");
   const defaultUserId = Object.values(userIds)[0];
-  for (const o of all.works.otherExpenses) {
-    const executorId = o._executorName ? (executorIds[normKey(o._executorName)] ?? null) : null;
-    const projectId  = o._projectName  ? (projectIds[normKey(o._projectName)]  ?? null) : null;
-    const workTypeId = o._workTypeName ? (wtIds[normKey(o._workTypeName)]       ?? null) : null;
-    if (!executorId || !projectId || !workTypeId) continue;
-    await prisma.otherExpense.create({
-      data: { executorId, projectId, workTypeId, executionYear: o.executionYear, executionMonth: o.executionMonth,
-        amount: o.amount, description: o.description, workStatus: o.workStatus,
-        comment: o.comment, checkedAt: o.checkedAt, paidAt: o.paidAt, plannedPayAt: o.plannedPayAt,
-        responsibleUserId: defaultUserId, createdById: defaultUserId },
-    });
-  }
+  await step("[11/13] other_expenses", async () => {
+    const rows = [];
+    for (const o of all.works.otherExpenses) {
+      const executorId = o._executorName ? (executorIds[normKey(o._executorName)] ?? null) : null;
+      const projectId = o._projectName ? (projectIds[normKey(o._projectName)] ?? null) : null;
+      const workTypeId = o._workTypeName ? (wtIds[normKey(o._workTypeName)] ?? null) : null;
+      if (!executorId || !projectId || !workTypeId) continue;
+      rows.push({
+        executorId,
+        projectId,
+        workTypeId,
+        executionYear: o.executionYear,
+        executionMonth: o.executionMonth,
+        amount: o.amount,
+        description: o.description,
+        workStatus: o.workStatus,
+        comment: o.comment,
+        checkedAt: o.checkedAt,
+        paidAt: o.paidAt,
+        plannedPayAt: o.plannedPayAt,
+        responsibleUserId: defaultUserId,
+        createdById: defaultUserId,
+      });
+    }
+    return createManyBatched(prisma.otherExpense, rows);
+  });
 
   // 12. spending_plan_lines
-  console.log("  [12/13] spending_plan_lines...");
   let spSkipped = 0;
-  for (const l of all.spendingPlan.lines) {
-    const projectId  = l._projectName  ? (projectIds[normKey(l._projectName)]  ?? null) : null;
-    const executorId = l._executorName ? (executorIds[normKey(l._executorName)] ?? null) : null;
-    const workTypeId = l._workTypeName ? (wtIds[normKey(l._workTypeName)]       ?? null) : null;
-    if (!projectId || !executorId || !workTypeId) { spSkipped++; continue; }
-    await prisma.spendingPlanLine.create({
-      data: {
-        projectId, executorId, workTypeId,
-        year: l.year, week: l.week, amount: l.amount,
+  await step("[12/13] spending_plan_lines", async () => {
+    const rows = [];
+    for (const l of all.spendingPlan.lines) {
+      const projectId = l._projectName ? (projectIds[normKey(l._projectName)] ?? null) : null;
+      const executorId = l._executorName ? (executorIds[normKey(l._executorName)] ?? null) : null;
+      const workTypeId = l._workTypeName ? (wtIds[normKey(l._workTypeName)] ?? null) : null;
+      if (!projectId || !executorId || !workTypeId) {
+        spSkipped++;
+        continue;
+      }
+      rows.push({
+        projectId,
+        executorId,
+        workTypeId,
+        year: l.year,
+        week: l.week,
+        amount: l.amount,
         createdById: defaultUserId,
+      });
+    }
+    if (spSkipped) console.log(`     ⚠️  Пропущено ${spSkipped} строк (не найден проект/исполнитель/вид работ)`);
+    return createManyBatched(prisma.spendingPlanLine, rows);
+  });
+
+  // 13. admin
+  await step("[13/13] admin user", async () => {
+    const bcrypt = await import("bcryptjs");
+    const adminHash = await bcrypt.hash("Password123!", 10);
+    await prisma.user.upsert({
+      where: { email: "admin@kpd.local" },
+      update: { fullName: "Админ Админов", role: "admin", isActive: true },
+      create: {
+        email: "admin@kpd.local",
+        password: adminHash,
+        fullName: "Админ Админов",
+        role: "admin",
+        isActive: true,
       },
     });
-  }
-  if (spSkipped) console.log(`     ⚠️  Пропущено ${spSkipped} строк (не найден проект/исполнитель/вид работ)`);
-  console.log(`     ✓ ${all.spendingPlan.lines.length - spSkipped} строк плана расходов загружено`);
-
-  // 13. admin user — всегда создаём/обновляем
-  console.log("  [13/13] admin user...");
-  const bcrypt = await import("bcryptjs");
-  const adminHash = await bcrypt.hash("Password123!", 10);
-  await prisma.user.upsert({
-    where:  { email: "admin@kpd.local" },
-    update: { fullName: "Админ Админов", role: "admin", isActive: true },
-    create: { email: "admin@kpd.local", password: adminHash, fullName: "Админ Админов", role: "admin", isActive: true },
+    console.log("     admin@kpd.local / Password123! ✓");
+    return 1;
   });
-  console.log("  [13/13] admin@kpd.local / Password123! ✓");
+
+  console.log(`  ⏱  Итого: ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 }
 
 main().catch((err) => {

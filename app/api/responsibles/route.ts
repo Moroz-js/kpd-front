@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
-import { isAdmin } from "@/lib/permissions";
+import { isAdmin, canViewExecutorsList } from "@/lib/permissions";
 import { createResponsible, listResponsibles } from "@/lib/services/responsibles";
 
 export async function GET() {
   const me = await getSessionUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!isAdmin(me)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  // Список ответственных нужен и для управления исполнителями (PM/постоянный исполнитель).
+  if (!canViewExecutorsList(me)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   return NextResponse.json(await listResponsibles());
 }
 

@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { isAdmin } from "@/lib/permissions";
+import {
+  isAdmin,
+  canAccessOtherExpenses,
+  canEditOtherExpense,
+  canDeleteOtherExpense,
+} from "@/lib/permissions";
 import { prisma } from "@/lib/db";
 import { updateOtherExpense, deleteOtherExpense } from "@/lib/services/other-expenses";
 import { z } from "zod";
@@ -26,23 +31,16 @@ const patchSchema = z.object({
   comment: z.string().nullable().optional(),
 });
 
-function canEdit(user: NonNullable<Awaited<ReturnType<typeof getSessionUser>>>, row: { workStatus: string; createdById: string; responsibleUserId: string }) {
-  if (user.role === "admin") return true;
-  if (row.workStatus === "checked") return false; // только admin
-  // responsible — если создатель или текущий ответственный
-  return row.createdById === user.id || row.responsibleUserId === user.id;
-}
-
 export async function PATCH(req: NextRequest, { params }: Ctx) {
   const { id } = await params;
   const user = await getSessionUser();
-  if (!user || (user.role !== "admin" && user.role !== "responsible")) {
+  if (!user || !canAccessOtherExpenses(user)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const row = await prisma.otherExpense.findUnique({ where: { id } });
   if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!canEdit(user, row)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!canEditOtherExpense(user, row)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await req.json().catch(() => null);
   const parsed = patchSchema.safeParse(body);
@@ -66,13 +64,13 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
 export async function DELETE(_req: NextRequest, { params }: Ctx) {
   const { id } = await params;
   const user = await getSessionUser();
-  if (!user || (user.role !== "admin" && user.role !== "responsible")) {
+  if (!user || !canAccessOtherExpenses(user)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const row = await prisma.otherExpense.findUnique({ where: { id } });
   if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!canEdit(user, row)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!canDeleteOtherExpense(user, row)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   await deleteOtherExpense(id, user.id);
   return NextResponse.json({ ok: true });

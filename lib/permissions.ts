@@ -9,11 +9,13 @@
  */
 
 import { prisma } from "@/lib/db";
+import { normalizeExecutorType } from "@/lib/executor-type";
 
 export type SessionLike = {
   id: string;
   role: string;
   executorId?: string | null;
+  executorType?: string | null;
   isResponsible?: boolean;
   responsibleActive?: boolean;
 };
@@ -39,6 +41,17 @@ export function isResponsible(user: SessionLike | null | undefined): boolean {
 
 export function isExecutor(user: SessionLike | null | undefined): boolean {
   return user?.role === "executor";
+}
+
+/** Постоянный исполнитель: role=executor + type=permanent. */
+export function isPermanentExecutor(
+  user: SessionLike | null | undefined,
+  executor?: { type: string } | null
+): boolean {
+  if (!user || user.role !== "executor") return false;
+  const type = executor?.type ?? user.executorType;
+  if (!type) return false;
+  return normalizeExecutorType(type) === "permanent";
 }
 
 // ────────────────────── Проекты ─────────────────────────────
@@ -89,8 +102,9 @@ export async function canViewExecutorEstimate(
 ): Promise<boolean> {
   if (isAdmin(user)) return true;
 
-  if (isExecutor(user)) {
-    if (user.executorId !== executorId) return false;
+  // Личную смету видит только её владелец (любая роль с привязанным executorId).
+  // PM и постоянный исполнитель НЕ видят чужие сметы (см. спеку RBAC).
+  if (user.executorId && user.executorId === executorId) {
     const exec = await prisma.executor.findUnique({
       where: { id: executorId },
       select: { accessRevokedAt: true, status: true },
@@ -98,39 +112,78 @@ export async function canViewExecutorEstimate(
     return !!exec && exec.accessRevokedAt == null && exec.status === "active";
   }
 
-  if (isResponsible(user)) {
-    const onProject = await prisma.spendingPlanLine.findFirst({
-      where: {
-        executorId,
-        project: { responsibleUserId: user.id, status: "active" },
-      },
-    });
-    if (onProject) return true;
-
-    const projectExecutor = await prisma.projectExecutor.findFirst({
-      where: {
-        executorId,
-        project: { responsibleUserId: user.id, status: "active" },
-      },
-    });
-    return !!projectExecutor;
-  }
-
   return false;
+}
+
+// ────────────────────── Исполнители (раздел/настройки) ───────
+
+/** Видит раздел «Исполнители»: admin, PM, постоянный исполнитель. */
+export function canViewExecutorsList(user: SessionLike | null | undefined): boolean {
+  return isAdmin(user) || isResponsible(user) || isPermanentExecutor(user);
+}
+
+/** Создаёт исполнителей: только admin и PM. */
+export function canManageExecutors(user: SessionLike | null | undefined): boolean {
+  return isAdmin(user) || isResponsible(user);
+}
+
+/**
+ * Редактирует настройки исполнителя.
+ * admin — всё; PM и постоянный исполнитель — да, но без admin-only полей
+ * (генерация пароля другим, архив, выдача/отзыв доступа) — это ограничивается в API/UI.
+ */
+export function canEditExecutorSettings(user: SessionLike | null | undefined): boolean {
+  return isAdmin(user) || isResponsible(user) || isPermanentExecutor(user);
+}
+
+/** Сброс/генерация пароля другому пользователю — только admin. */
+export function canResetPassword(user: SessionLike | null | undefined): boolean {
+  return isAdmin(user);
+}
+
+// ────────────────────── Личный профиль ───────────────────────
+
+/** Пункт «Личный профиль» доступен, если к юзеру привязан исполнитель. */
+export function canAccessProfile(user: SessionLike | null | undefined): boolean {
+  return !!user?.executorId;
+}
+
+/** Владелец профиля — видит все вкладки (смета, долг, отпуска, настройки). */
+export function isProfileOwner(
+  user: SessionLike | null | undefined,
+  executorId: string
+): boolean {
+  return !!user?.executorId && user.executorId === executorId;
 }
 
 // ────────────────────── Прочие траты ────────────────────────
 
-export function canEditOtherExpenseRow(
+/** Доступ к разделу «Прочие траты»: admin, PM, постоянный исполнитель. */
+export function canAccessOtherExpenses(user: SessionLike | null | undefined): boolean {
+  return isAdmin(user) || isResponsible(user) || isPermanentExecutor(user);
+}
+
+/**
+ * Редактирование строки прочих трат.
+ * admin — всегда; остальные — создатель или ответственный, и только пока выплата
+ * не «Отправлено»/«Оплачено».
+ */
+export function canEditOtherExpense(
   user: SessionLike,
-  row: { createdById: string; responsibleUserId: string; workStatus: string }
+  row: { createdById: string; responsibleUserId: string; paymentStatus?: string | null }
 ): boolean {
   if (isAdmin(user)) return true;
-  if (row.workStatus === "checked") return false; // только admin
-  if (isResponsible(user)) {
-    return row.createdById === user.id || row.responsibleUserId === user.id;
-  }
-  return false;
+  if (!canAccessOtherExpenses(user)) return false;
+  if (row.paymentStatus === "sent" || row.paymentStatus === "paid") return false;
+  return row.createdById === user.id || row.responsibleUserId === user.id;
+}
+
+/** Удаление строки прочих трат — те же правила, что и редактирование. */
+export function canDeleteOtherExpense(
+  user: SessionLike,
+  row: { createdById: string; responsibleUserId: string; paymentStatus?: string | null }
+): boolean {
+  return canEditOtherExpense(user, row);
 }
 
 // ────────────────────── Утилиты ─────────────────────────────

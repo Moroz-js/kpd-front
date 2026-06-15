@@ -57,6 +57,8 @@ type Props = {
   viewerExecutorId: string | null;
   backHref?: string;
   initialTab?: string;
+  /** full — смета + настройки; settings-only — только настройки чужого исполнителя. */
+  view?: "full" | "settings-only";
 };
 
 export function ExecutorEstimateClient({
@@ -65,9 +67,12 @@ export function ExecutorEstimateClient({
   viewerExecutorId,
   backHref,
   initialTab,
+  view = "full",
 }: Props) {
   const isAdmin = viewerRole === "admin";
-  const isOwner = viewerRole === "executor" && viewerExecutorId === executorId;
+  const isOwner = viewerExecutorId != null && viewerExecutorId === executorId;
+  const settingsOnlyView = view === "settings-only" && !isOwner && !isAdmin;
+  const canSeeSettings = isAdmin || isOwner || settingsOnlyView;
 
   const [executor, setExecutor] = useState<ExecutorDetail | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -130,13 +135,19 @@ export function ExecutorEstimateClient({
   }, [executorId, loadExecutor]);
 
   const hasPersonalSmeta =
-    executor != null && hasEstimateTabs(executor.type, executor.user?.id ?? null);
+    !settingsOnlyView &&
+    executor != null &&
+    hasEstimateTabs(executor.type, executor.user?.id ?? null);
   const settingsOnly = !hasPersonalSmeta;
 
   useEffect(() => {
-    if (!executor || !settingsOnly) return;
-    if (isAdmin) setActiveTab("settings");
-  }, [executor, settingsOnly, isAdmin]);
+    if (!executor) return;
+    if (settingsOnlyView) {
+      setActiveTab("settings");
+      return;
+    }
+    if (settingsOnly && canSeeSettings) setActiveTab("settings");
+  }, [executor, settingsOnly, settingsOnlyView, canSeeSettings]);
 
   if (loading) {
     return (
@@ -155,10 +166,10 @@ export function ExecutorEstimateClient({
   }
 
   const visibleTabs: { id: TabId; label: string }[] = settingsOnly
-    ? isAdmin
+    ? canSeeSettings
       ? [{ id: "settings" as TabId, label: "Настройки" }]
       : []
-    : [...TABS, ...(isAdmin ? [{ id: "settings" as TabId, label: "Настройки" }] : [])];
+    : [...TABS, ...(canSeeSettings ? [{ id: "settings" as TabId, label: "Настройки" }] : [])];
 
   return (
     <div className="flex flex-col h-[calc(100vh-3rem)] min-h-0 gap-3">
@@ -246,7 +257,7 @@ export function ExecutorEstimateClient({
             onTaskCountChange={setOpenTaskCount}
           />
         )}
-        {activeTab === "settings" && isAdmin && (
+        {activeTab === "settings" && canSeeSettings && (
           <div className="flex-1 min-h-0 overflow-y-auto">
             <SettingsTab
               executorId={executorId}
@@ -254,6 +265,8 @@ export function ExecutorEstimateClient({
               bankAccounts={bankAccounts}
               allWorkTypes={allWorkTypes}
               onChanged={reload}
+              isAdmin={isAdmin}
+              isOwner={isOwner}
             />
           </div>
         )}

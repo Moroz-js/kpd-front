@@ -13,11 +13,17 @@ export default auth((req) => {
   const { pathname } = req.nextUrl;
   const user = req.auth?.user as Record<string, unknown> | undefined;
   const role = user?.role as string | undefined;
+  const executorId = user?.executorId as string | null | undefined;
+  const executorType = user?.executorType as string | null | undefined;
   const isPm =
     role === "responsible" ||
     (role === "executor" &&
       user?.isResponsible === true &&
       user?.responsibleActive !== false);
+  const isPermanentExec = role === "executor" && executorType === "permanent";
+  // Раздел /executor/* (прочие траты, исполнители) — постоянный исполнитель и PM
+  const canUseExecutorSection = isPermanentExec || isPm;
+  const hasProfile = !!executorId;
 
   // Корень / login
   if (pathname === "/login" || pathname === "/") {
@@ -27,6 +33,8 @@ export default auth((req) => {
           ? "/admin/cashflow"
           : isPm
           ? "/responsible/projects"
+          : isPermanentExec
+          ? "/executor/other-expenses"
           : "/me";
       return NextResponse.redirect(new URL(redirectPath, req.url));
     }
@@ -49,12 +57,13 @@ export default auth((req) => {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
-  if (pathname.startsWith("/me") && role !== "executor") {
+  // /me/* — личный профиль для любой роли с привязанным исполнителем
+  if (pathname.startsWith("/me") && !hasProfile) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
-  // Поддержка старого /executor/* (временно — пока страницы не переехали на /me/*)
-  if (pathname.startsWith("/executor") && role !== "executor") {
+  // /executor/* — прочие траты и исполнители для постоянного исполнителя и PM
+  if (pathname.startsWith("/executor") && !canUseExecutorSection) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 

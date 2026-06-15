@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
-import { canViewExecutorEstimate, isAdmin } from "@/lib/permissions";
+import {
+  canViewExecutorEstimate,
+  canViewExecutorsList,
+  canEditExecutorSettings,
+  isAdmin,
+} from "@/lib/permissions";
 import { updateExecutor } from "@/lib/services/executors";
 import { prisma } from "@/lib/db";
 
@@ -10,7 +15,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await ctx.params;
-  const allowed = await canViewExecutorEstimate(me, id);
+  // Карточку исполнителя (настройки) видят admin, PM, постоянный исполнитель,
+  // а также владелец своего профиля. Данные сметы отдаются отдельными эндпоинтами
+  // под canViewExecutorEstimate.
+  const allowed = canViewExecutorsList(me) || (await canViewExecutorEstimate(me, id));
   if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const executor = await prisma.executor.findUnique({
@@ -58,7 +66,7 @@ const patchSchema = z.object({
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const me = await getSessionUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!isAdmin(me)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!canEditExecutorSettings(me)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { id } = await ctx.params;
   const body = await req.json().catch(() => null);
@@ -69,8 +77,16 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       { status: 400 }
     );
   }
+  // Не-admin (PM, постоянный исполнитель) не управляет учётной записью, типом и
+  // ролью ответственного — это admin-only поля.
+  let data = parsed.data;
+  if (!isAdmin(me)) {
+    const { password: _p, email: _e, type: _t, isResponsible: _r, ...rest } = data;
+    void _p; void _e; void _t; void _r;
+    data = rest;
+  }
   try {
-    const updated = await updateExecutor(id, parsed.data, me.id);
+    const updated = await updateExecutor(id, data, me.id);
     return NextResponse.json(updated);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error";

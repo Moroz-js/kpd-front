@@ -20,6 +20,8 @@ import {
   History,
   ClipboardList,
   CheckSquare,
+  User,
+  Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -40,44 +42,30 @@ type NavGroup = {
  * Состав sidebar по ролям (см. TZ Приложение B / TDNB-31).
  * Часть пунктов на Phase 0 ведёт на заглушки — заполнятся реальными в Phase 1+.
  */
-const NAV_CONFIG: Record<string, NavGroup[]> = {
-  admin: [
-    {
-      items: [
-        { label: "Кэшфлоу", href: "/admin/cashflow", icon: TrendingUp },
-        { label: "Проекты", href: "/admin/projects", icon: FolderOpen },
-        { label: "Начисления", href: "/admin/charges", icon: FileText },
-        { label: "Заказы", href: "/admin/orders", icon: ShoppingCart },
-        { label: "Выставленные работы", href: "/admin/issued-works", icon: Briefcase },
-        { label: "Выплаты", href: "/admin/payouts", icon: CreditCard },
-        { label: "Прочие траты", href: "/admin/other-expenses", icon: Receipt },
-        { label: "Исполнители", href: "/admin/executors", icon: Users },
-        { label: "Ответственные", href: "/admin/responsibles", icon: UserCheck },
-        { label: "Клиенты", href: "/admin/clients", icon: Building2 },
-        { label: "Виды работ", href: "/admin/work-types", icon: Wrench },
-        { label: "Банковские счета", href: "/admin/bank-accounts", icon: Wallet },
-        { label: "Задачи", href: "/admin/tasks", icon: CheckSquare },
-        { label: "История действий", href: "/admin/activity", icon: History },
-      ],
-    },
-  ],
-  responsible: [
-    {
-      items: [
-        { label: "Кэшфлоу", href: "/responsible/cashflow", icon: TrendingUp },
-        { label: "Мои проекты", href: "/responsible/projects", icon: FolderOpen },
-        { label: "Прочие траты", href: "/responsible/other-expenses", icon: Receipt },
-      ],
-    },
-  ],
-  executor: [
-    {
-      items: [
-        { label: "Моя смета", href: "/me", icon: ClipboardList },
-      ],
-    },
-  ],
-};
+const ADMIN_NAV: NavGroup[] = [
+  {
+    items: [
+      { label: "Кэшфлоу", href: "/admin/cashflow", icon: TrendingUp },
+      { label: "Проекты", href: "/admin/projects", icon: FolderOpen },
+      { label: "Начисления", href: "/admin/charges", icon: FileText },
+      { label: "Заказы", href: "/admin/orders", icon: ShoppingCart },
+      { label: "Выставленные работы", href: "/admin/issued-works", icon: Briefcase },
+      { label: "Выплаты", href: "/admin/payouts", icon: CreditCard },
+      { label: "Прочие траты", href: "/admin/other-expenses", icon: Receipt },
+      { label: "Исполнители", href: "/admin/executors", icon: Users },
+      { label: "Ответственные", href: "/admin/responsibles", icon: UserCheck },
+      { label: "Клиенты", href: "/admin/clients", icon: Building2 },
+      { label: "Виды работ", href: "/admin/work-types", icon: Wrench },
+      { label: "Банковские счета", href: "/admin/bank-accounts", icon: Wallet },
+      { label: "Задачи", href: "/admin/tasks", icon: CheckSquare },
+      { label: "История действий", href: "/admin/activity", icon: History },
+    ],
+  },
+  {
+    label: "Система",
+    items: [{ label: "Экспорт в Excel", href: "/admin/export", icon: Download }],
+  },
+];
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "Администратор",
@@ -89,26 +77,64 @@ type SidebarProps = {
   role: string;
   fullName: string;
   hasProjects?: boolean;
+  isPm?: boolean;
+  isPermanentExecutor?: boolean;
+  hasProfile?: boolean;
 };
 
-export function Sidebar({ role, fullName, hasProjects = true }: SidebarProps) {
-  const pathname = usePathname();
-  const rawGroups = NAV_CONFIG[role] ?? [];
+function buildNavGroups({
+  role,
+  hasProjects,
+  isPm,
+  isPermanentExecutor,
+  hasProfile,
+}: Required<Omit<SidebarProps, "fullName">>): NavGroup[] {
+  if (role === "admin") return ADMIN_NAV;
 
-  // У PM без проектов скрываем «Мои проекты» и «Кэшфлоу» (см. TDNB-31)
-  const navGroups =
-    role === "responsible" && !hasProjects
-      ? rawGroups
-          .map((g) => ({
-            ...g,
-            items: g.items.filter(
-              (item) =>
-                item.href !== "/responsible/projects" &&
-                item.href !== "/responsible/cashflow"
-            ),
-          }))
-          .filter((g) => g.items.length > 0)
-      : rawGroups;
+  const items: NavItem[] = [];
+
+  // PM: проекты и кэшфлоу (только при наличии проектов)
+  if (isPm && hasProjects) {
+    items.push({ label: "Кэшфлоу", href: "/responsible/cashflow", icon: TrendingUp });
+    items.push({ label: "Мои проекты", href: "/responsible/projects", icon: FolderOpen });
+  }
+
+  // Прочие траты: PM → /responsible, постоянный исполнитель → /executor
+  if (isPm) {
+    items.push({ label: "Прочие траты", href: "/responsible/other-expenses", icon: Receipt });
+  } else if (isPermanentExecutor) {
+    items.push({ label: "Прочие траты", href: "/executor/other-expenses", icon: Receipt });
+  }
+
+  // Исполнители: PM и постоянный исполнитель
+  if (isPm || isPermanentExecutor) {
+    items.push({ label: "Исполнители", href: "/executor/executors", icon: Users });
+  }
+
+  // Личный профиль — для всех, у кого есть привязанный исполнитель
+  if (hasProfile) {
+    items.push({ label: "Личный профиль", href: "/me", icon: User });
+  }
+
+  return items.length > 0 ? [{ items }] : [];
+}
+
+export function Sidebar({
+  role,
+  fullName,
+  hasProjects = true,
+  isPm = false,
+  isPermanentExecutor = false,
+  hasProfile = false,
+}: SidebarProps) {
+  const pathname = usePathname();
+  const navGroups = buildNavGroups({
+    role,
+    hasProjects,
+    isPm,
+    isPermanentExecutor,
+    hasProfile,
+  });
 
   return (
     <aside className="flex-shrink-0 w-60 h-full bg-white border-r border-neutral-200 flex flex-col z-10 overflow-y-auto">

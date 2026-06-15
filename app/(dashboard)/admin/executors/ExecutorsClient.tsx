@@ -76,7 +76,16 @@ const fetcher = <T,>(url: string): Promise<T> =>
 type SortField = "name" | "responsibleName" | "lastPaidAt";
 type SortDir = "asc" | "desc";
 
-export function ExecutorsClient() {
+type ExecutorsClientProps = {
+  /** admin — полный доступ; manage — PM/постоянный исполнитель (только настройки, без сметы). */
+  mode?: "admin" | "manage";
+  /** Можно добавлять исполнителей (admin, PM). */
+  canAdd?: boolean;
+};
+
+export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClientProps = {}) {
+  const isManage = mode === "manage";
+  const detailBase = isManage ? "/executor/executors" : "/admin/executors";
   const { data, isLoading, mutate } = useSWR<Row[]>("/api/executors", fetcher);
   const { data: bankAccounts } = useSWR<BankAccountOption[]>("/api/bank-accounts", fetcher);
   const { data: workTypes } = useSWR<WorkTypeOption[]>("/api/work-types", fetcher);
@@ -303,9 +312,11 @@ export function ExecutorsClient() {
       <PageHeader
         title="Исполнители"
         actions={
-          <Button onClick={() => setWizardOpen(true)}>
-            <Plus className="h-4 w-4 mr-1" /> Добавить исполнителя
-          </Button>
+          canAdd ? (
+            <Button onClick={() => setWizardOpen(true)}>
+              <Plus className="h-4 w-4 mr-1" /> Добавить исполнителя
+            </Button>
+          ) : undefined
         }
       />
 
@@ -435,7 +446,15 @@ export function ExecutorsClient() {
                 <TableRow key={r.id} className={r.status === "archived" ? "bg-neutral-100 text-neutral-400" : ""}>
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-1 min-w-0">
-                      {hasPersonalSmeta(r) ? (
+                      {isManage ? (
+                        <Link
+                          href={`${detailBase}/${r.id}`}
+                          className="truncate hover:underline text-neutral-900"
+                          title="Открыть настройки исполнителя"
+                        >
+                          {r.name}
+                        </Link>
+                      ) : hasPersonalSmeta(r) ? (
                         <>
                           <Link
                             href={`/admin/executors/${r.id}`}
@@ -494,12 +513,19 @@ export function ExecutorsClient() {
                     {r.email && r.type !== "service" ? (
                       <button
                         type="button"
-                        onClick={() => toggleAccess(r)}
-                        title="Переключить доступ"
+                        onClick={() => !isManage && toggleAccess(r)}
+                        disabled={isManage}
+                        title={isManage ? undefined : "Переключить доступ"}
                         className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium border transition-colors ${
                           r.hasAccess
-                            ? "bg-green-50 border-green-300 text-green-800 hover:bg-green-100"
-                            : "bg-neutral-100 border-neutral-300 text-neutral-600 hover:bg-neutral-200"
+                            ? "bg-green-50 border-green-300 text-green-800"
+                            : "bg-neutral-100 border-neutral-300 text-neutral-600"
+                        } ${
+                          isManage
+                            ? "cursor-default"
+                            : r.hasAccess
+                              ? "hover:bg-green-100"
+                              : "hover:bg-neutral-200"
                         }`}
                       >
                         {r.hasAccess ? (
@@ -525,38 +551,42 @@ export function ExecutorsClient() {
                         variant="ghost"
                         title="Настройки"
                         render={
-                          <Link href={`/admin/executors/${r.id}?tab=settings`}>
+                          <Link href={`${detailBase}/${r.id}?tab=settings`}>
                             <Pencil className="h-3.5 w-3.5" />
                           </Link>
                         }
                       />
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => r.userId && setResetPasswordTarget(r)}
-                        title="Сменить пароль"
-                        className={r.userId ? "" : "invisible pointer-events-none"}
-                      >
-                        <KeyRound className="h-3.5 w-3.5" />
-                      </Button>
-                      {r.status === "active" ? (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => openArchiveTarget(r)}
-                          title="Архивировать"
-                        >
-                          <Archive className="h-3.5 w-3.5" />
-                        </Button>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setUnarchiveTarget(r)}
-                          title="Вернуть из архива"
-                        >
-                          <ArchiveRestore className="h-3.5 w-3.5" />
-                        </Button>
+                      {!isManage && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => r.userId && setResetPasswordTarget(r)}
+                            title="Сменить пароль"
+                            className={r.userId ? "" : "invisible pointer-events-none"}
+                          >
+                            <KeyRound className="h-3.5 w-3.5" />
+                          </Button>
+                          {r.status === "active" ? (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => openArchiveTarget(r)}
+                              title="Архивировать"
+                            >
+                              <Archive className="h-3.5 w-3.5" />
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setUnarchiveTarget(r)}
+                              title="Вернуть из архива"
+                            >
+                              <ArchiveRestore className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </>
                       )}
                     </div>
                   </TableCell>

@@ -244,12 +244,12 @@ export function CashflowClient() {
     "px-2 py-0.5 text-right text-[11px] leading-snug tabular-nums whitespace-nowrap border-r border-neutral-100 last:border-0";
   const thCls =
     "px-2 py-0.5 text-center text-xs leading-snug font-medium text-neutral-500 border-r border-neutral-100 whitespace-nowrap";
-  const stickyLbl = "sticky left-0 z-10 bg-white px-3 py-1 text-xs border-r border-neutral-200 whitespace-nowrap min-w-[200px] max-w-[240px] shadow-[1px_0_0_0_#e5e7eb]";
+  const stickyLbl = "sticky left-0 z-10 bg-white px-3 py-1 text-xs border-r border-neutral-200 whitespace-nowrap overflow-hidden text-ellipsis w-[240px] min-w-[200px] max-w-[240px] shadow-[1px_0_0_0_#e5e7eb]";
   const compactLbl =
-    "sticky left-0 z-10 bg-white px-2.5 py-0.5 text-[11px] leading-snug border-r border-neutral-200 whitespace-nowrap min-w-[200px] max-w-[240px] shadow-[1px_0_0_0_#e5e7eb]";
-  const stickyHdr = "sticky left-0 z-[15] bg-neutral-50 border-r border-neutral-200 shadow-[1px_0_0_0_#e5e7eb] px-3 py-1 text-xs font-semibold text-neutral-500 tracking-wide uppercase whitespace-nowrap min-w-[200px]";
+    "sticky left-0 z-10 bg-white px-2.5 py-0.5 text-[11px] leading-snug border-r border-neutral-200 whitespace-nowrap overflow-hidden text-ellipsis w-[240px] min-w-[200px] max-w-[240px] shadow-[1px_0_0_0_#e5e7eb]";
+  const stickyHdr = "sticky left-0 z-[15] bg-neutral-50 border-r border-neutral-200 shadow-[1px_0_0_0_#e5e7eb] px-3 py-1 text-xs font-semibold text-neutral-500 tracking-wide uppercase whitespace-nowrap overflow-hidden text-ellipsis w-[240px] min-w-[200px] max-w-[240px]";
   const compactHdr =
-    "sticky left-0 z-[15] bg-neutral-50 border-r border-neutral-200 shadow-[1px_0_0_0_#e5e7eb] px-2.5 py-0.5 text-[11px] font-semibold text-neutral-500 tracking-wide uppercase whitespace-nowrap min-w-[200px]";
+    "sticky left-0 z-[15] bg-neutral-50 border-r border-neutral-200 shadow-[1px_0_0_0_#e5e7eb] px-2.5 py-0.5 text-[11px] font-semibold text-neutral-500 tracking-wide uppercase whitespace-nowrap overflow-hidden text-ellipsis w-[240px] min-w-[200px] max-w-[240px]";
   const isFuture = (wIdx: number) =>
     year > currentISOYear ||
     (year === currentISOYear && (weeks[wIdx]?.week ?? 0) > currentISOWeek);
@@ -503,7 +503,9 @@ export function CashflowClient() {
                   <React.Fragment key={blockKey}>
                     <tr aria-hidden><td colSpan={visibleWeeks.length + 2} className="h-1 bg-neutral-50/60 p-0 border-0" /></tr>
                     <tr className="bg-neutral-50 border-t-2 border-b border-neutral-200">
-                      <td className={stickyHdr}>{blockLabels[blockKey]}</td>
+                      <td className={stickyHdr} title={blockLabels[blockKey]}>
+                        <span className="block truncate">{blockLabels[blockKey]}</span>
+                      </td>
                       <td colSpan={visibleWeeks.length + 1} className="bg-neutral-50" />
                     </tr>
                     {extProjects.map(p => {
@@ -511,7 +513,9 @@ export function CashflowClient() {
                       const last = arr[arr.length - 1] ?? 0;
                       return (
                         <tr key={`${blockKey}-${p.id}`} className="border-b border-neutral-100 hover:bg-neutral-50">
-                          <td className={cn(stickyLbl, "font-normal")}>{p.name}</td>
+                          <td className={cn(stickyLbl, "font-normal")} title={p.name}>
+                            <span className="block truncate">{p.name}</span>
+                          </td>
                           {visibleWeekIndices.map((idx) =>
                             renderWeekCell(
                               `project:${p.id}:${blockKey}`,
@@ -535,7 +539,9 @@ export function CashflowClient() {
                       const last = arr[arr.length - 1] ?? 0;
                       return (
                         <tr key={`${blockKey}-${p.id}`} className="border-b border-neutral-100 hover:bg-neutral-50">
-                          <td className={cn(stickyLbl, "font-normal text-neutral-500")}>{p.name}</td>
+                          <td className={cn(stickyLbl, "font-normal text-neutral-500")} title={p.name}>
+                            <span className="block truncate">{p.name}</span>
+                          </td>
                           {visibleWeekIndices.map((idx) =>
                             renderWeekCell(
                               `project:${p.id}:${blockKey}`,

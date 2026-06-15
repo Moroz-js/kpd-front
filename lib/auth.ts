@@ -44,6 +44,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           role: user.role,
           fullName: user.fullName,
           executorId: exec?.id ?? null,
+          executorType: exec?.type ?? null,
           isResponsible: !!(exec?.isResponsible || user.role === "responsible"),
           responsibleActive: exec
             ? exec.responsibleActive
@@ -62,6 +63,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           role: string;
           fullName: string;
           executorId: string | null;
+          executorType?: string | null;
           email?: string;
           isResponsible?: boolean;
           responsibleActive?: boolean;
@@ -70,6 +72,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.role = u.role;
         token.fullName = u.fullName;
         token.executorId = u.executorId;
+        token.executorType = u.executorType ?? null;
         token.isResponsible = u.isResponsible ?? false;
         token.responsibleActive = u.responsibleActive ?? false;
         if (u.email) token.email = u.email;
@@ -82,6 +85,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         u.role = token.role;
         u.fullName = token.fullName;
         u.executorId = token.executorId;
+        u.executorType = token.executorType;
         u.id = token.sub;
         u.isResponsible = token.isResponsible;
         u.responsibleActive = token.responsibleActive;
@@ -97,6 +101,8 @@ export type SessionUser = {
   role: string;
   fullName: string;
   executorId: string | null;
+  /** Тип привязанного исполнителя (permanent | external | service | bank). */
+  executorType?: string | null;
   /** Исполнитель с флагом «ответственный» (роль PM). */
   isResponsible?: boolean;
   /** Активен ли статус ответственного (≠ архив исполнителя). */
@@ -127,6 +133,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       executor: {
         select: {
           id: true,
+          type: true,
           accessRevokedAt: true,
           status: true,
           isResponsible: true,
@@ -155,6 +162,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     role: dbUser.role,
     fullName: dbUser.fullName,
     executorId: exec?.id ?? null,
+    executorType: exec?.type ?? null,
     isResponsible: isResponsibleFlag,
     responsibleActive,
   };

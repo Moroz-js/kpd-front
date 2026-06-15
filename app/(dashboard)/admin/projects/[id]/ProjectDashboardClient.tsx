@@ -561,13 +561,24 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                       <div className="flex items-center gap-1 min-w-0">
                         <div className="flex flex-col leading-tight min-w-0 flex-1">
                           <span className="truncate font-medium text-neutral-900">{pl.workTypeName}</span>
-                          {pl.executorHasPersonalSmeta ? (
+                          {isAdmin && pl.executorHasPersonalSmeta ? (
                             <Link
                               href={`/admin/executors/${pl.executorId}?fromProject=${projectId}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="inline-flex items-center gap-0.5 text-[11px] text-blue-600 hover:underline truncate max-w-full"
                               title="Открыть личную смету"
+                            >
+                              <span className="truncate">{pl.executorName}</span>
+                              <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
+                            </Link>
+                          ) : !isAdmin ? (
+                            <Link
+                              href={`/executor/executors/${pl.executorId}?tab=settings`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-0.5 text-[11px] text-blue-600 hover:underline truncate max-w-full"
+                              title="Открыть настройки исполнителя"
                             >
                               <span className="truncate">{pl.executorName}</span>
                               <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />

@@ -63,9 +63,21 @@ type Props = {
   bankAccounts: BankAccount[];
   allWorkTypes: WorkType[];
   onChanged: () => void;
+  /** Полный доступ: смена типа, учётка, доступ, роль ответственного. */
+  isAdmin?: boolean;
+  /** Владелец профиля (свой /me): может сменить свой пароль. */
+  isOwner?: boolean;
 };
 
-export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, onChanged }: Props) {
+export function SettingsTab({
+  executorId,
+  executor,
+  bankAccounts,
+  allWorkTypes,
+  onChanged,
+  isAdmin = false,
+  isOwner = false,
+}: Props) {
   const [executorType, setExecutorType] = useState<ExecutorType>(() =>
     normalizeExecutorType(executor.type)
   );
@@ -106,6 +118,34 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
   const [saving, setSaving] = useState(false);
   const [togglingAccess, setTogglingAccess] = useState(false);
   const hasAccess = !executor.accessRevokedAt;
+
+  // Смена собственного пароля (только владелец профиля)
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [changingPassword, setChangingPassword] = useState(false);
+
+  async function handleChangePassword() {
+    if (newPassword.length < 6) return toast.error("Новый пароль не короче 6 символов");
+    setChangingPassword(true);
+    try {
+      const r = await fetch("/api/users/me/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error((body as { error?: string }).error ?? "Не удалось сменить пароль");
+      }
+      toast.success("Пароль изменён");
+      setCurrentPassword("");
+      setNewPassword("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Ошибка");
+    } finally {
+      setChangingPassword(false);
+    }
+  }
 
   useEffect(() => {
     setExecutorType(normalizeExecutorType(executor.type));
@@ -198,7 +238,7 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
         throw new Error((body as { error?: string }).error ?? "Ошибка сохранения");
       }
 
-      if (executor.user) {
+      if (isAdmin && executor.user) {
         const ur = await fetch(`/api/users/${executor.user.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -226,26 +266,28 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
 
   return (
     <div className="space-y-6 max-w-xl">
-      <div className="border rounded-lg p-4 space-y-3">
-        <h3 className="text-sm font-semibold text-neutral-800">Тип исполнителя</h3>
-        <Select
-          value={executorType}
-          onValueChange={(v) => v && handleTypeChange(v as ExecutorType)}
-        >
-          <SelectTrigger>
-            <SelectValue>{EXECUTOR_TYPES[executorType]}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {EXECUTOR_TYPE_OPTIONS.map(([value, label]) => (
-              <SelectItem key={value} value={value}>
-                {label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      {isAdmin && (
+        <div className="border rounded-lg p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-neutral-800">Тип исполнителя</h3>
+          <Select
+            value={executorType}
+            onValueChange={(v) => v && handleTypeChange(v as ExecutorType)}
+          >
+            <SelectTrigger>
+              <SelectValue>{EXECUTOR_TYPES[executorType]}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {EXECUTOR_TYPE_OPTIONS.map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
-      {needsAccount && (
+      {isAdmin && needsAccount && (
         <div className="border border-blue-200 rounded-lg p-4 space-y-3 bg-blue-50/40">
           <h3 className="text-sm font-semibold text-neutral-800">Учётная запись</h3>
           <p className="text-xs text-neutral-500">
@@ -282,7 +324,7 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
         </div>
       )}
 
-      {!isService && executor.user && (
+      {isAdmin && !isService && executor.user && (
         <div className="border rounded-lg p-4 space-y-3">
           <h3 className="text-sm font-semibold text-neutral-800">Доступ к системе</h3>
           <div className="flex items-center justify-between">
@@ -329,7 +371,7 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
             </p>
           )}
         </div>
-        {executor.user && (
+        {isAdmin && executor.user && (
           <div className="space-y-1.5">
             <Label>Email (логин)</Label>
             <Input value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -370,7 +412,7 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
             placeholder="Телеграм, телефон и т.д."
           />
         </div>
-        {canBeResponsible(executorType) && (
+        {isAdmin && canBeResponsible(executorType) && (
           <div className="flex flex-col gap-1 pt-1">
             <div className="flex items-center gap-2">
               <Checkbox
@@ -549,6 +591,40 @@ export function SettingsTab({ executorId, executor, bankAccounts, allWorkTypes, 
           {saving ? "Сохранение..." : "Сохранить настройки"}
         </Button>
       </div>
+
+      {isOwner && executor.user && (
+        <div className="border rounded-lg p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-neutral-800">Сменить пароль</h3>
+          <div className="space-y-1.5">
+            <Label>Текущий пароль</Label>
+            <Input
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              autoComplete="current-password"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Новый пароль</Label>
+            <Input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              autoComplete="new-password"
+              placeholder="Не короче 6 символов"
+            />
+          </div>
+          <div className="flex justify-end">
+            <Button
+              variant="outline"
+              onClick={handleChangePassword}
+              disabled={changingPassword || !currentPassword || newPassword.length < 6}
+            >
+              {changingPassword ? "Сохранение..." : "Изменить пароль"}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
