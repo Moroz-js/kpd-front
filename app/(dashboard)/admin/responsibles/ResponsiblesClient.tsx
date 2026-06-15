@@ -12,6 +12,8 @@ import { ConfirmDialog } from "@/components/ui-custom/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SortableHead } from "@/components/ui-custom/SortableHead";
+import { cn } from "@/lib/utils";
+import { stickyActionsHead, stickyActionsCell, stickyActionsInner } from "@/lib/table-styles";
 
 type Row = {
   id: string;
@@ -110,7 +112,7 @@ export function ResponsiblesClient() {
                 Кол-во проектов
               </SortableHead>
               <TableHead>Проекты как руководитель</TableHead>
-              <TableHead className="w-32" />
+              <TableHead className={stickyActionsHead} />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -156,21 +158,23 @@ export function ResponsiblesClient() {
                         ))
                     }
                   </TableCell>
-                  <TableCell className="text-right whitespace-nowrap">
-                    {r.isActive ? (
-                      <Button size="sm" variant="ghost" onClick={() => setArchiveTarget(r)} title="Архивировать">
-                        <Archive className="h-3.5 w-3.5" />
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setUnarchiveTarget(r)}
-                        title="Вернуть из архива"
-                      >
-                        <ArchiveRestore className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
+                  <TableCell className={cn(stickyActionsCell, !r.isActive && "bg-neutral-50")}>
+                    <div className={stickyActionsInner}>
+                      {r.isActive ? (
+                        <Button size="sm" variant="ghost" onClick={() => setArchiveTarget(r)} title="Архивировать">
+                          <Archive className="h-3.5 w-3.5" />
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setUnarchiveTarget(r)}
+                          title="Вернуть из архива"
+                        >
+                          <ArchiveRestore className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))

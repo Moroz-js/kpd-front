@@ -31,6 +31,8 @@ import {
 } from "@/components/ui/table";
 import { SortableHead } from "@/components/ui-custom/SortableHead";
 import { ExpandableListCell } from "@/components/ui-custom/ExpandableListCell";
+import { cn } from "@/lib/utils";
+import { stickyActionsHead, stickyActionsCell, stickyActionsInner } from "@/lib/table-styles";
 import { ExecutorWizard } from "./ExecutorWizard";
 import { hasPersonalSmeta } from "@/lib/executor-personal-estimate";
 import { EXECUTOR_COMPANY_STATUSES } from "@/lib/statuses";
@@ -425,7 +427,7 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
               >
                 Последняя выплата
               </SortableHead>
-              <TableHead className="w-24" />
+              <TableHead className={cn("w-24", stickyActionsHead)} />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -544,8 +546,8 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
                   <TableCell>
                     {r.lastPaidAt ? formatDate(r.lastPaidAt) : "—"}
                   </TableCell>
-                  <TableCell>
-                    <div className="flex items-center justify-end gap-0.5">
+                  <TableCell className={cn(stickyActionsCell, r.status === "archived" && "bg-neutral-100")}>
+                    <div className={stickyActionsInner}>
                       <Button
                         size="sm"
                         variant="ghost"

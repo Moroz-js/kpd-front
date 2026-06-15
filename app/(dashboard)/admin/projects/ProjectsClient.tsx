@@ -20,6 +20,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
+import { stickyActionsHead, stickyActionsCell, stickyActionsInner } from "@/lib/table-styles";
 import { SortableHead } from "@/components/ui-custom/SortableHead";
 import {
   Dialog,
@@ -298,7 +300,7 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
                 Статус
               </SortableHead>
               <TableHead>Тип</TableHead>
-              <TableHead className="w-24" />
+              <TableHead className={stickyActionsHead} />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -346,33 +348,35 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
                       label={PROJECT_TYPES[r.type as keyof typeof PROJECT_TYPES] ?? "—"}
                     />
                   </TableCell>
-                  <TableCell className="text-right whitespace-nowrap">
-                    {isAdmin && (
-                      <>
-                        <Button size="sm" variant="ghost" onClick={() => setEditing(r)} title="Редактировать">
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        {r.status === "active" ? (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setArchiveTarget(r)}
-                            title="Архивировать"
-                          >
-                            <Archive className="h-3.5 w-3.5" />
+                  <TableCell className={cn(stickyActionsCell, r.status === "archived" && "bg-neutral-100 text-neutral-400")}>
+                    <div className={stickyActionsInner}>
+                      {isAdmin && (
+                        <>
+                          <Button size="sm" variant="ghost" onClick={() => setEditing(r)} title="Редактировать">
+                            <Pencil className="h-3.5 w-3.5" />
                           </Button>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setUnarchiveTarget(r)}
-                            title="Вернуть из архива"
-                          >
-                            <ArchiveRestore className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                      </>
-                    )}
+                          {r.status === "active" ? (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setArchiveTarget(r)}
+                              title="Архивировать"
+                            >
+                              <Archive className="h-3.5 w-3.5" />
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setUnarchiveTarget(r)}
+                              title="Вернуть из архива"
+                            >
+                              <ArchiveRestore className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))

@@ -32,6 +32,8 @@ import {
 } from "@/components/ui/select";
 import { formatDate } from "@/lib/format";
 import { TASK_STATUSES, BADGE_TONE_CLASS } from "@/lib/statuses";
+import { cn } from "@/lib/utils";
+import { stickyActionsHead, stickyActionsCell, stickyActionsInner } from "@/lib/table-styles";
 
 type TaskRow = {
   id: string;
@@ -155,7 +157,7 @@ export function TasksTab({ executorId, isAdmin, isOwner, onTaskCountChange }: Pr
                 <th className="border-b border-neutral-200 px-3 py-2 text-left text-xs font-medium text-neutral-600 uppercase tracking-wide min-w-[90px]">Срок</th>
                 <th className="border-b border-neutral-200 px-3 py-2 text-left text-xs font-medium text-neutral-600 uppercase tracking-wide min-w-[140px]">Результат</th>
                 <th className="border-b border-neutral-200 px-3 py-2 text-left text-xs font-medium text-neutral-600 uppercase tracking-wide min-w-[140px]">Комментарий</th>
-                <th className="border-b border-neutral-200 px-3 py-2 w-10"></th>
+                <th className={cn("border-b border-neutral-200 px-3 py-2 w-10", stickyActionsHead)}></th>
               </tr>
             </thead>
             <tbody>
@@ -225,16 +227,18 @@ export function TasksTab({ executorId, isAdmin, isOwner, onTaskCountChange }: Pr
                       <span className="text-neutral-600">{task.comment || "—"}</span>
                     )}
                   </td>
-                  <td className="px-3 py-1.5">
-                    {isAdmin && (
-                      <button
-                        title="Удалить"
-                        className="p-0.5 text-red-400 hover:text-red-600"
-                        onClick={() => setDeleteTarget(task)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    )}
+                  <td className={cn("px-3 py-1.5", stickyActionsCell)}>
+                    <div className={stickyActionsInner}>
+                      {isAdmin && (
+                        <button
+                          title="Удалить"
+                          className="p-0.5 text-red-400 hover:text-red-600"
+                          onClick={() => setDeleteTarget(task)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

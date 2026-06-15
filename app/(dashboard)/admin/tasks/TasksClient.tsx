@@ -15,6 +15,8 @@ import {
 import { SortableHead } from "@/components/ui-custom/SortableHead";
 import { TASK_STATUSES } from "@/lib/statuses";
 import { formatDate } from "@/lib/format";
+import { cn } from "@/lib/utils";
+import { stickyActionsHead, stickyActionsCell, stickyActionsInner } from "@/lib/table-styles";
 
 type Row = {
   id: string;
@@ -130,7 +132,7 @@ export function TasksClient() {
               <SortableHead field="createdAt" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
                 Создана
               </SortableHead>
-              <TableHead className="w-16" />
+              <TableHead className={stickyActionsHead} />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -182,16 +184,18 @@ export function TasksClient() {
                   <TableCell className="whitespace-nowrap text-sm text-neutral-500">
                     {formatDate(r.createdAt)}
                   </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                      onClick={() => setDeleteTarget(r)}
-                      title="Удалить"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                  <TableCell className={stickyActionsCell}>
+                    <div className={stickyActionsInner}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                        onClick={() => setDeleteTarget(r)}
+                        title="Удалить"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))

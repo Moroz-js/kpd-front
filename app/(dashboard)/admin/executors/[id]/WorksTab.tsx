@@ -35,6 +35,8 @@ import { formatMoney, formatDate, monthFullLabel, MONTHS } from "@/lib/format";
 import { WORK_STATUSES, PAYMENT_STATUSES, BADGE_TONE_CLASS } from "@/lib/statuses";
 import { nearestPaymentDate, toLocalDateString } from "@/lib/iso-weeks";
 import { getISOWeek, getISOWeekYear } from "@/lib/iso-weeks";
+import { cn } from "@/lib/utils";
+import { stickyActionsHead, stickyActionsCell, stickyActionsInner } from "@/lib/table-styles";
 
 type WorkType = { id: string; name: string };
 type Project = { id: string; name: string };
@@ -593,7 +595,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
                       <th className={`${th} min-w-[85px]`}>Проверена</th>
                     </>
                   )}
-                  <th className={`${th} w-16`}></th>
+                  <th className={cn(th, "w-16", stickyActionsHead)}></th>
                 </tr>
               </thead>
               <tbody>
@@ -677,8 +679,8 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
                             <td className={`${td} text-neutral-500 whitespace-nowrap`}>{formatDate(w.checkedAt)}</td>
                           </>
                         )}
-                        <td className={td}>
-                          <div className="flex gap-1 items-center">
+                        <td className={cn(td, stickyActionsCell)}>
+                          <div className={stickyActionsInner}>
                             {isAdmin && w.workStatus !== "checked" && w.workStatus !== "paid" && (
                               <button title="Проверить" className="p-0.5 text-blue-600 hover:text-blue-800" onClick={() => setCheckTarget(w)}>
                                 <CheckCircle className="h-3.5 w-3.5" />
@@ -724,9 +726,9 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
                           <td className={dim}>—</td>
                         </>
                       )}
-                      <td className={td}>
+                      <td className={cn(td, stickyActionsCell)}>
                         {isAdmin && (
-                          <div className="flex gap-1 items-center">
+                          <div className={stickyActionsInner}>
                             {p.paymentStatus !== "paid" && <button title="Оплатить" className="p-0.5 text-green-600 hover:text-green-800" onClick={() => setMarkPaidTarget(p)}><CircleDollarSign className="h-3.5 w-3.5" /></button>}
                             <button title="Редактировать" className="p-0.5 text-neutral-500 hover:text-neutral-800" onClick={() => setEditPayment(p)}><Pencil className="h-3.5 w-3.5" /></button>
                             <button title="Удалить" className="p-0.5 text-red-400 hover:text-red-600" onClick={() => setDeleteTarget({ type: "payment", id: p.id, label: `выплату ${formatMoney(p.amount)} ₽` })}><Trash2 className="h-3.5 w-3.5" /></button>

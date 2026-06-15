@@ -26,6 +26,7 @@ import { SortableHead } from "@/components/ui-custom/SortableHead";
 import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
 import { useTableRowSelection } from "@/lib/useTableRowSelection";
 import { cn } from "@/lib/utils";
+import { stickyActionsHead, stickyActionsCell, stickyActionsInner } from "@/lib/table-styles";
 import { IssuedWorkEditDialog, type SmetaType } from "./IssuedWorkEditDialog";
 
 const compactPeriodHead =
@@ -456,7 +457,7 @@ export function IssuedWorksClient() {
               <TableHead>Дата оплаты план</TableHead>
               <TableHead>Дата оплаты факт</TableHead>
               <TableHead>Тип сметы</TableHead>
-              <TableHead className="w-24" />
+              <TableHead className={stickyActionsHead} />
             </TableRow>
           </TableHeader>
           <BulkSelectTableBody>
@@ -504,20 +505,28 @@ export function IssuedWorksClient() {
                   <TableCell>{formatDateShort(r.plannedPayAt)}</TableCell>
                   <TableCell>{formatDateShort(r.paidAt)}</TableCell>
                   <TableCell className="text-sm">{SMETA_LABEL[r.sourceType]}</TableCell>
-                  <TableCell className="text-right whitespace-nowrap">
-                    <Button size="sm" variant="ghost" onClick={() => setEditing(r)} title="Редактировать">
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    {r.workStatus === "submitted" && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleCheck(r)}
-                        title="Проставить «Проверено»"
-                      >
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                      </Button>
+                  <TableCell
+                    className={cn(
+                      stickyActionsCell,
+                      selectedIds.has(rowId(r)) && "bg-blue-50",
+                      r.workStatus === "archived" && "bg-neutral-50"
                     )}
+                  >
+                    <div className={stickyActionsInner}>
+                      <Button size="sm" variant="ghost" onClick={() => setEditing(r)} title="Редактировать">
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      {r.workStatus === "submitted" && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleCheck(r)}
+                          title="Проставить «Проверено»"
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))

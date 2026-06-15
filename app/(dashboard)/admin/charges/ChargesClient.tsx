@@ -25,6 +25,8 @@ import { CHARGE_STATUSES, BADGE_TONE_CLASS } from "@/lib/statuses";
 import {
   Table, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
+import { stickyActionsHead, stickyActionsCell, stickyActionsInner } from "@/lib/table-styles";
 import { BulkSelectTableBody } from "@/components/ui-custom/BulkSelectTableBody";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
@@ -447,7 +449,7 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
                 <TableHead>Номер заказа</TableHead>
                 <TableHead>Номер начисления</TableHead>
                 <TableHead>Номер счёта</TableHead>
-                <TableHead className="w-10" />
+                <TableHead className={stickyActionsHead} />
               </TableRow>
             </TableHeader>
             <BulkSelectTableBody>
@@ -511,8 +513,8 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
                     <TableCell className={`tabular-nums ${cellRed(cellEmpty(row.order?.orderNumber))}`}>{row.order ? row.order.orderNumber : "—"}</TableCell>
                     <TableCell className="tabular-nums">{row.chargeNumber}</TableCell>
                     <TableCell className={cellRed(cellEmpty(row.invoiceNumber))}>{row.invoiceNumber || "—"}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-1 items-center">
+                    <TableCell className={cn(stickyActionsCell, selectedIds.has(row.id) && "bg-blue-50/50")}>
+                      <div className={stickyActionsInner}>
                         <button title="Редактировать" className="p-0.5 text-neutral-500 hover:text-neutral-800" onClick={() => setEditTarget(row)}>
                           <Pencil className="h-3.5 w-3.5" />
                         </button>

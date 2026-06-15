@@ -12,6 +12,8 @@ import { ENTITY_STATUSES } from "@/lib/statuses";
 import { formatMoney } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
+import { stickyActionsHead, stickyActionsCell, stickyActionsInner } from "@/lib/table-styles";
 import { SortableHead } from "@/components/ui-custom/SortableHead";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -169,7 +171,7 @@ export function BankAccountsClient() {
               >
                 Сумма начислений
               </SortableHead>
-              <TableHead className="w-24" />
+              <TableHead className={stickyActionsHead} />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -200,34 +202,36 @@ export function BankAccountsClient() {
                   <TableCell className="text-right tabular-nums">{formatMoney(r.paymentSum)}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatMoney(r.operationSum)}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatMoney(r.chargeSum)}</TableCell>
-                  <TableCell className="text-right whitespace-nowrap">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setEditing(r)}
-                      title="Редактировать"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    {r.status === "active" ? (
+                  <TableCell className={cn(stickyActionsCell)}>
+                    <div className={stickyActionsInner}>
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => setArchiveTarget(r)}
-                        title="Архивировать"
+                        onClick={() => setEditing(r)}
+                        title="Редактировать"
                       >
-                        <Archive className="h-3.5 w-3.5" />
+                        <Pencil className="h-3.5 w-3.5" />
                       </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setUnarchiveTarget(r)}
-                        title="Вернуть из архива"
-                      >
-                        <ArchiveRestore className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
+                      {r.status === "active" ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setArchiveTarget(r)}
+                          title="Архивировать"
+                        >
+                          <Archive className="h-3.5 w-3.5" />
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setUnarchiveTarget(r)}
+                          title="Вернуть из архива"
+                        >
+                          <ArchiveRestore className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))

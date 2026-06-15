@@ -16,6 +16,7 @@ import { DepartmentCombobox } from "@/components/ui-custom/DepartmentCombobox";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { stickyActionsHead, stickyActionsCell, stickyActionsInner } from "@/lib/table-styles";
 
 type Row = {
   id: string;
@@ -182,7 +183,7 @@ export function WorkTypesClient() {
               <SortableHead field="status" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
                 Статус
               </SortableHead>
-              <TableHead className="w-24" />
+              <TableHead className={stickyActionsHead} />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -209,19 +210,21 @@ export function WorkTypesClient() {
                   <TableCell>
                     <StatusBadge dict={ENTITY_STATUSES} value={r.status} />
                   </TableCell>
-                  <TableCell className="text-right whitespace-nowrap">
-                    <Button size="sm" variant="ghost" onClick={() => setEditing(r)} title="Редактировать">
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    {r.status === "active" ? (
-                      <Button size="sm" variant="ghost" onClick={() => setArchiveTarget(r)} title="Архивировать">
-                        <Archive className="h-3.5 w-3.5" />
+                  <TableCell className={stickyActionsCell}>
+                    <div className={stickyActionsInner}>
+                      <Button size="sm" variant="ghost" onClick={() => setEditing(r)} title="Редактировать">
+                        <Pencil className="h-3.5 w-3.5" />
                       </Button>
-                    ) : (
-                      <Button size="sm" variant="ghost" onClick={() => setUnarchiveTarget(r)} title="Вернуть из архива">
-                        <ArchiveRestore className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
+                      {r.status === "active" ? (
+                        <Button size="sm" variant="ghost" onClick={() => setArchiveTarget(r)} title="Архивировать">
+                          <Archive className="h-3.5 w-3.5" />
+                        </Button>
+                      ) : (
+                        <Button size="sm" variant="ghost" onClick={() => setUnarchiveTarget(r)} title="Вернуть из архива">
+                          <ArchiveRestore className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))

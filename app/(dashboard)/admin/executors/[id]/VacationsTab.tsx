@@ -35,6 +35,7 @@ import {
 } from "@/lib/iso-weeks";
 import { VACATION_STATUSES, BADGE_TONE_CLASS } from "@/lib/statuses";
 import { cn } from "@/lib/utils";
+import { stickyActionsHead, stickyActionsCell, stickyActionsInner } from "@/lib/table-styles";
 import {
   Select,
   SelectContent,
@@ -294,7 +295,7 @@ export function VacationsTab({ executorId, isAdmin, isOwner }: Props) {
                   <th className="border-b border-neutral-200 px-3 py-2 text-right font-medium text-neutral-600 uppercase tracking-wide">Всего</th>
                   <th className="border-b border-neutral-200 px-3 py-2 text-left font-medium text-neutral-600 uppercase tracking-wide">Подмена</th>
                   <th className="border-b border-neutral-200 px-3 py-2 text-left font-medium text-neutral-600 uppercase tracking-wide">Статус</th>
-                  <th className="border-b border-neutral-200 px-3 py-2 w-20"></th>
+                  <th className={cn("border-b border-neutral-200 px-3 py-2 w-20", stickyActionsHead)}></th>
                 </tr>
               </thead>
               <tbody>
@@ -315,8 +316,8 @@ export function VacationsTab({ executorId, isAdmin, isOwner }: Props) {
                     <td className="px-3 py-2">
                       <VacationStatusBadge status={e.status} />
                     </td>
-                    <td className="px-3 py-2">
-                      <div className="flex gap-1">
+                    <td className={cn("px-3 py-2", stickyActionsCell)}>
+                      <div className={stickyActionsInner}>
                         {isAdmin && e.status === "need_approval" && (
                           <button
                             title="Согласовать"

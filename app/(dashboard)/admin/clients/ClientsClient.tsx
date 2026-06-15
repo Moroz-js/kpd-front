@@ -19,6 +19,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DepartmentCombobox } from "@/components/ui-custom/DepartmentCombobox";
+import { cn } from "@/lib/utils";
+import { stickyActionsHead, stickyActionsCell, stickyActionsInner } from "@/lib/table-styles";
 
 type Row = {
   id: string;
@@ -163,7 +165,7 @@ export function ClientsClient() {
               <SortableHead field="createdAt" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
                 Создан
               </SortableHead>
-              <TableHead className="w-24" />
+              <TableHead className={stickyActionsHead} />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -209,19 +211,21 @@ export function ClientsClient() {
                   </TableCell>
                   <TableCell className="text-right tabular-nums font-semibold text-sm">{formatMoney(r.revenue)}</TableCell>
                   <TableCell>{formatDate(r.createdAt)}</TableCell>
-                  <TableCell className="text-right whitespace-nowrap">
-                    <Button size="sm" variant="ghost" onClick={() => setEditing(r)} title="Редактировать">
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    {r.status === "active" ? (
-                      <Button size="sm" variant="ghost" onClick={() => setArchiveTarget(r)} title="Архивировать">
-                        <Archive className="h-3.5 w-3.5" />
+                  <TableCell className={cn(stickyActionsCell, r.status === "archived" && "bg-neutral-100 text-neutral-400")}>
+                    <div className={stickyActionsInner}>
+                      <Button size="sm" variant="ghost" onClick={() => setEditing(r)} title="Редактировать">
+                        <Pencil className="h-3.5 w-3.5" />
                       </Button>
-                    ) : (
-                      <Button size="sm" variant="ghost" onClick={() => setUnarchiveTarget(r)} title="Вернуть из архива">
-                        <ArchiveRestore className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
+                      {r.status === "active" ? (
+                        <Button size="sm" variant="ghost" onClick={() => setArchiveTarget(r)} title="Архивировать">
+                          <Archive className="h-3.5 w-3.5" />
+                        </Button>
+                      ) : (
+                        <Button size="sm" variant="ghost" onClick={() => setUnarchiveTarget(r)} title="Вернуть из архива">
+                          <ArchiveRestore className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))

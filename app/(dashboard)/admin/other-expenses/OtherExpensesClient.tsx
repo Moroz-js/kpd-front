@@ -32,6 +32,7 @@ import { cn } from "@/lib/utils";
 import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
 import { useTableRowSelection } from "@/lib/useTableRowSelection";
 import { ExpandableListCell } from "@/components/ui-custom/ExpandableListCell";
+import { stickyActionsHead, stickyActionsCell } from "@/lib/table-styles";
 
 const compactPeriodHead =
   "text-[10px] leading-tight font-medium whitespace-normal normal-case align-bottom";
@@ -44,10 +45,6 @@ const COL_WIDTHS = [
 ] as const;
 const TABLE_MIN_WIDTH = COL_WIDTHS.reduce((s, w) => s + w, 0);
 const cellClip = "overflow-hidden max-w-0";
-const stickyActionsHead =
-  "sticky right-0 z-20 bg-neutral-100 border-l border-neutral-200 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.08)] min-w-[96px]";
-const stickyActionsCell =
-  "sticky right-0 z-10 border-l border-neutral-200 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.08)] bg-white";
 
 function EditableColHead({
   children,

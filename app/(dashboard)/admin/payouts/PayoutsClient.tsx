@@ -27,6 +27,7 @@ import { SortableHead } from "@/components/ui-custom/SortableHead";
 import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
 import { useTableRowSelection } from "@/lib/useTableRowSelection";
 import { cn } from "@/lib/utils";
+import { stickyActionsHead, stickyActionsCell, stickyActionsInner } from "@/lib/table-styles";
 import { PayoutEditDialog } from "./PayoutEditDialog";
 
 type Row = {
@@ -414,7 +415,7 @@ export function PayoutsClient() {
               <TableHead><span className="flex items-center gap-1">Дата оплаты факт <Pencil className="h-3 w-3 text-neutral-400" /></span></TableHead>
               <SortableHead field="bankAccountName" sortBy={activeSortField()} sortDir={activeSortDir()} onSort={handleSort}><span className="flex items-center gap-1">Источник оплаты <Pencil className="h-3 w-3 text-neutral-400" /></span></SortableHead>
               <TableHead>Тип сметы</TableHead>
-              <TableHead className="w-24" />
+              <TableHead className={stickyActionsHead} />
             </TableRow>
           </TableHeader>
           <BulkSelectTableBody>
@@ -537,18 +538,20 @@ export function PayoutsClient() {
                     </TableCell>
 
                     <TableCell>{SMETA_LABEL[r.sourceType]}</TableCell>
-                    <TableCell className="text-right whitespace-nowrap">
-                      {r.paymentStatus === "planned" && (
-                        <Button size="sm" variant="ghost" onClick={() => setPaying(r)} title="Оплатить" className="text-green-600 hover:text-green-800">
-                          <CircleDollarSign className="h-3.5 w-3.5" />
+                    <TableCell className={cn(stickyActionsCell, selectedIds.has(key) && "bg-blue-50/40")}>
+                      <div className={stickyActionsInner}>
+                        {r.paymentStatus === "planned" && (
+                          <Button size="sm" variant="ghost" onClick={() => setPaying(r)} title="Оплатить" className="text-green-600 hover:text-green-800">
+                            <CircleDollarSign className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        <Button size="sm" variant="ghost" onClick={() => setEditing(r)} title="Редактировать">
+                          <Pencil className="h-3.5 w-3.5" />
                         </Button>
-                      )}
-                      <Button size="sm" variant="ghost" onClick={() => setEditing(r)} title="Редактировать">
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => setDeleting(r)} title="Удалить">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setDeleting(r)} title="Удалить">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
