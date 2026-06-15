@@ -46,8 +46,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Responsible может указать только себя как ответственного
-  if (!isAdmin(user) && parsed.data.responsibleUserId !== user.id) {
+  // PM (ответственный) может указать только себя. Постоянный исполнитель
+  // ответственным не является — выбирает ответственного из списка.
+  if (!isAdmin(user) && isResponsible(user) && parsed.data.responsibleUserId !== user.id) {
     return NextResponse.json({ error: "Можно назначить только себя ответственным" }, { status: 403 });
   }
 

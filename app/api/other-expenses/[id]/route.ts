@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import {
   isAdmin,
+  isResponsible,
   canAccessOtherExpenses,
   canEditOtherExpense,
   canDeleteOtherExpense,
@@ -46,8 +47,8 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Validation", details: parsed.error.flatten() }, { status: 422 });
 
-  // Responsible не может менять ответственного на другого
-  if (!isAdmin(user) && parsed.data.responsibleUserId && parsed.data.responsibleUserId !== user.id) {
+  // PM не может менять ответственного на другого; постоянный исполнитель — может выбрать.
+  if (!isAdmin(user) && isResponsible(user) && parsed.data.responsibleUserId && parsed.data.responsibleUserId !== user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

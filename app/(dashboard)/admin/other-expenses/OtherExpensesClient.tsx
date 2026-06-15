@@ -740,7 +740,13 @@ function OtherExpenseFormDialog({
     if (executorWorkTypeIds) return workTypes.filter(w => executorWorkTypeIds.includes(w.id));
     return workTypes;
   }, [executorId, executorWorkTypeIds, workTypes]);
-  const [responsibleUserId, setResponsibleUserId] = useState(initial?.responsibleUserId ?? (isAdmin ? "" : userId));
+  // PM (его user.id есть в списке ответственных) фиксируется на себе.
+  // Постоянный исполнитель ответственным не является — выбирает его сам, как админ.
+  const isResponsibleSelf = responsibles.some(r => r.id === userId);
+  const canChooseResponsible = isAdmin || !isResponsibleSelf;
+  const [responsibleUserId, setResponsibleUserId] = useState(
+    initial?.responsibleUserId ?? (canChooseResponsible ? "" : userId)
+  );
   const [bankAccountId, setBankAccountId] = useState(initial?.bankAccountId ?? "");
   const [year, setYear] = useState(String(initial?.executionYear ?? now.getFullYear()));
   const [month, setMonth] = useState(String(initial?.executionMonth ?? now.getMonth() + 1));
@@ -871,7 +877,7 @@ function OtherExpenseFormDialog({
           </div>
           <div className="space-y-1.5">
             <Label>Ответственный *</Label>
-            {isAdmin ? (
+            {canChooseResponsible ? (
               <Select value={responsibleUserId} onValueChange={(v) => setResponsibleUserId(v ?? "")}>
                 <SelectTrigger><SelectValue>{responsibles.find(r => r.id === responsibleUserId)?.fullName ?? "Выберите"}</SelectValue></SelectTrigger>
                 <SelectContent>{responsibles.map(r => <SelectItem key={r.id} value={r.id}>{r.fullName}</SelectItem>)}</SelectContent>
