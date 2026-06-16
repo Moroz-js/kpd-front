@@ -1,16 +1,15 @@
 /**
  * Экспорт данных БД в формат исходной сметы (Смета_23.xlsx).
  *
- * Стратегия: грузим шаблон templates/Smeta_23.xlsx и перезаписываем 11 листов
- * БД_* актуальными данными. Остальные листы (формулы, сводки) не трогаем —
- * они ссылаются на БД_* по адресам ячеек, поэтому значения остаются согласованными.
+ * Стратегия: берем templates/Smeta_23.xlsx как zip-контейнер и патчим только
+ * sheetData в 11 листах БД_*. Остальные XML-части книги (стили, умные таблицы,
+ * графики, пивоты, формулы) остаются из шаблона.
  *
  * Допустимые потери: один счёт из мультиселекта, null invoiceNumber, без __SRC_UID.
  */
 
 import path from "path";
 import fs from "fs";
-import * as XLSX from "xlsx";
 import { prisma } from "@/lib/db";
 import {
   ru,
@@ -22,56 +21,17 @@ import {
   WORK_STATUS_EN_RU,
   CHARGE_STATUS_EN_RU,
   PAYMENT_STATUS_EN_RU,
-  type SheetMeta,
 } from "@/lib/excel/mappings";
+import { patchWorkbookTemplate, type ExcelRow, type SheetPatch } from "@/lib/excel/xlsx-template-patcher";
 import { listClients } from "@/lib/services/clients";
 
-type Row = Record<string, unknown>;
+type Row = ExcelRow;
 
 const TEMPLATE_PATH = path.resolve(process.cwd(), "templates", "Smeta_23.xlsx");
 
-// ─── Запись данных в лист с сохранением заголовка ────────────────────────────
-
-function fillSheet(wb: XLSX.WorkBook, meta: SheetMeta, rows: Row[]): void {
-  const ws = wb.Sheets[meta.sheet];
-  if (!ws) throw new Error(`Лист "${meta.sheet}" не найден в шаблоне`);
-
-  const raw: unknown[][] = XLSX.utils.sheet_to_json(ws, {
-    header: 1,
-    defval: null,
-    blankrows: true,
-  });
-
-  let headerIdx = -1;
-  for (let i = 0; i < raw.length; i++) {
-    if (raw[i]?.some((v) => v === meta.identifyBy)) {
-      headerIdx = i;
-      break;
-    }
-  }
-  if (headerIdx === -1)
-    throw new Error(`Колонка "${meta.identifyBy}" не найдена в листе "${meta.sheet}"`);
-
-  const headers = (raw[headerIdx] as unknown[]).map((h) =>
-    h != null ? String(h).trim() : null
-  );
-
-  // Сохраняем всё до начала данных (заголовок + строки аннотаций при dataOffset>1)
-  const preserved = raw.slice(0, headerIdx + meta.dataOffset);
-
-  const dataRows = rows.map((r) =>
-    headers.map((h) => {
-      const v = h && h in r ? r[h] : null;
-      if (v == null) return null;
-      // Невалидные даты ломают запись xlsx → null
-      if (v instanceof Date) return isNaN(v.getTime()) ? null : v;
-      return v;
-    })
-  );
-
-  const aoa = [...preserved, ...dataRows];
-  const next = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true });
-  wb.Sheets[meta.sheet] = next;
+function weekLabel(week: number | null | undefined): string | null {
+  if (week == null) return null;
+  return `Неделя ${String(week).padStart(2, "0")}`;
 }
 
 // ─── Сериализаторы (зеркало extract* из migrate-excel.mjs) ────────────────────
@@ -294,7 +254,7 @@ async function serializeSpendingPlan(): Promise<Row[]> {
   });
   return lines.map((l) => ({
     "Год оплаты - план": l.year,
-    "Неделя оплаты - план": l.week,
+    "Неделя оплаты - план": weekLabel(l.week),
     Проект: l.project.name,
     Руководитель: l.project.responsible?.fullName ?? null,
     Сумма: l.amount,
@@ -306,11 +266,7 @@ async function serializeSpendingPlan(): Promise<Row[]> {
 // ─── Точка входа ──────────────────────────────────────────────────────────────
 
 export async function buildExportWorkbook(): Promise<Buffer> {
-  // В бандле Next у XLSX.readFile нет доступа к fs — читаем файл сами в буфер.
-  // Без cellDates: иначе даты на нетронутых листах превращаются в Date,
-  // и одна некорректная ломает XLSX.write (Invalid time value).
   const templateBuffer = fs.readFileSync(TEMPLATE_PATH);
-  const wb = XLSX.read(templateBuffer, { type: "buffer" });
 
   const [
     users,
@@ -338,18 +294,19 @@ export async function buildExportWorkbook(): Promise<Buffer> {
     serializeSpendingPlan(),
   ]);
 
-  fillSheet(wb, SHEET_META.users, users);
-  fillSheet(wb, SHEET_META.bankAccounts, bankAccounts);
-  fillSheet(wb, SHEET_META.workTypes, workTypes);
-  fillSheet(wb, SHEET_META.clients, clients);
-  fillSheet(wb, SHEET_META.projects, projects);
-  fillSheet(wb, SHEET_META.executors, executors);
-  fillSheet(wb, SHEET_META.orders, orders);
-  fillSheet(wb, SHEET_META.charges, charges);
-  fillSheet(wb, SHEET_META.works, works);
-  fillSheet(wb, SHEET_META.payments, payments);
-  fillSheet(wb, SHEET_META.spendingPlan, spendingPlan);
+  const patches: SheetPatch[] = [
+    { meta: SHEET_META.users, rows: users },
+    { meta: SHEET_META.bankAccounts, rows: bankAccounts },
+    { meta: SHEET_META.workTypes, rows: workTypes },
+    { meta: SHEET_META.clients, rows: clients },
+    { meta: SHEET_META.projects, rows: projects },
+    { meta: SHEET_META.executors, rows: executors },
+    { meta: SHEET_META.orders, rows: orders },
+    { meta: SHEET_META.charges, rows: charges },
+    { meta: SHEET_META.works, rows: works },
+    { meta: SHEET_META.payments, rows: payments },
+    { meta: SHEET_META.spendingPlan, rows: spendingPlan },
+  ];
 
-  const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
-  return Buffer.from(buf);
+  return patchWorkbookTemplate(templateBuffer, patches);
 }

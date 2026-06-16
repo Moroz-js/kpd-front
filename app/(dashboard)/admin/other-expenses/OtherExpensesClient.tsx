@@ -174,6 +174,7 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
 
   function canEdit(row: OtherExpense) {
     if (isAdmin) return true;
+    if (row.workStatus === "paid") return false;
     if (row.paymentStatus === "sent" || row.paymentStatus === "paid") return false;
     return row.createdById === userId || row.responsibleUserId === userId;
   }
