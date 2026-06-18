@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { isAdmin, isResponsible, canAccessOtherExpenses } from "@/lib/permissions";
+import { canAccessOtherExpenses } from "@/lib/permissions";
 import { prisma } from "@/lib/db";
 import { createOtherExpense, listOtherExpenses } from "@/lib/services/other-expenses";
 import { prismaErrorMessage } from "@/lib/prisma-errors";
@@ -26,13 +26,8 @@ const createSchema = z.object({
 export async function GET(_req: NextRequest) {
   const user = await getSessionUser();
   if (!user || !canAccessOtherExpenses(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  // Постоянный исполнитель видит только свои строки (создатель/ответственный).
-  const isPrivileged = isAdmin(user) || isResponsible(user);
-  const data = await listOtherExpenses(
-    isPrivileged
-      ? undefined
-      : { scopeUserId: user.id, scopeExecutorId: user.executorId ?? null }
-  );
+  // Все, у кого есть доступ к «Прочим тратам», видят все записи.
+  const data = await listOtherExpenses();
   return NextResponse.json(data);
 }
 
