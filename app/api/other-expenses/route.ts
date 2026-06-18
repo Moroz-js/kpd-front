@@ -10,7 +10,7 @@ const createSchema = z.object({
   projectId: z.string().min(1),
   executorId: z.string().min(1),
   workTypeId: z.string().min(1),
-  responsibleUserId: z.string().min(1),
+  responsibleExecutorId: z.string().min(1),
   bankAccountId: z.string().nullable().optional(),
   executionYear: z.number().int().min(2020).max(2100),
   executionMonth: z.number().int().min(1).max(12),
@@ -27,8 +27,12 @@ export async function GET(_req: NextRequest) {
   const user = await getSessionUser();
   if (!user || !canAccessOtherExpenses(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   // Постоянный исполнитель видит только свои строки (создатель/ответственный).
-  const scopeUserId = isAdmin(user) || isResponsible(user) ? undefined : user.id;
-  const data = await listOtherExpenses({ scopeUserId });
+  const isPrivileged = isAdmin(user) || isResponsible(user);
+  const data = await listOtherExpenses(
+    isPrivileged
+      ? undefined
+      : { scopeUserId: user.id, scopeExecutorId: user.executorId ?? null }
+  );
   return NextResponse.json(data);
 }
 
@@ -46,18 +50,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // PM (ответственный) может указать только себя. Постоянный исполнитель
-  // ответственным не является — выбирает ответственного из списка.
-  if (!isAdmin(user) && isResponsible(user) && parsed.data.responsibleUserId !== user.id) {
-    return NextResponse.json({ error: "Можно назначить только себя ответственным" }, { status: 403 });
-  }
-
-  const responsibleExists = await prisma.user.findUnique({
-    where: { id: parsed.data.responsibleUserId },
+  // Ответственный = активный постоянный исполнитель (KPD-285).
+  const responsibleExists = await prisma.executor.findFirst({
+    where: { id: parsed.data.responsibleExecutorId, type: "permanent", status: "active" },
     select: { id: true },
   });
   if (!responsibleExists) {
-    return NextResponse.json({ error: "Выбранный ответственный не найден в системе" }, { status: 422 });
+    return NextResponse.json({ error: "Выбранный ответственный не найден среди активных постоянных исполнителей" }, { status: 422 });
   }
 
   try {

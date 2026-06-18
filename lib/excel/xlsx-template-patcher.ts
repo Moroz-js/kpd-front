@@ -208,7 +208,12 @@ function buildDataRow(input: {
   formulaTemplates: Map<number, { formula: string; row: number; attrs: string }>;
 }): string {
   const sampleRowAttrs = input.sample?.attrs ?? "";
-  const rowAttrs = replaceAttr(sampleRowAttrs, "r", String(input.rowNumber));
+  // Строка-образец могла быть скрыта сохранённым автофильтром шаблона —
+  // снимаем hidden, иначе все сгенерированные строки будут невидимыми.
+  const visibleSampleAttrs = sampleRowAttrs
+    .replace(/\s+hidden="(?:1|true)"/g, "")
+    .replace(/\s+collapsed="(?:1|true)"/g, "");
+  const rowAttrs = replaceAttr(visibleSampleAttrs, "r", String(input.rowNumber));
   const cells: string[] = [];
 
   for (let col = input.startCol; col <= input.endCol; col++) {
@@ -335,9 +340,12 @@ function collectFormulaTemplates(
     if (row.row < dataStartRow || row.row > oldDataEndRow) continue;
 
     for (const [col, cell] of row.cells) {
-      if (cell.formula && !formulas.has(col)) {
-        formulas.set(col, { formula: cell.formula, row: row.row, attrs: cell.styleAttrs });
-      }
+      if (!cell.formula || formulas.has(col)) continue;
+      // Артефакт выгрузки Google Sheets: нерасчётная заглушка с захардкоженным
+      // кэш-значением. Если её копировать, все строки получат одно и то же
+      // значение из строки-образца — поэтому такие формулы не переносим.
+      if (cell.formula.includes("__xludf.DUMMYFUNCTION")) continue;
+      formulas.set(col, { formula: cell.formula, row: row.row, attrs: cell.styleAttrs });
     }
   }
 
@@ -372,9 +380,15 @@ async function patchTableXml(zip: JSZip, tablePath: string, ref: string): Promis
   if (!file) return;
 
   const xml = await file.async("string");
-  const next = xml
-    .replace(/\bref="[^"]+"/, `ref="${ref}"`)
-    .replace(/<autoFilter\b[^>]*ref="[^"]+"([^>]*)\/>/, `<autoFilter ref="${ref}"$1/>`);
+  let next = xml.replace(/(<table\b[^>]*\bref=")[^"]+(")/, `$1${ref}$2`);
+
+  // autoFilter обязан совпадать с ref таблицы, иначе Excel считает таблицу
+  // повреждённой и убирает формат «умной таблицы». Сохранённые критерии
+  // фильтра (<filterColumn>) тоже сбрасываем — иначе часть строк будет скрыта.
+  next = next.replace(
+    /<autoFilter\b[^>]*?(?:\/>|>[\s\S]*?<\/autoFilter>)/,
+    `<autoFilter ref="${ref}"/>`,
+  );
 
   zip.file(tablePath, next);
 }

@@ -143,7 +143,7 @@ export async function assertCanUnsetResponsible(userId: string): Promise<void> {
       `${b.executorsAsResponsible} ${b.executorsAsResponsible === 1 ? "исполнитель" : b.executorsAsResponsible < 5 ? "исполнителя" : "исполнителей"}, за которых он ответственен`
     );
   }
-  throw new Error(`Нельзя снять роль ответственного: ${parts.join("; ")}.`);
+  throw new Error(`Нельзя снять роль руководителя проекта: ${parts.join("; ")}.`);
 }
 
 async function findResponsibleTarget(userId: string) {

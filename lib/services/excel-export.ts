@@ -134,7 +134,9 @@ async function serializeExecutors(): Promise<Row[]> {
 async function serializeOrders(): Promise<Row[]> {
   const orders = await prisma.order.findMany({
     orderBy: { orderNumber: "asc" },
-    include: { project: { select: { name: true } } },
+    include: {
+      project: { select: { name: true, client: { select: { name: true } } } },
+    },
   });
   return orders.map((o) => ({
     "Номер заказа": o.orderNumber,
@@ -142,6 +144,7 @@ async function serializeOrders(): Promise<Row[]> {
     "Номер договора/допсоглашения": o.contractNumber,
     Статус: ru(STATUS_EN_RU, o.status),
     Проект: o.project?.name ?? null,
+    Клиент: o.project?.client?.name ?? null,
   }));
 }
 
@@ -150,7 +153,12 @@ async function serializeCharges(): Promise<Row[]> {
     orderBy: { chargeNumber: "asc" },
     include: {
       bankAccount: { select: { name: true } },
-      order: { select: { orderNumber: true } },
+      order: {
+        select: {
+          orderNumber: true,
+          project: { select: { name: true, client: { select: { name: true } } } },
+        },
+      },
     },
   });
   return charges.map((c) => ({
@@ -162,7 +170,9 @@ async function serializeCharges(): Promise<Row[]> {
     "Выставлен - факт": c.issuedAt,
     "Оплачен – план": c.paidPlanAt,
     "Оплачен – факт": c.paidAt,
+    Проект: c.order?.project?.name ?? null,
     "Назначение платежа": c.paymentPurpose,
+    Клиент: c.order?.project?.client?.name ?? null,
     Статус: ru(CHARGE_STATUS_EN_RU, c.status),
     Документы: c.documents,
     "Номер Заказа": c.order?.orderNumber ?? null,
@@ -176,6 +186,7 @@ async function serializeWorks(): Promise<Row[]> {
         executor: { select: { name: true } },
         project: { select: { name: true } },
         workType: { select: { name: true } },
+        responsibleExecutor: { select: { name: true } },
       },
       orderBy: { createdAt: "asc" },
     }),
@@ -184,6 +195,7 @@ async function serializeWorks(): Promise<Row[]> {
         executor: { select: { name: true } },
         project: { select: { name: true } },
         workType: { select: { name: true } },
+        responsibleExecutor: { select: { name: true } },
       },
       orderBy: { createdAt: "asc" },
     }),
@@ -193,6 +205,7 @@ async function serializeWorks(): Promise<Row[]> {
     Исполнитель: w.executor.name,
     Проект: w.project.name,
     "Вид работ": w.workType.name,
+    Ответственный: w.responsibleExecutor?.name ?? null,
     "Год выполнения": w.executionYear,
     "Месяц выполнения работ": monthLabel(w.executionMonth),
     "Сумма к выплате": w.amount,
@@ -208,6 +221,7 @@ async function serializeWorks(): Promise<Row[]> {
     Исполнитель: o.executor.name,
     Проект: o.project.name,
     "Вид работ": o.workType.name,
+    Ответственный: o.responsibleExecutor?.name ?? null,
     "Год выполнения": o.executionYear,
     "Месяц выполнения работ": monthLabel(o.executionMonth),
     "Сумма к выплате": o.amount,

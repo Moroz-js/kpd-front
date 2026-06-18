@@ -20,6 +20,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { ProjectCashflowChart } from "@/components/ui-custom/ProjectCashflowChart";
+import { WorksReviewTable } from "@/components/ui-custom/WorksReviewTable";
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
@@ -656,6 +657,16 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Все работы по проекту (KPD-287) */}
+      <div className="rounded-lg border border-neutral-200 bg-white p-4 space-y-3">
+        <h2 className="text-base font-semibold text-neutral-900">Все работы по проекту</h2>
+        <WorksReviewTable
+          fetchUrl={`/api/projects/${projectId}/works`}
+          emptyText="По проекту ещё нет работ (Личные сметы и Прочие траты)."
+          showProjectColumn={false}
+        />
       </div>
 
       {addOpen && (

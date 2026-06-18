@@ -34,6 +34,7 @@ import { formatDate } from "@/lib/format";
 import { TASK_STATUSES, BADGE_TONE_CLASS } from "@/lib/statuses";
 import { cn } from "@/lib/utils";
 import { stickyActionsHead, stickyActionsCell, stickyActionsInner } from "@/lib/table-styles";
+import { WorksReviewTable } from "@/components/ui-custom/WorksReviewTable";
 
 type TaskRow = {
   id: string;
@@ -72,6 +73,7 @@ function TaskStatusBadge({ status }: { status: string }) {
 }
 
 export function TasksTab({ executorId, isAdmin, isOwner, onTaskCountChange }: Props) {
+  const [subView, setSubView] = useState<"tasks" | "review">("tasks");
   const [tasks, setTasks] = useState<TaskRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
@@ -132,14 +134,42 @@ export function TasksTab({ executorId, isAdmin, isOwner, onTaskCountChange }: Pr
 
   return (
     <div className="flex flex-col h-full min-h-0 gap-3">
-      {isAdmin && (
-        <div className="shrink-0">
+      <div className="shrink-0 flex items-center gap-2">
+        <div className="inline-flex rounded-md border border-neutral-200 bg-neutral-50 p-0.5">
+          <button
+            className={cn(
+              "px-3 py-1 text-xs font-medium rounded transition-colors",
+              subView === "tasks" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-800"
+            )}
+            onClick={() => setSubView("tasks")}
+          >
+            Задачи
+          </button>
+          <button
+            className={cn(
+              "px-3 py-1 text-xs font-medium rounded transition-colors",
+              subView === "review" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-800"
+            )}
+            onClick={() => setSubView("review")}
+          >
+            Работы на проверку
+          </button>
+        </div>
+        {subView === "tasks" && isAdmin && (
           <Button size="sm" onClick={() => setCreateOpen(true)}>
             <Plus className="h-3.5 w-3.5 mr-1" /> Задача
           </Button>
-        </div>
-      )}
+        )}
+      </div>
 
+      {subView === "review" ? (
+        <div className="flex-1 min-h-0 min-w-0 overflow-auto">
+          <WorksReviewTable
+            fetchUrl={`/api/executors/${executorId}/review-works`}
+            emptyText="Нет работ, где вы назначены ответственным."
+          />
+        </div>
+      ) : (
       <div className="flex-1 min-h-0 min-w-0 overflow-auto rounded-md border bg-white">
       {loading ? (
         <div className="text-sm text-neutral-400 text-center py-8">Загрузка...</div>
@@ -247,6 +277,7 @@ export function TasksTab({ executorId, isAdmin, isOwner, onTaskCountChange }: Pr
         </div>
       )}
       </div>
+      )}
 
       {createOpen && (
         <CreateTaskDialog

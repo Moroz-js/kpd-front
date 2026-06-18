@@ -15,7 +15,36 @@ import { logActivity, diff } from "@/lib/audit/log";
 import type { IssuedWorkSource } from "@/lib/views/issuedWorks";
 import { updateOtherExpense } from "@/lib/services/other-expenses";
 import { hasOtherExpensePayment } from "@/lib/other-expense-payment";
-import { tryCreatePaymentForPeriod } from "@/lib/services/payments";
+import { isAdmin, isResponsible, type SessionLike } from "@/lib/permissions";
+
+/**
+ * Может ли пользователь рецензировать (менять статус/ответственного/комментарий)
+ * строку выставленных работ: admin, РП проекта или текущий «Ответственный» строки
+ * (KPD-287/288).
+ */
+export async function canReviewIssuedSource(
+  user: SessionLike,
+  sourceType: IssuedWorkSource,
+  sourceId: string
+): Promise<boolean> {
+  if (isAdmin(user)) return true;
+
+  const row =
+    sourceType === "personal"
+      ? await prisma.work.findUnique({
+          where: { id: sourceId },
+          select: { responsibleExecutorId: true, project: { select: { responsibleUserId: true } } },
+        })
+      : await prisma.otherExpense.findUnique({
+          where: { id: sourceId },
+          select: { responsibleExecutorId: true, project: { select: { responsibleUserId: true } } },
+        });
+  if (!row) return false;
+
+  if (isResponsible(user) && row.project.responsibleUserId === user.id) return true;
+  if (user.executorId && row.responsibleExecutorId === user.executorId) return true;
+  return false;
+}
 function assertSettableWorkStatus(workStatus: string | undefined) {
   if (workStatus === "paid") {
     throw new Error("Статус «Оплачено» проставляется только при выплате");
@@ -30,6 +59,8 @@ export type IssuedWorkPatch = {
   executionYear?: number;
   executorId?: string;
   workStatus?: string;
+  responsibleExecutorId?: string | null;
+  comment?: string | null;
 };
 
 export async function updateIssuedWork(
@@ -52,12 +83,22 @@ async function updatePersonal(workId: string, patch: IssuedWorkPatch, userId: st
   if (patch.workStatus !== undefined && before.workStatus === "paid") {
     throw new Error("Статус оплаченной работы меняется только через выплату");
   }
+  // §5 (KPD-284): у привязанной к выплате работы статус управляется выплатой
+  if (
+    patch.workStatus !== undefined &&
+    patch.workStatus !== before.workStatus &&
+    before.paymentId
+  ) {
+    throw new Error("Отвяжите работу от выплаты, чтобы изменить её статус");
+  }
 
-  // §3.7 разрешённые: project, workType, plannedPayAt, status
+  // §3.7 разрешённые: project, workType, plannedPayAt, status, ответственный, комментарий
   const data: Record<string, unknown> = {};
   if (patch.projectId !== undefined) data.projectId = patch.projectId;
   if (patch.workTypeId !== undefined) data.workTypeId = patch.workTypeId;
   if (patch.plannedPayAt !== undefined) data.plannedPayAt = patch.plannedPayAt;
+  if (patch.responsibleExecutorId !== undefined) data.responsibleExecutorId = patch.responsibleExecutorId;
+  if (patch.comment !== undefined) data.comment = patch.comment;
   if (patch.workStatus !== undefined) {
     data.workStatus = patch.workStatus;
     if (patch.workStatus === "checked" && before.workStatus !== "checked") {
@@ -67,23 +108,22 @@ async function updatePersonal(workId: string, patch: IssuedWorkPatch, userId: st
 
   const updated = await prisma.work.update({ where: { id: workId }, data });
 
-  // §1.7 — при смене на checked пробуем авто-создать выплату
-  if (patch.workStatus === "checked" && before.workStatus !== "checked") {
-    await tryCreatePaymentForPeriod(before.executorId, before.executionYear, before.executionMonth, userId);
-  }
-
   const changes = diff(
     {
       projectId: before.projectId,
       workTypeId: before.workTypeId,
       plannedPayAt: before.plannedPayAt,
       workStatus: before.workStatus,
+      responsibleExecutorId: before.responsibleExecutorId,
+      comment: before.comment,
     },
     {
       projectId: updated.projectId,
       workTypeId: updated.workTypeId,
       plannedPayAt: updated.plannedPayAt,
       workStatus: updated.workStatus,
+      responsibleExecutorId: updated.responsibleExecutorId,
+      comment: updated.comment,
     }
   );
   if (Object.keys(changes).length > 0) {
@@ -123,6 +163,10 @@ async function updateOther(otherId: string, patch: IssuedWorkPatch, userId: stri
         ...(patch.executionYear !== undefined && { executionYear: patch.executionYear }),
         ...(patch.executorId !== undefined && { executorId: patch.executorId }),
         ...(patch.workStatus !== undefined && { workStatus: patch.workStatus }),
+        ...(patch.responsibleExecutorId !== undefined && {
+          responsibleExecutorId: patch.responsibleExecutorId ?? undefined,
+        }),
+        ...(patch.comment !== undefined && { comment: patch.comment }),
       },
       userId
     );
@@ -134,6 +178,8 @@ async function updateOther(otherId: string, patch: IssuedWorkPatch, userId: stri
   if (patch.executionMonth !== undefined) data.executionMonth = patch.executionMonth;
   if (patch.executionYear !== undefined) data.executionYear = patch.executionYear;
   if (patch.executorId !== undefined) data.executorId = patch.executorId;
+  if (patch.responsibleExecutorId !== undefined) data.responsibleExecutorId = patch.responsibleExecutorId;
+  if (patch.comment !== undefined) data.comment = patch.comment;
   if (patch.workStatus !== undefined) {
     data.workStatus = patch.workStatus;
     if (patch.workStatus === "checked" && before.workStatus !== "checked") {
@@ -151,6 +197,8 @@ async function updateOther(otherId: string, patch: IssuedWorkPatch, userId: stri
       executionYear: before.executionYear,
       executorId: before.executorId,
       workStatus: before.workStatus,
+      responsibleExecutorId: before.responsibleExecutorId,
+      comment: before.comment,
     },
     {
       projectId: updated.projectId,
@@ -159,6 +207,8 @@ async function updateOther(otherId: string, patch: IssuedWorkPatch, userId: stri
       executionYear: updated.executionYear,
       executorId: updated.executorId,
       workStatus: updated.workStatus,
+      responsibleExecutorId: updated.responsibleExecutorId,
+      comment: updated.comment,
     }
   );
   if (Object.keys(changes).length > 0) {

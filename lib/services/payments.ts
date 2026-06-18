@@ -1,10 +1,11 @@
 /**
- * PaymentService — создание/редактирование выплат (TDNB-15).
+ * PaymentService — создание/редактирование выплат (TDNB-15 / KPD-284).
  *
- * §1.7  tryCreatePaymentForPeriod — автоматическое создание при проверке
- * §1.7* createManualPayment       — ручное создание
- * §1.10 markPaymentPaid           — проставление даты оплаты
- * §1.12 propagatePlanDate         — каскад «Дата оплаты план»
+ * createPaymentFromWorks — формирование выплаты из проверенных работ
+ * createManualPayment    — «Добавить выплату» (без работ)
+ * setPaymentWorkLinks    — управление связями выплата↔работы (attach/detach)
+ * markPaymentPaid        — оплата выплаты + каскад на привязанные работы
+ * propagatePlanDate      — каскад «Дата оплаты план» на привязанные работы
  */
 import { prisma } from "@/lib/db";
 import { logActivity } from "@/lib/audit/log";
@@ -25,47 +26,56 @@ async function resolveDefaultBank(executorId: string): Promise<string | null> {
   return global?.id ?? null;
 }
 
-// ─── §1.7 Авто-создание ────────────────────────────────────────────────────
+// ─── §4 Формирование выплаты из проверенных работ ───────────────────────────
 
 /**
- * Пытается создать Payment для «хвоста» (работы без paymentId).
- * Условие: все работы хвоста имеют workStatus = "checked".
+ * Создаёт одну выплату на переданные проверенные непривязанные работы и
+ * проставляет двустороннюю связь. KPD-284 §4.
  */
-export async function tryCreatePaymentForPeriod(
+export async function createPaymentFromWorks(
   executorId: string,
-  year: number,
-  month: number,
+  workIds: string[],
   userId: string
-): Promise<void> {
-  const tail = await prisma.work.findMany({
-    where: { executorId, executionYear: year, executionMonth: month, paymentId: null },
-    select: { id: true, amount: true, workStatus: true },
+) {
+  const works = await prisma.work.findMany({
+    where: { id: { in: workIds }, executorId },
+    select: { id: true, amount: true, workStatus: true, paymentId: true },
   });
+  if (works.length === 0) {
+    throw new Error("Нет работ для формирования выплаты");
+  }
+  if (works.length !== workIds.length) {
+    throw new Error("Некоторые работы не найдены");
+  }
+  for (const w of works) {
+    if (w.paymentId) {
+      throw new Error("Среди выбранных есть работа, уже привязанная к выплате");
+    }
+    if (w.workStatus !== "checked") {
+      throw new Error("Сформировать выплату можно только из проверенных работ");
+    }
+  }
 
-  if (tail.length === 0) return;
-  if (!tail.every((w) => w.workStatus === "checked")) return;
-
-  const amount = tail.reduce((s, w) => s + w.amount, 0);
+  const amount = works.reduce((s, w) => s + w.amount, 0);
   const bankAccountId = await resolveDefaultBank(executorId);
+  const plannedPayAt = nearestPaymentDate();
 
   const payment = await prisma.$transaction(async (tx) => {
     const p = await tx.payment.create({
       data: {
         executorId,
-        periodYear: year,
-        periodMonth: month,
+        periodYear: plannedPayAt.getFullYear(),
+        periodMonth: plannedPayAt.getMonth() + 1,
         amount,
         paymentStatus: "planned",
         bankAccountId,
-        plannedPayAt: nearestPaymentDate(),
+        plannedPayAt,
       },
     });
-
     await tx.work.updateMany({
-      where: { id: { in: tail.map((w) => w.id) } },
-      data: { paymentId: p.id },
+      where: { id: { in: workIds } },
+      data: { paymentId: p.id, plannedPayAt },
     });
-
     return p;
   });
 
@@ -74,11 +84,73 @@ export async function tryCreatePaymentForPeriod(
     action: "create",
     entityType: "Payment",
     entityId: payment.id,
-    entityLabel: `Авто-выплата ${month}/${year}`,
+    entityLabel: `Выплата на ${works.length} работ`,
+  });
+
+  return payment;
+}
+
+// ─── §5 Управление связями выплата ↔ работы (attach/detach) ─────────────────
+
+export async function setPaymentWorkLinks(
+  executorId: string,
+  paymentId: string,
+  links: { add?: string[]; remove?: string[] },
+  userId: string
+) {
+  const add = links.add ?? [];
+  const remove = links.remove ?? [];
+
+  const payment = await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } });
+  if (payment.executorId !== executorId) throw new Error("Выплата не найдена");
+  if (payment.paymentStatus === "sent" || payment.paymentStatus === "paid") {
+    throw new Error("Чтобы изменить список привязанных работ, смените статус выплаты на «запланирована» (если она ещё не оплачена)");
+  }
+
+  await prisma.$transaction(async (tx) => {
+    if (add.length > 0) {
+      const works = await tx.work.findMany({
+        where: { id: { in: add }, executorId },
+        select: { id: true, workStatus: true, paymentId: true },
+      });
+      if (works.length !== add.length) throw new Error("Некоторые работы не найдены");
+      for (const w of works) {
+        if (w.paymentId && w.paymentId !== paymentId) {
+          throw new Error("Работа уже привязана к другой выплате");
+        }
+        if (w.workStatus !== "checked" && w.workStatus !== "paid") {
+          throw new Error("Привязать можно только проверенную работу");
+        }
+      }
+      await tx.work.updateMany({
+        where: { id: { in: add } },
+        data: { paymentId, plannedPayAt: payment.plannedPayAt },
+      });
+    }
+    if (remove.length > 0) {
+      await tx.work.updateMany({
+        where: { id: { in: remove }, paymentId },
+        data: { paymentId: null },
+      });
+    }
+    const linked = await tx.work.findMany({
+      where: { paymentId },
+      select: { amount: true },
+    });
+    const amount = linked.reduce((s, w) => s + w.amount, 0);
+    await tx.payment.update({ where: { id: paymentId }, data: { amount } });
+  });
+
+  await logActivity({
+    userId,
+    action: "update",
+    entityType: "Payment",
+    entityId: paymentId,
+    entityLabel: `Состав выплаты ${payment.periodMonth}/${payment.periodYear}`,
   });
 }
 
-// ─── §1.7* Ручное создание ─────────────────────────────────────────────────
+// ─── Ручное создание («Добавить выплату») ───────────────────────────────────
 
 export type CreateManualPaymentInput = {
   executorId: string;
@@ -146,41 +218,63 @@ export async function updatePayment(
   patch: UpdatePaymentInput,
   userId: string
 ) {
-  const payment = await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } });
+  const payment = await prisma.payment.findUniqueOrThrow({
+    where: { id: paymentId },
+    include: { works: { select: { id: true } } },
+  });
+  const hasWorks = payment.works.length > 0;
+  const fromStatus = payment.paymentStatus;
+  const toStatus = patch.paymentStatus;
 
-  // Если проставляется paidAt — делаем через markPaymentPaid для каскада
-  if (patch.paidAt !== undefined && patch.paidAt && !payment.paidAt) {
-    await markPaymentPaid(paymentId, new Date(patch.paidAt), userId);
-    // Остальные поля (если есть) — применим отдельно
-    const { paidAt: _, ...rest } = patch;
-    if (Object.keys(rest).length > 0) {
-      await prisma.payment.update({
-        where: { id: paymentId },
-        data: {
-          ...(rest.amount !== undefined && { amount: rest.amount }),
-          ...(rest.bankAccountId !== undefined && { bankAccountId: rest.bankAccountId }),
-          ...(rest.comment !== undefined && { comment: rest.comment }),
-          ...(rest.periodYear !== undefined && { periodYear: rest.periodYear }),
-          ...(rest.periodMonth !== undefined && { periodMonth: rest.periodMonth }),
-        },
-      });
-    }
-    return;
+  // §5: сумма выплаты с привязанными работами = сумме работ и не редактируется вручную
+  if (patch.amount !== undefined && hasWorks && patch.amount !== payment.amount) {
+    throw new Error("Сумма выплаты с привязанными работами равна сумме работ и не редактируется");
   }
 
-  // Если проставляется plannedPayAt — делаем через propagatePlanDate для каскада
+  // §5: каскады по смене статуса выплаты на привязанные работы
+  if (toStatus && toStatus !== fromStatus) {
+    if (toStatus === "paid") {
+      await markPaymentPaid(paymentId, patch.paidAt ? new Date(patch.paidAt) : new Date(), userId);
+    } else if (toStatus === "sent") {
+      await prisma.$transaction(async (tx) => {
+        await tx.payment.update({ where: { id: paymentId }, data: { paymentStatus: "sent" } });
+        await tx.work.updateMany({ where: { paymentId }, data: { workStatus: "paid" } });
+      });
+    } else if (toStatus === "planned") {
+      // sent/paid → planned: работы из «оплачено» возвращаются в «проверена»
+      await prisma.$transaction(async (tx) => {
+        await tx.payment.update({
+          where: { id: paymentId },
+          data: { paymentStatus: "planned", ...(fromStatus === "paid" && { paidAt: null }) },
+        });
+        await tx.work.updateMany({
+          where: { paymentId, workStatus: "paid" },
+          data: { workStatus: "checked", ...(fromStatus === "paid" && { paidAt: null }) },
+        });
+      });
+    }
+  }
+
+  // Каскад «Дата оплаты план» на привязанные работы
   if (patch.plannedPayAt !== undefined) {
     const planDate = patch.plannedPayAt ? new Date(patch.plannedPayAt) : null;
     await propagatePlanDate(paymentId, planDate, userId);
   }
 
+  // Правка даты оплаты без смены статуса (корректировка уже оплаченной)
+  if (patch.paidAt !== undefined && !toStatus) {
+    if (patch.paidAt) {
+      await markPaymentPaid(paymentId, new Date(patch.paidAt), userId);
+    } else {
+      await prisma.payment.update({ where: { id: paymentId }, data: { paidAt: null } });
+    }
+  }
+
   const updated = await prisma.payment.update({
     where: { id: paymentId },
     data: {
-      ...(patch.amount !== undefined && { amount: patch.amount }),
-      ...(patch.paymentStatus !== undefined && { paymentStatus: patch.paymentStatus }),
+      ...(patch.amount !== undefined && !hasWorks && { amount: patch.amount }),
       ...(patch.bankAccountId !== undefined && { bankAccountId: patch.bankAccountId }),
-      ...(patch.paidAt !== undefined && { paidAt: patch.paidAt ? new Date(patch.paidAt) : null }),
       ...(patch.comment !== undefined && { comment: patch.comment }),
       ...(patch.periodYear !== undefined && { periodYear: patch.periodYear }),
       ...(patch.periodMonth !== undefined && { periodMonth: patch.periodMonth }),
@@ -198,7 +292,7 @@ export async function updatePayment(
   return updated;
 }
 
-// ─── §1.10 Оплата выплаты ──────────────────────────────────────────────────
+// ─── Оплата выплаты + каскад на привязанные работы ──────────────────────────
 
 export async function markPaymentPaid(
   paymentId: string,
@@ -213,30 +307,11 @@ export async function markPaymentPaid(
       data: { paymentStatus: "paid", paidAt },
     });
 
-    // Проверяем, остались ли неоплаченные выплаты за этот период
-    const openPayments = await tx.payment.count({
-      where: {
-        executorId: payment.executorId,
-        periodYear: payment.periodYear,
-        periodMonth: payment.periodMonth,
-        id: { not: paymentId },
-        paymentStatus: { not: "paid" },
-      },
+    // §5: все привязанные работы → «оплачено»
+    await tx.work.updateMany({
+      where: { paymentId },
+      data: { workStatus: "paid", paidAt },
     });
-
-    if (openPayments === 0) {
-      // Все выплаты за период оплачены → каскад на работы
-      await tx.work.updateMany({
-        where: {
-          executorId: payment.executorId,
-          executionYear: payment.periodYear,
-          executionMonth: payment.periodMonth,
-          paymentId: { not: null },
-          workStatus: "checked",
-        },
-        data: { workStatus: "paid", paidAt },
-      });
-    }
   });
 
   await logActivity({
@@ -284,10 +359,10 @@ export async function deletePaymentForExecutor(paymentId: string, userId: string
   const payment = await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } });
 
   await prisma.$transaction(async (tx) => {
-    // Снять paymentId у связанных работ + откатить статус paid→checked
+    // Снять paymentId у связанных работ + откатить статус оплаты (остаются «проверена»)
     await tx.work.updateMany({
       where: { paymentId },
-      data: { paymentId: null, workStatus: "submitted", paidAt: null },
+      data: { paymentId: null, workStatus: "checked", paidAt: null },
     });
 
     await tx.payment.delete({ where: { id: paymentId } });

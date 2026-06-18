@@ -1211,6 +1211,53 @@ async function seedVacations() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Backfill «Ответственный» (KPD-284/285): Work → РП проекта, OtherExpense → по
+//  responsibleUserId. Заполняет только пустые значения, существующие не трогает.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function backfillResponsibleExecutors() {
+  const execByUser = new Map<string, string>();
+  for (const e of await prisma.executor.findMany({
+    where: { userId: { not: null } },
+    select: { id: true, userId: true },
+  })) {
+    if (e.userId) execByUser.set(e.userId, e.id);
+  }
+
+  const projects = new Map<string, string | null>();
+  for (const p of await prisma.project.findMany({ select: { id: true, responsibleUserId: true } })) {
+    projects.set(p.id, p.responsibleUserId);
+  }
+
+  let works = 0;
+  for (const w of await prisma.work.findMany({
+    where: { responsibleExecutorId: null },
+    select: { id: true, projectId: true },
+  })) {
+    const userId = projects.get(w.projectId) ?? null;
+    const execId = userId ? execByUser.get(userId) ?? null : null;
+    if (execId) {
+      await prisma.work.update({ where: { id: w.id }, data: { responsibleExecutorId: execId } });
+      works++;
+    }
+  }
+
+  let other = 0;
+  for (const o of await prisma.otherExpense.findMany({
+    where: { responsibleExecutorId: null },
+    select: { id: true, responsibleUserId: true },
+  })) {
+    const execId = o.responsibleUserId ? execByUser.get(o.responsibleUserId) ?? null : null;
+    if (execId) {
+      await prisma.otherExpense.update({ where: { id: o.id }, data: { responsibleExecutorId: execId } });
+      other++;
+    }
+  }
+
+  console.log(`[seed] backfill responsibleExecutor: works=${works}, otherExpenses=${other}`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  main
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1231,6 +1278,7 @@ async function main() {
   await seedCharges();
   await seedSpendingPlanLines();
   await seedVacations();
+  await backfillResponsibleExecutors();
 
   const [works, payments, expenses, charges, plan] = await Promise.all([
     prisma.work.count(),

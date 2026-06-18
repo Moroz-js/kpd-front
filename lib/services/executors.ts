@@ -49,6 +49,21 @@ export type ExecutorListRow = {
   createdAt: Date;
 };
 
+/**
+ * Список активных постоянных исполнителей для dropdown «Ответственный»
+ * (KPD-284/285). Отсортирован по имени (collator ru).
+ */
+export async function listActivePermanentExecutors(): Promise<
+  { id: string; name: string }[]
+> {
+  const rows = await prisma.executor.findMany({
+    where: { type: "permanent", status: "active" },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
+  return rows.sort((a, b) => a.name.localeCompare(b.name, "ru"));
+}
+
 export async function listExecutors(): Promise<ExecutorListRow[]> {
   const [executors, planLines] = await Promise.all([
     prisma.executor.findMany({
@@ -268,16 +283,16 @@ export async function updateExecutor(id: string, patch: UpdateExecutorInput, use
   const nextType = patch.type ?? normalizeExecutorType(before.type);
 
   if (patch.isResponsible === true && before.status === "archived") {
-    throw new Error("Нельзя назначить ответственным архивного исполнителя");
+    throw new Error("Нельзя назначить руководителем проекта архивного исполнителя");
   }
 
   if (patch.isResponsible === true && !canBeResponsible(nextType)) {
-    throw new Error("Ответственным может быть только исполнитель типа «Постоянный»");
+    throw new Error("Руководителем проекта может быть только исполнитель типа «Постоянный»");
   }
 
   if (patch.isResponsible === false && before.isResponsible) {
     if (!before.userId) {
-      throw new Error("Нельзя снять роль ответственного: у исполнителя нет учётной записи");
+      throw new Error("Нельзя снять роль руководителя проекта: у исполнителя нет учётной записи");
     }
     await assertCanUnsetResponsible(before.userId);
   }

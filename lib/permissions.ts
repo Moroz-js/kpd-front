@@ -170,18 +170,31 @@ export function canAccessOtherExpenses(user: SessionLike | null | undefined): bo
  */
 export function canEditOtherExpense(
   user: SessionLike,
-  row: { createdById: string; responsibleUserId: string; paymentStatus?: string | null }
+  row: {
+    createdById: string;
+    responsibleExecutorId?: string | null;
+    paymentStatus?: string | null;
+  }
 ): boolean {
   if (isAdmin(user)) return true;
   if (!canAccessOtherExpenses(user)) return false;
   if (row.paymentStatus === "sent" || row.paymentStatus === "paid") return false;
-  return row.createdById === user.id || row.responsibleUserId === user.id;
+  if (row.createdById === user.id) return true;
+  return (
+    !!user.executorId &&
+    !!row.responsibleExecutorId &&
+    row.responsibleExecutorId === user.executorId
+  );
 }
 
 /** Удаление строки прочих трат — те же правила, что и редактирование. */
 export function canDeleteOtherExpense(
   user: SessionLike,
-  row: { createdById: string; responsibleUserId: string; paymentStatus?: string | null }
+  row: {
+    createdById: string;
+    responsibleExecutorId?: string | null;
+    paymentStatus?: string | null;
+  }
 ): boolean {
   return canEditOtherExpense(user, row);
 }

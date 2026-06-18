@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
 import { checkOtherExpense } from "@/lib/services/other-expenses";
-import { updateIssuedWork } from "@/lib/services/issuedWorks";
+import { updateIssuedWork, canReviewIssuedSource } from "@/lib/services/issuedWorks";
 
 function parseId(id: string): { sourceType: "personal" | "other-expense"; sourceId: string } | null {
   const idx = id.indexOf(":");
@@ -16,11 +16,14 @@ function parseId(id: string): { sourceType: "personal" | "other-expense"; source
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const me = await getSessionUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!isAdmin(me)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { id } = await ctx.params;
   const parsedId = parseId(id);
   if (!parsedId) return NextResponse.json({ error: "Bad id" }, { status: 400 });
+
+  if (!isAdmin(me) && !(await canReviewIssuedSource(me, parsedId.sourceType, parsedId.sourceId))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   try {
     const updated =

@@ -33,9 +33,9 @@ export const WORK_STATUS_RU_EN: Record<string, string> = {
 
 export const CHARGE_STATUS_RU_EN: Record<string, string> = {
   "В плане": "planned",
-  "К оплате": "issued",
+  "К оплате": "to_pay",
+  "На согласовании": "pending_approval",
   Оплачено: "paid",
-  Просрочено: "overdue",
 };
 
 export const PAYMENT_STATUS_RU_EN: Record<string, string> = {
@@ -58,7 +58,12 @@ export const EXECUTOR_TYPE_EN_RU = invert(EXECUTOR_TYPE_RU_EN);
 export const STATUS_EN_RU = invert(STATUS_RU_EN);
 export const PROJECT_TYPE_EN_RU = invert(PROJECT_TYPE_RU_EN);
 export const WORK_STATUS_EN_RU = invert(WORK_STATUS_RU_EN);
-export const CHARGE_STATUS_EN_RU = invert(CHARGE_STATUS_RU_EN);
+export const CHARGE_STATUS_EN_RU: Record<string, string> = {
+  ...invert(CHARGE_STATUS_RU_EN),
+  // legacy-значения статусов из старых выгрузок
+  issued: "К оплате",
+  overdue: "Просрочено",
+};
 export const PAYMENT_STATUS_EN_RU = invert(PAYMENT_STATUS_RU_EN);
 
 export function ru(map: Record<string, string>, value: string | null | undefined): string | null {

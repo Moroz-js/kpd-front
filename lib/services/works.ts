@@ -1,8 +1,10 @@
 /**
- * WorkService — CRUD для Work (Личная смета, TDNB-15).
+ * WorkService — CRUD для Work (Личная смета, TDNB-15 / KPD-284).
  */
 import { prisma } from "@/lib/db";
 import { logActivity } from "@/lib/audit/log";
+import { nearestPaymentDate } from "@/lib/iso-weeks";
+import { resolveProjectManagerExecutorId } from "@/lib/services/projects";
 
 export type CreateWorkInput = {
   projectId: string;
@@ -16,6 +18,7 @@ export type CreateWorkInput = {
   rate?: number | null;
   amount: number;
   plannedPayAt?: string | null;
+  responsibleExecutorId?: string | null;
   filledTechTask?: string | null;
   filledAct?: string | null;
   comment?: string | null;
@@ -32,6 +35,7 @@ export async function listWorksForExecutor(executorId: string) {
     include: {
       project: { select: { id: true, name: true } },
       workType: { select: { id: true, name: true } },
+      responsibleExecutor: { select: { id: true, name: true } },
       payment: {
         select: {
           id: true,
@@ -56,6 +60,13 @@ export async function createWork(
   input: CreateWorkInput,
   userId: string
 ) {
+  // §3 (KPD-284): ответственный по умолчанию — руководитель проекта,
+  // статус «работа выставлена», дата оплаты план — ближайшее 5/20 число.
+  const responsibleExecutorId =
+    input.responsibleExecutorId !== undefined && input.responsibleExecutorId !== null
+      ? input.responsibleExecutorId
+      : await resolveProjectManagerExecutorId(input.projectId);
+
   const created = await prisma.work.create({
     data: {
       executorId,
@@ -69,7 +80,8 @@ export async function createWork(
       volume: input.volume ?? null,
       rate: input.rate ?? null,
       amount: input.amount,
-      plannedPayAt: input.plannedPayAt ? new Date(input.plannedPayAt) : null,
+      plannedPayAt: input.plannedPayAt ? new Date(input.plannedPayAt) : nearestPaymentDate(),
+      responsibleExecutorId: responsibleExecutorId ?? null,
       filledTechTask: input.filledTechTask ?? null,
       filledAct: input.filledAct ?? null,
       workStatus: "submitted",
@@ -99,6 +111,25 @@ export async function updateWork(
     throw new Error("Сумму оплаченной работы нельзя менять из сметы");
   }
 
+  // §5 (KPD-284): «оплачена» проставляется только автоматически при оплате выплаты
+  if (patch.workStatus === "paid" && before.workStatus !== "paid") {
+    throw new Error("Статус «работа оплачена» проставляется автоматически при оплате выплаты");
+  }
+
+  // §5: у привязанной к выплате работы статус и даты управляются выплатой
+  if (before.paymentId) {
+    if (patch.workStatus !== undefined && patch.workStatus !== before.workStatus) {
+      throw new Error("Отвяжите работу от выплаты, чтобы изменить её статус");
+    }
+    if (patch.plannedPayAt !== undefined) {
+      const next = patch.plannedPayAt ? new Date(patch.plannedPayAt).getTime() : null;
+      const prev = before.plannedPayAt ? before.plannedPayAt.getTime() : null;
+      if (next !== prev) {
+        throw new Error("Дата оплаты план привязанной работы управляется выплатой");
+      }
+    }
+  }
+
   const updated = await prisma.$transaction(async (tx) => {
     const row = await tx.work.update({
       where: { id: workId },
@@ -115,6 +146,9 @@ export async function updateWork(
         ...(patch.amount !== undefined && { amount: patch.amount }),
         ...(patch.plannedPayAt !== undefined && {
           plannedPayAt: patch.plannedPayAt ? new Date(patch.plannedPayAt) : null,
+        }),
+        ...(patch.responsibleExecutorId !== undefined && {
+          responsibleExecutorId: patch.responsibleExecutorId,
         }),
         ...(patch.filledTechTask !== undefined && { filledTechTask: patch.filledTechTask }),
         ...(patch.filledAct !== undefined && { filledAct: patch.filledAct }),

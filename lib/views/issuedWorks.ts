@@ -30,6 +30,9 @@ export type IssuedWorkRow = {
   workTypeName: string;
   workTypeSegment: string;
 
+  responsibleExecutorId: string | null;
+  responsibleExecutorName: string | null;
+
   amount: number;
   workStatus: string;
   comment: string | null;
@@ -52,6 +55,7 @@ export type IssuedWorksFilter = {
   workTypeSegment?: string[];
   executorType?: string[];
   sourceType?: IssuedWorkSource[];
+  responsibleExecutorId?: string[];
 };
 
 /** Извлечь даты (неделя/год план-факт) — facto если есть, иначе по plan. */
@@ -68,6 +72,7 @@ export async function listIssuedWorks(filter: IssuedWorksFilter = {}): Promise<I
         executor: { select: { id: true, name: true, type: true } },
         project: { select: { id: true, name: true, type: true } },
         workType: { select: { id: true, name: true, segment: true } },
+        responsibleExecutor: { select: { id: true, name: true } },
       },
     }),
     prisma.otherExpense.findMany({
@@ -75,6 +80,7 @@ export async function listIssuedWorks(filter: IssuedWorksFilter = {}): Promise<I
         executor: { select: { id: true, name: true, type: true } },
         project: { select: { id: true, name: true, type: true } },
         workType: { select: { id: true, name: true, segment: true } },
+        responsibleExecutor: { select: { id: true, name: true } },
       },
     }),
   ]);
@@ -97,6 +103,8 @@ export async function listIssuedWorks(filter: IssuedWorksFilter = {}): Promise<I
       workTypeId: w.workTypeId,
       workTypeName: w.workType.name,
       workTypeSegment: w.workType.segment,
+      responsibleExecutorId: w.responsibleExecutorId,
+      responsibleExecutorName: w.responsibleExecutor?.name ?? null,
       amount: w.amount,
       workStatus: w.workStatus,
       comment: w.comment,
@@ -125,6 +133,8 @@ export async function listIssuedWorks(filter: IssuedWorksFilter = {}): Promise<I
       workTypeId: o.workTypeId,
       workTypeName: o.workType.name,
       workTypeSegment: o.workType.segment,
+      responsibleExecutorId: o.responsibleExecutorId,
+      responsibleExecutorName: o.responsibleExecutor?.name ?? null,
       amount: o.amount,
       workStatus: o.workStatus,
       comment: o.comment,
@@ -152,6 +162,7 @@ function applyFilter(rows: IssuedWorkRow[], f: IssuedWorksFilter): IssuedWorkRow
     if (f.workTypeSegment?.length && !f.workTypeSegment.includes(r.workTypeSegment)) return false;
     if (f.executorType?.length && !f.executorType.includes(r.executorType)) return false;
     if (f.sourceType?.length && !f.sourceType.includes(r.sourceType)) return false;
+    if (f.responsibleExecutorId?.length && (r.responsibleExecutorId == null || !f.responsibleExecutorId.includes(r.responsibleExecutorId))) return false;
     return true;
   });
 }

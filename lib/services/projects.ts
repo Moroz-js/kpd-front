@@ -35,6 +35,57 @@ export function projectFullName(shortName: string, clientName: string | null): s
   return `${shortName.trim()} – ${clientName}`;
 }
 
+/**
+ * Возвращает id исполнителя-руководителя проекта (KPD-284/285).
+ * РП проекта = `Project.responsibleUserId` → исполнитель с этим `userId`.
+ * Используется для автозаполнения «Ответственного» при создании работ/трат.
+ */
+export async function resolveProjectManagerExecutorId(
+  projectId: string
+): Promise<string | null> {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { responsibleUserId: true },
+  });
+  if (!project?.responsibleUserId) return null;
+  const executor = await prisma.executor.findFirst({
+    where: { userId: project.responsibleUserId },
+    select: { id: true },
+  });
+  return executor?.id ?? null;
+}
+
+/**
+ * Активные проекты + id исполнителя-руководителя проекта (для автозаполнения
+ * «Ответственного» в формах). KPD-284/285.
+ */
+export async function listActiveProjectsWithManagerExecutor(): Promise<
+  { id: string; name: string; responsibleExecutorId: string | null }[]
+> {
+  const [projects, execs] = await Promise.all([
+    prisma.project.findMany({
+      where: { status: "active" },
+      select: { id: true, name: true, responsibleUserId: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.executor.findMany({
+      where: { userId: { not: null } },
+      select: { id: true, userId: true },
+    }),
+  ]);
+  const executorByUserId = new Map<string, string>();
+  for (const e of execs) {
+    if (e.userId) executorByUserId.set(e.userId, e.id);
+  }
+  return projects.map((p) => ({
+    id: p.id,
+    name: p.name,
+    responsibleExecutorId: p.responsibleUserId
+      ? executorByUserId.get(p.responsibleUserId) ?? null
+      : null,
+  }));
+}
+
 export function projectType(clientName: string | null): string {
   if (!clientName) return "unknown";
   return clientName.toLowerCase().includes("кпд") ? "internal" : "client";

@@ -13,7 +13,7 @@ export type CreateOtherExpenseInput = {
   projectId: string;
   executorId: string;
   workTypeId: string;
-  responsibleUserId: string;
+  responsibleExecutorId: string;
   bankAccountId?: string | null;
   executionYear: number;
   executionMonth: number;
@@ -26,29 +26,30 @@ export type CreateOtherExpenseInput = {
   comment?: string | null;
 };
 
-export type UpdateOtherExpenseInput = Partial<Omit<CreateOtherExpenseInput, "responsibleUserId">> & {
-  responsibleUserId?: string;
+export type UpdateOtherExpenseInput = Partial<Omit<CreateOtherExpenseInput, "responsibleExecutorId">> & {
+  responsibleExecutorId?: string;
   workStatus?: string;
   paymentStatus?: string | null;
 };
 
 // ─── List ─────────────────────────────────────────────────────────────────────
 
-export async function listOtherExpenses(opts?: { scopeUserId?: string }) {
+export async function listOtherExpenses(opts?: {
+  scopeUserId?: string;
+  scopeExecutorId?: string | null;
+}) {
+  const orFilters: Record<string, unknown>[] = [];
+  if (opts?.scopeUserId) orFilters.push({ createdById: opts.scopeUserId });
+  if (opts?.scopeExecutorId) orFilters.push({ responsibleExecutorId: opts.scopeExecutorId });
+  const scoped = opts?.scopeUserId || opts?.scopeExecutorId;
   return prisma.otherExpense.findMany({
-    where: opts?.scopeUserId
-      ? {
-          OR: [
-            { createdById: opts.scopeUserId },
-            { responsibleUserId: opts.scopeUserId },
-          ],
-        }
-      : undefined,
+    where: scoped ? { OR: orFilters } : undefined,
     include: {
       project: { select: { id: true, name: true, shortName: true } },
       executor: { select: { id: true, name: true } },
       workType: { select: { id: true, name: true, segment: true } },
       responsibleUser: { select: { id: true, fullName: true } },
+      responsibleExecutor: { select: { id: true, name: true } },
       bankAccount: { select: { id: true, name: true } },
     },
     orderBy: { createdAt: "desc" },
@@ -60,6 +61,7 @@ const otherExpenseInclude = {
   executor: { select: { id: true, name: true } },
   workType: { select: { id: true, name: true, segment: true } },
   responsibleUser: { select: { id: true, fullName: true } },
+  responsibleExecutor: { select: { id: true, name: true } },
   bankAccount: { select: { id: true, name: true } },
 } as const;
 
@@ -148,7 +150,7 @@ export async function createOtherExpense(
       projectId: input.projectId,
       executorId: input.executorId,
       workTypeId: input.workTypeId,
-      responsibleUserId: input.responsibleUserId,
+      responsibleExecutorId: input.responsibleExecutorId,
       bankAccountId: input.bankAccountId ?? null,
       executionYear: input.executionYear,
       executionMonth: input.executionMonth,
@@ -209,7 +211,7 @@ export async function updateOtherExpense(
       ...(patch.projectId !== undefined && { projectId: patch.projectId }),
       ...(patch.executorId !== undefined && { executorId: patch.executorId }),
       ...(patch.workTypeId !== undefined && { workTypeId: patch.workTypeId }),
-      ...(patch.responsibleUserId !== undefined && { responsibleUserId: patch.responsibleUserId }),
+      ...(patch.responsibleExecutorId !== undefined && { responsibleExecutorId: patch.responsibleExecutorId }),
       ...(patch.bankAccountId !== undefined && { bankAccountId: patch.bankAccountId }),
       ...(patch.executionYear !== undefined && { executionYear: patch.executionYear }),
       ...(patch.executionMonth !== undefined && { executionMonth: patch.executionMonth }),

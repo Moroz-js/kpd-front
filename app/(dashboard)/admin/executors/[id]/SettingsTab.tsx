@@ -425,12 +425,12 @@ export function SettingsTab({
                 htmlFor="isResponsible"
                 className={executorArchived ? "text-neutral-400" : "cursor-pointer"}
               >
-                Является ответственным
+                Назначить руководителем проекта
               </Label>
             </div>
             {executorArchived && (
               <p className="text-xs text-neutral-500 pl-6">
-                Архивного исполнителя нельзя назначить ответственным.
+                Архивного исполнителя нельзя назначить руководителем проекта.
               </p>
             )}
             {isResponsible &&
@@ -438,7 +438,7 @@ export function SettingsTab({
               executor.isResponsible &&
               !executor.responsibleActive && (
                 <p className="text-xs text-amber-700 pl-6">
-                  Роль ответственного в архиве — исполнитель при этом может оставаться активным.
+                  Роль руководителя проекта в архиве — исполнитель при этом может оставаться активным.
                 </p>
               )}
           </div>

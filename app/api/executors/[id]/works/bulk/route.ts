@@ -7,7 +7,7 @@ import { prisma } from "@/lib/db";
 const bulkSchema = z.object({
   ids: z.array(z.string()).min(1),
   patch: z.object({
-    workStatus: z.string().optional(),
+    workStatus: z.enum(["submitted", "checked", "rework"]).optional(),
     plannedPayAt: z.string().nullable().optional(),
   }),
 });
@@ -32,7 +32,7 @@ export async function POST(
   // Verify all works belong to this executor (IDOR protection)
   const works = await prisma.work.findMany({
     where: { id: { in: ids }, executorId },
-    select: { id: true, workStatus: true },
+    select: { id: true, workStatus: true, paymentId: true },
   });
 
   if (works.length !== ids.length) {
@@ -43,6 +43,13 @@ export async function POST(
 
   if (patch.workStatus !== undefined) {
     if (!isAdmin(user)) return NextResponse.json({ error: "Forbidden: status change requires admin" }, { status: 403 });
+    // §5 (KPD-284): нельзя менять статус у работ, привязанных к выплате
+    if (works.some((w) => w.paymentId)) {
+      return NextResponse.json(
+        { error: "Среди выбранных есть работы, привязанные к выплате — отвяжите их, чтобы изменить статус" },
+        { status: 400 }
+      );
+    }
     updateData.workStatus = patch.workStatus;
   }
 
@@ -54,8 +61,9 @@ export async function POST(
     return NextResponse.json({ updated: 0 });
   }
 
+  // Дата оплаты план привязанных работ управляется выплатой — обновляем только непривязанные
   const result = await prisma.work.updateMany({
-    where: { id: { in: ids }, executorId },
+    where: { id: { in: ids }, executorId, paymentId: null },
     data: updateData,
   });
 

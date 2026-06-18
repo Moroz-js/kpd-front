@@ -66,8 +66,10 @@ model Executor {
 
   projectExecutors  ProjectExecutor[]
   works             Work[]
+  worksResponsible  Work[]            @relation("WorkResponsible")
   payments          Payment[]
   otherExpenses     OtherExpense[]
+  otherExpensesResponsibleExec OtherExpense[] @relation("OtherExpenseResponsibleExecutor")
   executorWorkTypes ExecutorWorkType[]
   spendingPlanLines SpendingPlanLine[]
   vacationEntries   VacationEntry[]
@@ -217,6 +219,10 @@ model Work {
   checkedAt       DateTime? // Дата проверки
   comment         String?
 
+  // Ответственный (KPD-284): любой активный постоянный исполнитель; по умолчанию = РП проекта
+  responsibleExecutorId String?
+  responsibleExecutor   Executor? @relation("WorkResponsible", fields: [responsibleExecutorId], references: [id])
+
   paymentId String?
   payment   Payment? @relation(fields: [paymentId], references: [id])
 
@@ -226,6 +232,7 @@ model Work {
   @@index([executorId, executionYear, executionMonth])
   @@index([projectId])
   @@index([workStatus])
+  @@index([responsibleExecutorId])
   @@map("works")
 }
 
@@ -264,8 +271,12 @@ model OtherExpense {
   executor             Executor     @relation(fields: [executorId], references: [id])
   workTypeId           String
   workType             WorkType     @relation(fields: [workTypeId], references: [id])
-  responsibleUserId    String
-  responsibleUser      User         @relation("OtherExpenseResponsible", fields: [responsibleUserId], references: [id])
+  // legacy «Ответственный»-пользователь (оставлен для совместимости/миграции)
+  responsibleUserId    String?
+  responsibleUser      User?        @relation("OtherExpenseResponsible", fields: [responsibleUserId], references: [id])
+  // Ответственный (KPD-285): активный постоянный исполнитель
+  responsibleExecutorId String?
+  responsibleExecutor   Executor?   @relation("OtherExpenseResponsibleExecutor", fields: [responsibleExecutorId], references: [id])
   bankAccountId        String?
   bankAccount          BankAccount? @relation(fields: [bankAccountId], references: [id])
   executionYear        Int
@@ -288,6 +299,7 @@ model OtherExpense {
   @@index([projectId])
   @@index([executorId])
   @@index([responsibleUserId])
+  @@index([responsibleExecutorId])
   @@index([workStatus])
   @@index([paymentStatus])
   @@map("other_expenses")

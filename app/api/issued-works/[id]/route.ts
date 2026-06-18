@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
-import { updateIssuedWork } from "@/lib/services/issuedWorks";
+import { updateIssuedWork, canReviewIssuedSource } from "@/lib/services/issuedWorks";
 import { WORK_STATUSES_SETTABLE } from "@/lib/statuses";
 
 const patchSchema = z.object({
@@ -13,6 +13,8 @@ const patchSchema = z.object({
   executionYear: z.number().int().optional(),
   executorId: z.string().optional(),
   workStatus: z.enum(WORK_STATUSES_SETTABLE).optional(),
+  responsibleExecutorId: z.string().nullable().optional(),
+  comment: z.string().nullable().optional(),
 });
 
 /** Composite id format: `${sourceType}:${sourceId}` (e.g. "personal:cl123" or "other-expense:cl456"). */
@@ -29,7 +31,6 @@ function parseId(id: string): { sourceType: "personal" | "other-expense"; source
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const me = await getSessionUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!isAdmin(me)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { id } = await ctx.params;
   const parsedId = parseId(id);
@@ -45,6 +46,21 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
 
   const patch = parsed.data;
+
+  // Доступ: admin — всё; РП проекта или текущий «Ответственный» строки — только
+  // рецензирование (статус/ответственный/комментарий) (KPD-287/288).
+  if (!isAdmin(me)) {
+    const canReview = await canReviewIssuedSource(me, parsedId.sourceType, parsedId.sourceId);
+    if (!canReview) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const allowedForReviewer = new Set(["workStatus", "responsibleExecutorId", "comment"]);
+    const hasForbidden = Object.keys(patch).some((k) => !allowedForReviewer.has(k));
+    if (hasForbidden) {
+      return NextResponse.json(
+        { error: "Можно менять только статус, ответственного и комментарий" },
+        { status: 403 }
+      );
+    }
+  }
 
   // Защита от запрещённых полей: для personal allow только {projectId, workTypeId, plannedPayAt, workStatus}.
   // Для other-expense allow {projectId, workTypeId, executionMonth, executionYear, executorId, workStatus}.

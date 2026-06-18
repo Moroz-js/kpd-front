@@ -6,8 +6,8 @@ import { prisma } from "@/lib/db";
 import { z } from "zod";
 
 const patchSchema = z.object({
-  amount: z.number().positive().optional(),
-  paymentStatus: z.enum(["planned", "paid"]).optional(),
+  amount: z.number().min(0).optional(),
+  paymentStatus: z.enum(["planned", "sent", "paid"]).optional(),
   bankAccountId: z.string().nullable().optional(),
   plannedPayAt: z.string().nullable().optional(),
   paidAt: z.string().nullable().optional(),
@@ -39,10 +39,18 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     );
   }
 
-  await updatePayment(paymentId, parsed.data, user.id);
+  try {
+    await updatePayment(paymentId, parsed.data, user.id);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Не удалось сохранить выплату";
+    return NextResponse.json({ error: msg }, { status: 400 });
+  }
   const updated = await prisma.payment.findUnique({
     where: { id: paymentId },
-    include: { bankAccount: { select: { id: true, name: true } } },
+    include: {
+      bankAccount: { select: { id: true, name: true } },
+      works: { select: { id: true, amount: true, workStatus: true, executionYear: true, executionMonth: true } },
+    },
   });
   return NextResponse.json(updated);
 }

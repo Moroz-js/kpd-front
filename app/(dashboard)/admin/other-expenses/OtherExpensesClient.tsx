@@ -77,14 +77,14 @@ const PREFERRED_PAY_METHODS = [
 // ─── Типы ─────────────────────────────────────────────────────────────────────
 
 type Ref = { id: string; name: string };
-type UserRef = { id: string; fullName: string };
+type ProjectRef = Ref & { responsibleExecutorId?: string | null };
 
 type OtherExpense = {
   id: string;
   projectId: string; project: Ref;
   executorId: string; executor: Ref;
   workTypeId: string; workType: Ref & { segment: string };
-  responsibleUserId: string; responsibleUser: UserRef;
+  responsibleExecutorId: string | null; responsibleExecutor: Ref | null;
   bankAccountId: string | null; bankAccount: Ref | null;
   executionYear: number;
   executionMonth: number;
@@ -105,10 +105,11 @@ type OtherExpense = {
 type Props = {
   isAdmin: boolean;
   userId: string;
-  projects: Ref[];
+  executorId: string | null;
+  projects: ProjectRef[];
   executors: Ref[];
   workTypes: Ref[];
-  responsibles: UserRef[];
+  permanentExecutors: Ref[];
   bankAccounts: Ref[];
 };
 
@@ -129,7 +130,7 @@ async function readApiJson<T>(r: Response): Promise<T> {
 
 // ─── Утилиты ──────────────────────────────────────────────────────────────────
 
-export function OtherExpensesClient({ isAdmin, userId, projects, executors, workTypes, responsibles, bankAccounts }: Props) {
+export function OtherExpensesClient({ isAdmin, userId, executorId, projects, executors, workTypes, permanentExecutors, bankAccounts }: Props) {
   const [rows, setRows] = useState<OtherExpense[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
@@ -176,7 +177,10 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
     if (isAdmin) return true;
     if (row.workStatus === "paid") return false;
     if (row.paymentStatus === "sent" || row.paymentStatus === "paid") return false;
-    return row.createdById === userId || row.responsibleUserId === userId;
+    return (
+      row.createdById === userId ||
+      (!!executorId && row.responsibleExecutorId === executorId)
+    );
   }
 
   const allYears = [...new Set(rows.map(r => r.executionYear))].sort();
@@ -187,7 +191,7 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
     if (fProject.length && !fProject.includes(r.projectId)) return false;
     if (fExecutor.length && !fExecutor.includes(r.executorId)) return false;
     if (fWorkType.length && !fWorkType.includes(r.workTypeId)) return false;
-    if (fResponsible.length && !fResponsible.includes(r.responsibleUserId)) return false;
+    if (fResponsible.length && !fResponsible.includes(r.responsibleExecutorId ?? "__empty__")) return false;
     if (fWorkStatus.length && !fWorkStatus.includes(r.workStatus)) return false;
     if (fPayStatus.length && !fPayStatus.includes(r.paymentStatus ?? "__empty__")) return false;
     return true;
@@ -414,7 +418,7 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
           />
           <MultiSelectFilter
             label="Ответственный"
-            options={responsibles.map(r => ({ value: r.id, label: r.fullName }))}
+            options={permanentExecutors.map(r => ({ value: r.id, label: r.name }))}
             value={fResponsible}
             onChange={setFResponsible}
           />
@@ -556,7 +560,7 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
                   <ExpandableListCell items={[row.workType.name]} />
                 </TableCell>
                 <TableCell className={cn(cellClip, "whitespace-normal")}>
-                  <ExpandableListCell items={[row.responsibleUser.fullName]} />
+                  <ExpandableListCell items={row.responsibleExecutor ? [row.responsibleExecutor.name] : []} />
                 </TableCell>
                 <TableCell className={cn(cellClip, "whitespace-normal")}>
                   {row.preferredPayMethod ? (
@@ -657,9 +661,9 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
       {/* Диалоги */}
       {createOpen && (
         <OtherExpenseFormDialog
-          isAdmin={isAdmin} userId={userId}
+          isAdmin={isAdmin}
           projects={projects} executors={executors} workTypes={workTypes}
-          responsibles={responsibles} bankAccounts={bankAccounts}
+          permanentExecutors={permanentExecutors} bankAccounts={bankAccounts}
           onClose={() => setCreateOpen(false)}
           onSaved={() => { setCreateOpen(false); silentLoad(); toast.success("Создано"); }}
         />
@@ -667,9 +671,9 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
 
       {editTarget && (
         <OtherExpenseFormDialog
-          isAdmin={isAdmin} userId={userId}
+          isAdmin={isAdmin}
           projects={projects} executors={executors} workTypes={workTypes}
-          responsibles={responsibles} bankAccounts={bankAccounts}
+          permanentExecutors={permanentExecutors} bankAccounts={bankAccounts}
           initial={editTarget}
           onClose={() => setEditTarget(null)}
           onSaved={() => { setEditTarget(null); silentLoad(); toast.success("Сохранено"); }}
@@ -712,11 +716,11 @@ export function OtherExpensesClient({ isAdmin, userId, projects, executors, work
 // ─── Форма создания / редактирования ─────────────────────────────────────────
 
 function OtherExpenseFormDialog({
-  isAdmin, userId, projects, executors, workTypes, responsibles, bankAccounts,
+  isAdmin, projects, executors, workTypes, permanentExecutors, bankAccounts,
   initial, onClose, onSaved,
 }: {
-  isAdmin: boolean; userId: string;
-  projects: Ref[]; executors: Ref[]; workTypes: Ref[]; responsibles: UserRef[]; bankAccounts: Ref[];
+  isAdmin: boolean;
+  projects: ProjectRef[]; executors: Ref[]; workTypes: Ref[]; permanentExecutors: Ref[]; bankAccounts: Ref[];
   initial?: OtherExpense;
   onClose: () => void;
   onSaved: () => void;
@@ -741,12 +745,10 @@ function OtherExpenseFormDialog({
     if (executorWorkTypeIds) return workTypes.filter(w => executorWorkTypeIds.includes(w.id));
     return workTypes;
   }, [executorId, executorWorkTypeIds, workTypes]);
-  // PM (его user.id есть в списке ответственных) фиксируется на себе.
-  // Постоянный исполнитель ответственным не является — выбирает его сам, как админ.
-  const isResponsibleSelf = responsibles.some(r => r.id === userId);
-  const canChooseResponsible = isAdmin || !isResponsibleSelf;
-  const [responsibleUserId, setResponsibleUserId] = useState(
-    initial?.responsibleUserId ?? (canChooseResponsible ? "" : userId)
+  // Ответственный = активный постоянный исполнитель. По умолчанию —
+  // руководитель проекта (подставляется при выборе проекта), редактируем до оплаты.
+  const [responsibleExecutorId, setResponsibleExecutorId] = useState(
+    initial?.responsibleExecutorId ?? ""
   );
   const [bankAccountId, setBankAccountId] = useState(initial?.bankAccountId ?? "");
   const [year, setYear] = useState(String(initial?.executionYear ?? now.getFullYear()));
@@ -764,7 +766,7 @@ function OtherExpenseFormDialog({
   const paymentCreated = !!initial?.paymentStatus;
 
   async function handleSave() {
-    if (!projectId || !executorId || !workTypeId || !responsibleUserId || !description || !amount) {
+    if (!projectId || !executorId || !workTypeId || !responsibleExecutorId || !description || !amount) {
       toast.error("Заполните обязательные поля");
       return;
     }
@@ -778,7 +780,7 @@ function OtherExpenseFormDialog({
         body: JSON.stringify({
           projectId,
           executorId,
-          workTypeId, responsibleUserId,
+          workTypeId, responsibleExecutorId,
           ...(isEdit ? { bankAccountId: bankAccountId || null } : {}),
           executionYear: parseInt(year),
           executionMonth: parseInt(month),
@@ -824,7 +826,16 @@ function OtherExpenseFormDialog({
           </div>
           <div className="space-y-1.5 col-span-2">
             <Label>Проект *</Label>
-            <Select value={projectId} onValueChange={(v) => setProjectId(v ?? "")}>
+            <Select
+              value={projectId}
+              onValueChange={(v) => {
+                const next = v ?? "";
+                setProjectId(next);
+                // Автозаполнение «Ответственного» руководителем выбранного проекта.
+                const pmId = projects.find((p) => p.id === next)?.responsibleExecutorId ?? null;
+                if (pmId) setResponsibleExecutorId(pmId);
+              }}
+            >
               <SelectTrigger><SelectValue>{projects.find(p => p.id === projectId)?.name ?? "Выберите проект"}</SelectValue></SelectTrigger>
               <SelectContent className="max-w-lg">
                 {projects.map(p => (
@@ -878,14 +889,10 @@ function OtherExpenseFormDialog({
           </div>
           <div className="space-y-1.5">
             <Label>Ответственный *</Label>
-            {canChooseResponsible ? (
-              <Select value={responsibleUserId} onValueChange={(v) => setResponsibleUserId(v ?? "")}>
-                <SelectTrigger><SelectValue>{responsibles.find(r => r.id === responsibleUserId)?.fullName ?? "Выберите"}</SelectValue></SelectTrigger>
-                <SelectContent>{responsibles.map(r => <SelectItem key={r.id} value={r.id}>{r.fullName}</SelectItem>)}</SelectContent>
-              </Select>
-            ) : (
-              <Input value={responsibles.find(r => r.id === userId)?.fullName ?? ""} disabled />
-            )}
+            <Select value={responsibleExecutorId} onValueChange={(v) => setResponsibleExecutorId(v ?? "")}>
+              <SelectTrigger><SelectValue>{permanentExecutors.find(r => r.id === responsibleExecutorId)?.name ?? "Выберите"}</SelectValue></SelectTrigger>
+              <SelectContent>{permanentExecutors.map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}</SelectContent>
+            </Select>
           </div>
           <div className="space-y-1.5">
             <Label>Способ оплаты</Label>

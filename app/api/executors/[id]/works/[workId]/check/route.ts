@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
 import { checkWork } from "@/lib/services/works";
-import { tryCreatePaymentForPeriod } from "@/lib/services/payments";
 import { prisma } from "@/lib/db";
 
 type Ctx = { params: Promise<{ id: string; workId: string }> };
@@ -28,13 +27,7 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
 
   const updated = await checkWork(workId, user.id);
 
-  // §1.7 — пытаемся создать Payment для периода
-  await tryCreatePaymentForPeriod(
-    executorId,
-    work.executionYear,
-    work.executionMonth,
-    user.id
-  );
+  // KPD-284 §2: автосоздание выплат отключено — выплаты формируются вручную.
 
   return NextResponse.json(updated);
 }

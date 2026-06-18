@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import {
-  isAdmin,
-  isResponsible,
   canAccessOtherExpenses,
   canEditOtherExpense,
   canDeleteOtherExpense,
@@ -17,7 +15,7 @@ const patchSchema = z.object({
   projectId: z.string().optional(),
   executorId: z.string().optional(),
   workTypeId: z.string().optional(),
-  responsibleUserId: z.string().optional(),
+  responsibleExecutorId: z.string().optional(),
   bankAccountId: z.string().nullable().optional(),
   executionYear: z.number().int().min(2020).max(2100).optional(),
   executionMonth: z.number().int().min(1).max(12).optional(),
@@ -47,9 +45,15 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Validation", details: parsed.error.flatten() }, { status: 422 });
 
-  // PM не может менять ответственного на другого; постоянный исполнитель — может выбрать.
-  if (!isAdmin(user) && isResponsible(user) && parsed.data.responsibleUserId && parsed.data.responsibleUserId !== user.id) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  // Ответственный = активный постоянный исполнитель (KPD-285).
+  if (parsed.data.responsibleExecutorId) {
+    const exists = await prisma.executor.findFirst({
+      where: { id: parsed.data.responsibleExecutorId, type: "permanent", status: "active" },
+      select: { id: true },
+    });
+    if (!exists) {
+      return NextResponse.json({ error: "Выбранный ответственный не найден среди активных постоянных исполнителей" }, { status: 422 });
+    }
   }
 
   try {

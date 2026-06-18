@@ -53,7 +53,7 @@ const ADMIN_NAV: NavGroup[] = [
       { label: "Выплаты", href: "/admin/payouts", icon: CreditCard },
       { label: "Прочие траты", href: "/admin/other-expenses", icon: Receipt },
       { label: "Исполнители", href: "/admin/executors", icon: Users },
-      { label: "Ответственные", href: "/admin/responsibles", icon: UserCheck },
+      { label: "Руководители проекта", href: "/admin/responsibles", icon: UserCheck },
       { label: "Клиенты", href: "/admin/clients", icon: Building2 },
       { label: "Виды работ", href: "/admin/work-types", icon: Wrench },
       { label: "Банковские счета", href: "/admin/bank-accounts", icon: Wallet },
@@ -69,7 +69,7 @@ const ADMIN_NAV: NavGroup[] = [
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "Администратор",
-  responsible: "Ответственный",
+  responsible: "Руководитель проекта",
   executor: "Исполнитель",
 };
 

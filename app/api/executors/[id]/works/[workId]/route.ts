@@ -17,9 +17,10 @@ const patchSchema = z.object({
   rate: z.number().nullable().optional(),
   amount: z.number().min(0).optional(),
   plannedPayAt: z.string().nullable().optional(),
+  responsibleExecutorId: z.string().nullable().optional(),
   filledTechTask: z.string().nullable().optional(),
   filledAct: z.string().nullable().optional(),
-  workStatus: z.string().optional(),
+  workStatus: z.enum(["submitted", "checked", "rework"]).optional(),
   comment: z.string().nullable().optional(),
 });
 

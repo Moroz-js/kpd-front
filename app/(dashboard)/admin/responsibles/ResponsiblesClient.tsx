@@ -81,7 +81,7 @@ export function ResponsiblesClient() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-3rem)] min-h-0">
-      <PageHeader title="Ответственные" />
+      <PageHeader title="Руководители проекта" />
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <MultiSelectFilter
@@ -125,7 +125,7 @@ export function ResponsiblesClient() {
             ) : rows.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="text-center text-neutral-500 py-8">
-                  Нет ответственных
+                  Нет руководителей проектов
                 </TableCell>
               </TableRow>
             ) : (
@@ -185,7 +185,7 @@ export function ResponsiblesClient() {
       <ConfirmDialog
         open={!!archiveTarget}
         onOpenChange={(o) => !o && setArchiveTarget(null)}
-        title="Архивировать ответственного?"
+        title="Архивировать руководителя проекта?"
         description={`«${archiveTarget?.fullName}» станет недоступен для назначения на новые проекты. Текущие проекты сохранятся.`}
         confirmLabel="Архивировать"
         destructive
@@ -196,7 +196,7 @@ export function ResponsiblesClient() {
       <ConfirmDialog
         open={!!unarchiveTarget}
         onOpenChange={(o) => !o && setUnarchiveTarget(null)}
-        title="Вернуть ответственного из архива?"
+        title="Вернуть руководителя проекта из архива?"
         description={`«${unarchiveTarget?.fullName}» снова станет доступен в активных списках.`}
         confirmLabel="Вернуть"
         onConfirm={async () => {
