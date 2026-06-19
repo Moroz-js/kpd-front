@@ -327,7 +327,7 @@ model Order {
 
 model Charge {
   id              String       @id @default(cuid())
-  chargeNumber    String       @unique // H001, H002, ... (см. TDNB-20)
+  chargeNumber    String       @unique // Н001, Н002, ... (см. TDNB-20)
   bankAccountId   String?
   bankAccount     BankAccount? @relation(fields: [bankAccountId], references: [id])
   invoiceNumber   String?      @unique // № счёта (см. TDNB-20)

@@ -4,16 +4,14 @@ import { logActivity } from "@/lib/audit/log";
 // ─── Автогенерация номера начисления H001, H002, ... ─────────────────────────
 
 async function nextChargeNumber(): Promise<string> {
-  const last = await prisma.charge.findFirst({
-    orderBy: { chargeNumber: "desc" },
-    select: { chargeNumber: true },
-  });
-
-  if (!last) return "H001";
-
-  const num = parseInt(last.chargeNumber.replace(/^H/, ""), 10);
-  const next = isNaN(num) ? 1 : num + 1;
-  return `H${String(next).padStart(3, "0")}`;
+  // Числовой max по всем записям без привязки к префиксу (H/Н):
+  // лексикографическая сортировка ломается на легаси/импортных номерах.
+  const charges = await prisma.charge.findMany({ select: { chargeNumber: true } });
+  const maxNum = charges.reduce((max, c) => {
+    const n = parseInt(c.chargeNumber.replace(/\D/g, ""), 10) || 0;
+    return n > max ? n : max;
+  }, 0);
+  return `Н${String(maxNum + 1).padStart(3, "0")}`;
 }
 
 // ─── Типы ─────────────────────────────────────────────────────────────────────
