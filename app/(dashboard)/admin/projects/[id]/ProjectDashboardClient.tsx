@@ -309,7 +309,7 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
 
   if (!data) return <div className="p-6 text-sm text-neutral-500">Загрузка…</div>;
 
-  const { project, weeks, summary, workTypes, planLines, executors, availableWorkTypes } = data;
+  const { project, summary, workTypes, planLines, executors, availableWorkTypes } = data;
 
   // Group month headers
   const monthGroups: { label: string; count: number }[] = [];
@@ -327,8 +327,10 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
 
   const tdCls = "px-2 py-1 text-right text-xs tabular-nums whitespace-nowrap border-r border-neutral-100 last:border-0";
   const thCls = "px-2 py-1 text-right text-xs font-medium text-neutral-600 border-r border-neutral-100 last:border-0 bg-neutral-50 whitespace-nowrap";
-  const stickyLbl = "sticky left-0 z-10 bg-white px-3 py-1 text-xs font-medium text-neutral-700 border-r border-neutral-200 whitespace-nowrap min-w-[160px] max-w-[200px] shadow-[1px_0_0_0_#e5e7eb]";
-  const stickyHdr = "sticky left-0 z-[15] bg-neutral-50 border-r border-neutral-200 shadow-[1px_0_0_0_#e5e7eb] px-3 py-1 text-xs font-semibold text-neutral-500 tracking-wide uppercase whitespace-nowrap min-w-[160px]";
+  const stickyLbl = "sticky left-0 z-10 bg-white px-3 py-1 text-xs font-medium text-neutral-700 border-r border-neutral-200 whitespace-nowrap w-[200px] min-w-[200px] max-w-[200px] overflow-hidden shadow-[1px_0_0_0_#e5e7eb]";
+  const stickyHdr = "sticky left-0 z-[15] bg-neutral-50 border-r border-neutral-200 shadow-[1px_0_0_0_#e5e7eb] px-3 py-1 text-xs font-semibold text-neutral-500 tracking-wide uppercase whitespace-nowrap w-[200px] min-w-[200px] max-w-[200px]";
+  const stickyTotal = "sticky left-[200px] z-10 bg-neutral-50 px-2 py-1 text-right text-xs tabular-nums whitespace-nowrap font-medium border-r border-neutral-200 min-w-[104px] shadow-[1px_0_0_0_#e5e7eb]";
+  const stickyTotalHdr = "sticky left-[200px] top-0 z-30 bg-neutral-100 px-2 py-1 text-right text-xs font-semibold text-neutral-600 whitespace-nowrap min-w-[104px] border-r border-neutral-200 shadow-[1px_0_0_0_#e5e7eb]";
 
   return (
     <div className="space-y-6">
@@ -407,12 +409,12 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
               {/* Month row */}
               <tr className="bg-neutral-50 border-b border-neutral-100">
                 <th className={cn(stickyLbl, "z-30 font-semibold text-neutral-600 bg-neutral-50")} rowSpan={2}>Показатель</th>
+                <th className={stickyTotalHdr} rowSpan={2}>Итого</th>
                 {monthGroups.map((mg, i) => (
                   <th key={i} colSpan={mg.count} className="px-2 py-1 text-center text-xs font-medium text-neutral-500 border-r border-neutral-100 bg-neutral-50">
                     {mg.label}
                   </th>
                 ))}
-                <th className={cn(thCls, "bg-neutral-100 font-semibold")}>Итого</th>
               </tr>
               {/* Week row */}
               <tr className="bg-neutral-50 border-b border-neutral-200">
@@ -421,13 +423,13 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                     {wh.week}
                   </th>
                 ))}
-                <th className={cn(thCls, "bg-neutral-100")}></th>
               </tr>
             </thead>
             <tbody>
               <tr className="bg-neutral-50 border-b border-neutral-200">
                 <td className={stickyHdr}>Сводка</td>
-                <td colSpan={visibleWeeks.length + 1} className="bg-neutral-50" />
+                <td className={cn(stickyTotal, "bg-neutral-50")} />
+                <td colSpan={visibleWeeks.length} className="bg-neutral-50" />
               </tr>
               {SUMMARY_DEFS.map(({ key, label, signed, highlight }) => {
                 const arr = summary[key] ?? [];
@@ -444,6 +446,7 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                     highlight && "bg-blue-50/30 font-semibold"
                   )}>
                     <td className={cn(stickyLbl, !highlight && "font-normal italic text-neutral-500")}>{label}</td>
+                    <td className={cn(stickyTotal, highlight && "font-semibold")}>{cellVal(total)}</td>
                     {visibleWeekIndices.map((idx, vi) => {
                       const v = arr[idx] ?? 0;
                       const wh = visibleWeeks[vi];
@@ -455,9 +458,6 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                         </td>
                       );
                     })}
-                    <td className={cn(tdCls, "bg-neutral-50 font-medium")}>
-                      {cellVal(total)}
-                    </td>
                   </tr>
                 );
               })}
@@ -465,18 +465,20 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
               {/* Block 2: Work by type */}
               <tr className="bg-neutral-50 border-t-2 border-b border-neutral-200">
                 <td className={stickyHdr}>Расходы по видам работ</td>
-                <td colSpan={weeks.length + 1} className="bg-neutral-50" />
+                <td className={cn(stickyTotal, "bg-neutral-50")} />
+                <td colSpan={visibleWeeks.length} className="bg-neutral-50" />
               </tr>
               {workTypes.length === 0 && (
                 <tr>
                   <td className={stickyLbl}>—</td>
+                  <td className={stickyTotal}>—</td>
                   {visibleWeeks.map((_, i) => <td key={i} className={tdCls}>—</td>)}
-                  <td className={tdCls}>—</td>
                 </tr>
               )}
               {workTypes.map(wt => (
                 <tr key={wt.id} className="hover:bg-neutral-50 border-b border-neutral-100">
                   <td className={cn(stickyLbl, "font-normal")}>{wt.name}</td>
+                  <td className={stickyTotal}>{fmt(rowTotal(wt.weeks))}</td>
                   {visibleWeekIndices.map((idx, vi) => {
                     const wh = visibleWeeks[vi];
                     const v = wt.weeks[idx] ?? 0;
@@ -486,13 +488,15 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                       </td>
                     );
                   })}
-                  <td className={cn(tdCls, "bg-neutral-50 font-medium")}>{fmt(rowTotal(wt.weeks))}</td>
                 </tr>
               ))}
 
               {/* Block 3: Overspend (row41 = expenses − expensePlan) */}
               <tr className="bg-neutral-50 border-t-2 border-b border-neutral-200">
                 <td className={cn(stickyLbl, "bg-neutral-50 font-medium text-neutral-800")}>Перерасход</td>
+                <td className={cn(stickyTotal, overspendValueClass(rowTotal(summary.overspend ?? [])))}>
+                  {rowTotal(summary.overspend ?? []) === 0 ? "—" : fmtSign(rowTotal(summary.overspend ?? []))}
+                </td>
                 {visibleWeekIndices.map((idx, vi) => {
                   const wh = visibleWeeks[vi];
                   const v = (summary.overspend ?? [])[idx] ?? 0;
@@ -514,25 +518,18 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                     </td>
                   );
                 })}
-                <td
-                  className={cn(
-                    tdCls,
-                    "bg-neutral-50 font-medium",
-                    overspendValueClass(rowTotal(summary.overspend ?? []))
-                  )}
-                >
-                  {rowTotal(summary.overspend ?? []) === 0 ? "—" : fmtSign(rowTotal(summary.overspend ?? []))}
-                </td>
               </tr>
 
               {/* Block 4: SpendingPlan (row42 = итог; rows 43+ = строки) */}
               <tr className="bg-neutral-50 border-t-2 border-b border-neutral-200">
                 <td className={stickyHdr}>План расходов</td>
-                <td colSpan={visibleWeeks.length + 1} className="bg-neutral-50" />
+                <td className={cn(stickyTotal, "bg-neutral-50")} />
+                <td colSpan={visibleWeeks.length} className="bg-neutral-50" />
               </tr>
               {/* Row 42: итог плана */}
               <tr className="border-b border-neutral-200 bg-neutral-50/50 font-semibold">
                 <td className={cn(stickyLbl, "bg-neutral-50/80")}>Итого план</td>
+                <td className={cn(stickyTotal, "font-semibold")}>{fmt(rowTotal(summary.expensePlan ?? []))}</td>
                 {visibleWeekIndices.map((idx, vi) => {
                   const wh = visibleWeeks[vi];
                   const v = (summary.expensePlan ?? [])[idx] ?? 0;
@@ -542,15 +539,14 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                     </td>
                   );
                 })}
-                <td className={cn(tdCls, "bg-neutral-50 font-semibold")}>{fmt(rowTotal(summary.expensePlan ?? []))}</td>
               </tr>
               {planLines.length === 0 && !canManagePlan && (
                 <tr className="border-b border-neutral-100">
                   <td className={cn(stickyLbl, "font-normal text-neutral-400")}>Нет строк плана</td>
+                  <td className={stickyTotal}>—</td>
                   {visibleWeeks.map((_, i) => (
                     <td key={i} className={tdCls}>—</td>
                   ))}
-                  <td className={cn(tdCls, "bg-neutral-50")}>—</td>
                 </tr>
               )}
               {planLines.map(pl => {
@@ -602,6 +598,7 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                         )}
                       </div>
                     </td>
+                    <td className={stickyTotal}>{fmt(rowTotal(weekAmounts))}</td>
                     {visibleWeekIndices.map((idx, vi) => {
                       const wh = visibleWeeks[vi];
                       const v = pl.weeks[idx] ?? null;
@@ -624,7 +621,6 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                         </td>
                       );
                     })}
-                    <td className={cn(tdCls, "bg-neutral-50 font-medium")}>{fmt(rowTotal(weekAmounts))}</td>
                   </tr>
                 );
               })}
@@ -642,6 +638,7 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                       строка плана
                     </Button>
                   </td>
+                  <td className={stickyTotal} />
                   {visibleWeeks.map((wh, i) => (
                     <td
                       key={i}
@@ -651,7 +648,6 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                       )}
                     />
                   ))}
-                  <td className={cn(tdCls, "bg-neutral-50")} />
                 </tr>
               )}
             </tbody>
