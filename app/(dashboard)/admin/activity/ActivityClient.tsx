@@ -94,7 +94,9 @@ export function ActivityClient() {
     fetcher
   );
 
-  const userOptions = (users ?? []).map((u) => ({ value: u.id, label: u.fullName }));
+  const userOptions = Array.from(
+    new Map((users ?? []).map((u) => [u.fullName, { value: u.id, label: u.fullName }])).values()
+  );
 
   const totalPages = data ? Math.ceil(data.total / data.pageSize) : 1;
 

@@ -609,6 +609,22 @@ function ChargeFormDialog({
   }, [paidAt]);
 
   async function handleSave() {
+    if (!bankAccountId) {
+      toast.error("Выберите счёт получения");
+      return;
+    }
+    if (!orderId) {
+      toast.error("Выберите заказ");
+      return;
+    }
+    if (!amount || parseFloat(amount) <= 0) {
+      toast.error("Введите сумму");
+      return;
+    }
+    if (isEdit && status === "paid" && !paidAt) {
+      toast.error("Укажите дату оплаты факт для статуса «Оплачено»");
+      return;
+    }
     setSaving(true);
     try {
       const url = isEdit ? `/api/charges/${initial!.id}` : "/api/charges";
@@ -650,7 +666,7 @@ function ChargeFormDialog({
           <DialogTitle>{isEdit ? `Редактировать ${initial!.chargeNumber}` : "Новое начисление"}</DialogTitle>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 min-w-0">
             <Label>Счёт получения</Label>
             <Select value={bankAccountId} onValueChange={(v) => setBankAccountId(v ?? "")}>
               <SelectTrigger>
@@ -662,7 +678,7 @@ function ChargeFormDialog({
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1.5 col-span-2">
+          <div className="space-y-1.5 col-span-2 min-w-0">
             <Label>Заказ</Label>
             <Select value={orderId} onValueChange={(v) => setOrderId(v ?? "")}>
               <SelectTrigger>
@@ -679,16 +695,17 @@ function ChargeFormDialog({
               </p>
             )}
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 min-w-0">
             <Label>Сумма</Label>
             <Input
               type="number"
+              min="0"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="0"
             />
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 min-w-0">
             <Label>Статус</Label>
             <Select value={status} onValueChange={(v) => setStatus(v ?? "planned")}>
               <SelectTrigger><SelectValue>{CHARGE_STATUSES[status as keyof typeof CHARGE_STATUSES]?.label ?? status}</SelectValue></SelectTrigger>
@@ -697,27 +714,27 @@ function ChargeFormDialog({
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 min-w-0">
             <Label>Выставлен — план</Label>
             <Input type="date" className="h-8 text-xs" value={issuedPlanAt} onChange={(e) => setIssuedPlanAt(e.target.value)} />
           </div>
           {isEdit && (
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 min-w-0">
               <Label>Выставлен — факт</Label>
               <Input type="date" className="h-8 text-xs" value={issuedAt} onChange={(e) => setIssuedAt(e.target.value)} />
             </div>
           )}
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 min-w-0">
             <Label>Оплачен — план</Label>
             <Input type="date" className="h-8 text-xs" value={paidPlanAt} onChange={(e) => setPaidPlanAt(e.target.value)} />
           </div>
           {isEdit && (
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 min-w-0">
               <Label>Оплачен — факт</Label>
               <Input type="date" className="h-8 text-xs" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} />
             </div>
           )}
-          <div className="space-y-1.5 col-span-2">
+          <div className="space-y-1.5 col-span-2 min-w-0">
             <Label>Назначение платежа</Label>
             <Textarea
               value={paymentPurpose}

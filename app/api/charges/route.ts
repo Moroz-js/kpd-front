@@ -7,7 +7,7 @@ import { z } from "zod";
 const createSchema = z.object({
   bankAccountId: z.string().nullable().optional(),
   orderId: z.string().nullable().optional(),
-  amount: z.number().nullable().optional(),
+  amount: z.number().positive().nullable().optional(),
   issuedPlanAt: z.string().nullable().optional(),
   issuedAt: z.string().nullable().optional(),
   paidPlanAt: z.string().nullable().optional(),

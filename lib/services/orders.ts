@@ -63,11 +63,11 @@ export async function createOrder(input: CreateOrderInput, userId: string) {
   if (project.status === "archived") throw new Error("Cannot create order for archived project");
 
   const created = await prisma.$transaction(async (tx) => {
-    const last = await tx.order.findFirst({
-      orderBy: { orderNumber: "desc" },
-      select: { orderNumber: true },
-    });
-    const lastNum = last ? (parseInt(last.orderNumber.replace(/\D/g, "")) || 0) : ORDER_NUMBER_START - 1;
+    const orders = await tx.order.findMany({ select: { orderNumber: true } });
+    const lastNum = orders.reduce((max, o) => {
+      const n = parseInt(o.orderNumber.replace(/\D/g, "")) || 0;
+      return n > max ? n : max;
+    }, ORDER_NUMBER_START - 1);
     const nextNum = lastNum < ORDER_NUMBER_START ? ORDER_NUMBER_START : lastNum + 1;
     const nextNumber = `З${nextNum}`;
     return tx.order.create({

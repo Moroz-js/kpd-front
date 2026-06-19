@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { getSessionUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { prisma } from "@/lib/db";
@@ -8,17 +8,10 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const sessionUser = await getSessionUser();
+  if (!sessionUser) redirect("/login");
 
-  const user = session.user as Record<string, unknown>;
-  const role = user.role as string;
-  const fullName = user.fullName as string;
-  const userId = user.id as string;
-  const executorId = (user.executorId as string | null) ?? null;
-  const executorType = (user.executorType as string | null) ?? null;
-  const isResponsibleFlag = user.isResponsible === true;
-  const responsibleActive = user.responsibleActive !== false;
+  const { role, fullName, id: userId, executorId, executorType, isResponsible: isResponsibleFlag, responsibleActive } = sessionUser;
 
   const isPm =
     role === "responsible" ||

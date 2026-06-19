@@ -134,6 +134,7 @@ export function Sidebar({
     isPermanentExecutor,
     hasProfile,
   });
+  const displayRole = isPm ? ROLE_LABELS.responsible : (ROLE_LABELS[role] ?? role);
 
   return (
     <aside className="flex-shrink-0 w-60 h-full bg-white border-r border-neutral-200 flex flex-col z-10 overflow-y-auto">
@@ -181,7 +182,7 @@ export function Sidebar({
         <Separator className="mb-3" />
         <div className="mb-3">
           <p className="text-sm font-medium text-neutral-800 truncate">{fullName}</p>
-          <p className="text-xs text-neutral-500">{ROLE_LABELS[role] ?? role}</p>
+          <p className="text-xs text-neutral-500">{displayRole}</p>
         </div>
         <form action={signOutAction}>
           <Button

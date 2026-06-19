@@ -146,7 +146,7 @@ export function ExecutorWizard({
             {type === "permanent" ? (
               <>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
+                  <div className="space-y-1.5 min-w-0">
                     <Label htmlFor="lastName">Фамилия</Label>
                     <Input
                       id="lastName"
@@ -156,7 +156,7 @@ export function ExecutorWizard({
                       autoFocus
                     />
                   </div>
-                  <div className="space-y-1.5">
+                  <div className="space-y-1.5 min-w-0">
                     <Label htmlFor="firstName">Имя</Label>
                     <Input
                       id="firstName"
@@ -166,7 +166,7 @@ export function ExecutorWizard({
                     />
                   </div>
                 </div>
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 min-w-0">
                   <Label htmlFor="email">Email (логин)</Label>
                   <Input
                     id="email"
@@ -176,7 +176,7 @@ export function ExecutorWizard({
                     required
                   />
                 </div>
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 min-w-0">
                   <Label htmlFor="password">Пароль</Label>
                   <div className="flex gap-2">
                     <Input
@@ -197,7 +197,7 @@ export function ExecutorWizard({
                     </Button>
                   </div>
                 </div>
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 min-w-0">
                   <Label htmlFor="companyStatus">Статус в компании</Label>
                   <Select
                     value={companyStatus || "__none__"}
@@ -222,7 +222,7 @@ export function ExecutorWizard({
                 </div>
               </>
             ) : (
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 min-w-0">
                 <Label htmlFor="name">Название</Label>
                 <Input
                   id="name"
@@ -246,7 +246,7 @@ export function ExecutorWizard({
               </div>
             )}
 
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 min-w-0">
               <Label htmlFor="responsible">Ответственный</Label>
               <Select
                 value={responsibleUserId || "__none__"}
@@ -272,7 +272,7 @@ export function ExecutorWizard({
               </Select>
             </div>
 
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 min-w-0">
               <Label htmlFor="defaultBank">Источник оплаты по умолчанию</Label>
               <Select
                 value={defaultBankAccountId || "__none__"}
@@ -298,7 +298,7 @@ export function ExecutorWizard({
               </Select>
             </div>
 
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 min-w-0">
               <Label>Тип получателя</Label>
               <RecipientTypesPicker value={recipientTypes} onChange={setRecipientTypes} />
             </div>

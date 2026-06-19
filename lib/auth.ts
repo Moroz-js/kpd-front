@@ -145,6 +145,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
 
   if (!dbUser?.isActive) return null;
   if (dbUser.executor?.accessRevokedAt) return null;
+  if (dbUser.executor?.status === "archived") return null;
 
   const exec = dbUser.executor;
   const isResponsibleFlag =

@@ -42,6 +42,29 @@ function switchSchemaProvider(provider, { generate = true } = {}) {
   }
 }
 
+async function createPrismaClient() {
+  const dbUrl = process.env.DATABASE_URL ?? "";
+  const isPostgres = dbUrl.startsWith("postgresql://") || dbUrl.startsWith("postgres://");
+
+  if (isPostgres) {
+    const { PrismaClient } = await import("@prisma/client");
+    const { Pool, neonConfig } = await import("@neondatabase/serverless").catch(() => null) ?? {};
+    if (Pool && neonConfig) {
+      const { PrismaNeon } = await import("@prisma/adapter-neon");
+      const ws = await import("ws");
+      neonConfig.webSocketConstructor = ws.default;
+      const directUrl = process.env.DIRECT_URL ?? dbUrl;
+      const pool = new Pool({ connectionString: directUrl });
+      const adapter = new PrismaNeon(pool);
+      return new PrismaClient({ adapter });
+    }
+    return new PrismaClient();
+  }
+
+  const { PrismaClient } = await import("@prisma/client");
+  return new PrismaClient();
+}
+
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 
 const EXCEL_PATH =
@@ -578,6 +601,8 @@ function extractSpendingPlan(wb, projectMap, executorMap, workTypeMap) {
     const week = weekRaw ? parseInt(weekRaw.replace(/\D/g, "")) : 0;
     if (!year || !week) continue;
 
+    // Лист читается только для справки в preview — в БД не записывается
+
     if (!projectMap[normKey(projectName)])
       warnings.push(`План расходов: проект "${projectName}" не найден`);
     if (workTypeName && !workTypeMap[normKey(workTypeName)])
@@ -622,6 +647,8 @@ function extractWorks(wb, executorMap, projectMap, workTypeMap) {
       warnings.add(`Работа: проект "${projectName}" не найден`);
 
     const rawStatus = str(r["Статус"]);
+    const weekRaw = str(r["Неделя оплаты план-факт"]);
+    const week = weekRaw ? parseInt(weekRaw.replace(/\D/g, "")) : null;
     const common = {
       executorId: executorMap[normKey(executorName)] ?? null,
       projectId:  projectMap[normKey(projectName)]  ?? null,
@@ -639,6 +666,7 @@ function extractWorks(wb, executorMap, projectMap, workTypeMap) {
       _workTypeName: workTypeName,
       _sourceType:   sourceType,
       _rawStatus:    rawStatus,
+      _week:         week,
     };
 
     if (sourceType === "Прочие траты") {
@@ -894,9 +922,11 @@ function previewPayments({ payments, warnings }) {
 }
 
 function previewSpendingPlan({ lines, warnings }) {
-  section("11. ПЛАН РАСХОДОВ (полный)  ←  БД_План_расходов_полный");
+  section("11. ПЛАН РАСХОДОВ  ←  БД_План_расходов_полный (не используется)");
+  console.log(`  ℹ️  Весь план расходов формируется из выставленных работ (нед. ≤ 24).`);
+  console.log(`  ℹ️  БД_План_расходов_полный игнорируется.`);
   const total = lines.reduce((s, l) => s + l.amount, 0);
-  console.log(`  → spending_plan_lines: ${lines.length} строк   сумма: ${total.toLocaleString("ru-RU")} ₽`);
+  console.log(`  (прочитано из листа для справки: ${lines.length} строк, ${total.toLocaleString("ru-RU")} ₽ — в БД НЕ записываются)`);
 
   const poka = lines.filter((l) => (l._executorName ?? "").toLowerCase().includes("пока не известен")).length;
   const noWt = lines.filter((l) => !l._workTypeName).length;
@@ -935,7 +965,7 @@ function printSummary(all) {
     { e: "works",               n: all.works.works.length,          note: "выставленные работы" },
     { e: "other_expenses",      n: all.works.otherExpenses.length,  note: "прочие траты" },
     { e: "payments",            n: all.payments.payments.length,    note: "выплаты" },
-    { e: "spending_plan_lines", n: all.spendingPlan.lines.length,   note: "план расходов (полный)" },
+    { e: "spending_plan_lines", n: all.works.works.filter(w => w._week && w._week <= 24).length, note: "план расходов (из работ, нед. ≤ 24)" },
   ];
   printTable(rows, [
     { key: "e",    label: "Таблица",   max: 26 },
@@ -1110,29 +1140,15 @@ async function main() {
       process.on("exit", () => switchSchemaProvider("sqlite", { generate: false }));
     }
 
-    // NeonDB через WebSocket-адаптер (прямой :5432 недоступен)
-    let prisma;
-    if (isPostgres) {
-      const { PrismaClient } = await import("@prisma/client");
-      const { Pool, neonConfig } = await import("@neondatabase/serverless").catch(() => null) ?? {};
-      if (Pool && neonConfig) {
-        const { PrismaNeon } = await import("@prisma/adapter-neon");
-        const ws = await import("ws");
-        neonConfig.webSocketConstructor = ws.default;
-        const directUrl = process.env.DIRECT_URL ?? dbUrl;
-        const pool = new Pool({ connectionString: directUrl });
-        const adapter = new PrismaNeon(pool);
-        prisma = new PrismaClient({ adapter });
-      } else {
-        prisma = new PrismaClient();
-      }
-    } else {
-      const { PrismaClient } = await import("@prisma/client");
-      prisma = new PrismaClient();
-    }
+    let prisma = await createPrismaClient();
 
     try {
       await dropAll(prisma);
+      // Neon может закрыть соединение после TRUNCATE — переподключаемся
+      await prisma.$disconnect();
+      await new Promise((r) => setTimeout(r, 2000));
+      prisma = await createPrismaClient();
+      await prisma.$queryRaw`SELECT 1`;
       await runMigration(prisma, all);
       console.log("\n  ✅ Миграция завершена!");
     } finally {
@@ -1194,13 +1210,30 @@ async function createManyBatched(model, rows, { skipDuplicates = false } = {}) {
   return n;
 }
 
-async function createManyAndReturnBatched(model, rows) {
+async function createManyAndReturnBatched(model, rows, { retries = 3 } = {}) {
   if (!rows.length) return [];
   const out = [];
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
     const chunk = rows.slice(i, i + BATCH_SIZE);
-    const created = await model.createManyAndReturn({ data: chunk });
-    out.push(...created);
+    let lastErr;
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        const created = await model.createManyAndReturn({ data: chunk });
+        out.push(...created);
+        lastErr = null;
+        break;
+      } catch (e) {
+        lastErr = e;
+        const msg = e instanceof Error ? e.message : String(e);
+        if (attempt < retries && /closed the connection|ECONNRESET|connection/i.test(msg)) {
+          console.log(`  ⚠️  Обрыв соединения, повтор ${attempt}/${retries}...`);
+          await new Promise((r) => setTimeout(r, 1500 * attempt));
+          continue;
+        }
+        throw e;
+      }
+    }
+    if (lastErr) throw lastErr;
   }
   return out;
 }
@@ -1474,29 +1507,29 @@ async function runMigration(prisma, all) {
     return createManyBatched(prisma.otherExpense, rows);
   });
 
-  // 12. spending_plan_lines
-  let spSkipped = 0;
+  // 12. spending_plan_lines — из выставленных работ (нед. ≤ 24)
   await step("[12/13] spending_plan_lines", async () => {
     const rows = [];
-    for (const l of all.spendingPlan.lines) {
-      const projectId = l._projectName ? (projectIds[normKey(l._projectName)] ?? null) : null;
-      const executorId = l._executorName ? (executorIds[normKey(l._executorName)] ?? null) : null;
-      const workTypeId = l._workTypeName ? (wtIds[normKey(l._workTypeName)] ?? null) : null;
-      if (!projectId || !executorId || !workTypeId) {
-        spSkipped++;
-        continue;
-      }
+
+    for (const w of all.works.works) {
+      const week = w._week;
+      if (!week || week > 24) continue;
+      const executorId = w._executorName ? (executorIds[normKey(w._executorName)] ?? null) : null;
+      const projectId = w._projectName ? (projectIds[normKey(w._projectName)] ?? null) : null;
+      const workTypeId = w._workTypeName ? (wtIds[normKey(w._workTypeName)] ?? null) : null;
+      if (!executorId || !projectId || !workTypeId) continue;
       rows.push({
         projectId,
         executorId,
         workTypeId,
-        year: l.year,
-        week: l.week,
-        amount: l.amount,
+        year:        w.executionYear,
+        week,
+        amount:      w.amount,
         createdById: defaultUserId,
       });
     }
-    if (spSkipped) console.log(`     ⚠️  Пропущено ${spSkipped} строк (не найден проект/исполнитель/вид работ)`);
+    console.log(`     ↳ из выставленных работ (≤ нед. 24): ${rows.length}`);
+
     return createManyBatched(prisma.spendingPlanLine, rows);
   });
 

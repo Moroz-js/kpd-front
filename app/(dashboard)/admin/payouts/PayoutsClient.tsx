@@ -429,7 +429,7 @@ export function PayoutsClient() {
                 const isEditing = (field: string) => inlineEdit?.key === key && inlineEdit.field === field;
                 return (
                   <TableRow key={key} className={selectedIds.has(key) ? "bg-blue-50/40" : undefined}>
-                    <TableCell>
+                    <TableCell className="w-8">
                       <RowSelectCheckbox
                         checked={selectedIds.has(key)}
                         rowIndex={rowIndex}
@@ -506,7 +506,7 @@ export function PayoutsClient() {
                     </TableCell>
 
                     {/* Inline источник оплаты */}
-                    <TableCell className="min-w-[140px]">
+                    <TableCell className="min-w-[140px] max-w-[160px] truncate">
                       {isEditing("bankAccountId") ? (
                         <Select
                           value={inlineVal || "__none__"}
@@ -529,7 +529,7 @@ export function PayoutsClient() {
                         </Select>
                       ) : (
                         <span
-                          className="text-xs text-neutral-600 cursor-pointer hover:underline"
+                          className="text-xs text-neutral-600 cursor-pointer hover:underline truncate block"
                           onClick={() => startInline(r, "bankAccountId")}
                         >
                           {r.bankAccountName ?? "—"}

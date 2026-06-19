@@ -238,7 +238,7 @@ export function SettingsTab({
         throw new Error((body as { error?: string }).error ?? "Ошибка сохранения");
       }
 
-      if (isAdmin && executor.user) {
+      if ((isAdmin || isOwner) && executor.user) {
         const ur = await fetch(`/api/users/${executor.user.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },

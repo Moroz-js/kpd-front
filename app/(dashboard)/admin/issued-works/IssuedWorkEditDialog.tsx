@@ -208,7 +208,7 @@ export function IssuedWorkEditDialog({
           ) : (
             <>
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
+                <div className="space-y-2 min-w-0">
                   <Label htmlFor="executionMonth">Месяц выполнения</Label>
                   <Select
                     value={executionMonth}
@@ -228,7 +228,7 @@ export function IssuedWorkEditDialog({
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-2 min-w-0">
                   <Label htmlFor="executionYear">Год выполнения</Label>
                   <Input
                     id="executionYear"
@@ -257,7 +257,7 @@ export function IssuedWorkEditDialog({
                 </Select>
               </div>
               {row.plannedPayAt && (
-                <div className="space-y-2">
+                <div className="space-y-2 min-w-0">
                   <Label htmlFor="plannedPayAt">Дата оплаты — план</Label>
                   <DateInput
                     id="plannedPayAt"

@@ -417,7 +417,7 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
             onChange={setFWorkType}
           />
           <MultiSelectFilter
-            label="Ответственный"
+            label="Руководитель проекта"
             options={permanentExecutors.map(r => ({ value: r.id, label: r.name }))}
             value={fResponsible}
             onChange={setFResponsible}
@@ -510,7 +510,7 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
               <TableHead className={compactHead}>Исполнитель</TableHead>
               <TableHead className={compactHead}>Описание работы</TableHead>
               <TableHead className={compactHead}>Вид работ</TableHead>
-              <TableHead className={compactHead}>Ответственный</TableHead>
+              <TableHead className={compactHead}>Руководитель проекта</TableHead>
               <TableHead className={compactHead}>Способ оплаты</TableHead>
               <TableHead className={compactHead}>Дата план (работа)</TableHead>
               <TableHead className={cn(compactHead, "text-right")}>Сумма</TableHead>
@@ -575,19 +575,15 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
                 <TableCell className={cn(cellClip, "text-right tabular-nums font-semibold whitespace-nowrap")}>
                   {formatMoney(row.amount)}
                 </TableCell>
-                <TableCell className={cellClip}>
-                  <div className="w-full overflow-hidden">
-                    <StatusBadge dict={WORK_STATUSES} value={row.workStatus} />
-                  </div>
+                <TableCell className={cn(cellClip, "whitespace-nowrap")}>
+                  <StatusBadge dict={WORK_STATUSES} value={row.workStatus} />
                 </TableCell>
-                <TableCell className={cellClip}>
-                  <div className="w-full overflow-hidden">
-                    {row.paymentStatus ? (
-                      <StatusBadge dict={PAYMENT_STATUSES} value={row.paymentStatus} />
-                    ) : (
-                      <span className="text-neutral-300">—</span>
-                    )}
-                  </div>
+                <TableCell className={cn(cellClip, "whitespace-nowrap")}>
+                  {row.paymentStatus ? (
+                    <StatusBadge dict={PAYMENT_STATUSES} value={row.paymentStatus} />
+                  ) : (
+                    <span className="text-neutral-300">—</span>
+                  )}
                 </TableCell>
                 <TableCell className={cn(cellClip, "whitespace-nowrap")}>
                   {renderPlanDateCell(row)}
@@ -810,21 +806,21 @@ function OtherExpenseFormDialog({
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>{isEdit ? "Редактировать" : "Новая трата"}</DialogTitle></DialogHeader>
         <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 min-w-0">
             <Label>Год *</Label>
             <Select value={year} onValueChange={(v) => setYear(v ?? "")}>
               <SelectTrigger><SelectValue>{year} год</SelectValue></SelectTrigger>
               <SelectContent>{years.map(y => <SelectItem key={y} value={String(y)}>{y} год</SelectItem>)}</SelectContent>
             </Select>
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 min-w-0">
             <Label>Месяц *</Label>
             <Select value={month} onValueChange={(v) => setMonth(v ?? "")}>
               <SelectTrigger><SelectValue>{MONTHS.find(m => m.value === month)?.label}</SelectValue></SelectTrigger>
               <SelectContent>{MONTHS.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}</SelectContent>
             </Select>
           </div>
-          <div className="space-y-1.5 col-span-2">
+          <div className="space-y-1.5 col-span-2 min-w-0">
             <Label>Проект *</Label>
             <Select
               value={projectId}
@@ -846,7 +842,7 @@ function OtherExpenseFormDialog({
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 min-w-0">
             <Label>Исполнитель *</Label>
             <Select
               value={executorId}
@@ -865,7 +861,7 @@ function OtherExpenseFormDialog({
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 min-w-0">
             <Label>Вид работ *</Label>
             <Select value={workTypeId} onValueChange={(v) => setWorkTypeId(v ?? "")} disabled={!executorId || executorId === ""}>
               <SelectTrigger>
@@ -883,18 +879,18 @@ function OtherExpenseFormDialog({
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1.5 col-span-2">
+          <div className="space-y-1.5 col-span-2 min-w-0">
             <Label>Описание работы *</Label>
             <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Описание..." />
           </div>
-          <div className="space-y-1.5">
-            <Label>Ответственный *</Label>
+          <div className="space-y-1.5 min-w-0">
+            <Label>Руководитель проекта *</Label>
             <Select value={responsibleExecutorId} onValueChange={(v) => setResponsibleExecutorId(v ?? "")}>
               <SelectTrigger><SelectValue>{permanentExecutors.find(r => r.id === responsibleExecutorId)?.name ?? "Выберите"}</SelectValue></SelectTrigger>
               <SelectContent>{permanentExecutors.map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}</SelectContent>
             </Select>
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 min-w-0">
             <Label>Способ оплаты</Label>
             <Select value={preferredPayMethod} onValueChange={(v) => setPreferredPayMethod(v ?? "")}>
               <SelectTrigger><SelectValue>{preferredPayMethod || "—"}</SelectValue></SelectTrigger>
@@ -904,17 +900,17 @@ function OtherExpenseFormDialog({
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 min-w-0">
             <Label>Сумма к выплате *</Label>
             <Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
           </div>
           {paymentCreated && (
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 min-w-0">
               <Label>Дата оплаты — план</Label>
               <DateInput className="h-9" value={plannedPayAt} onChange={(e) => setPlannedPayAt(e.target.value)} />
             </div>
           )}
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 min-w-0">
             <Label>Статус работы</Label>
             {paymentCreated ? (
               <Input
@@ -935,7 +931,7 @@ function OtherExpenseFormDialog({
             )}
           </div>
           {isEdit && (
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 min-w-0">
               <Label>Источник перевода</Label>
               <Select value={bankAccountId} onValueChange={(v) => setBankAccountId(v ?? "")}>
                 <SelectTrigger><SelectValue>{bankAccounts.find(b => b.id === bankAccountId)?.name ?? "—"}</SelectValue></SelectTrigger>
@@ -946,7 +942,7 @@ function OtherExpenseFormDialog({
               </Select>
             </div>
           )}
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 min-w-0">
             <Label>Комментарий</Label>
             <Input value={comment} onChange={(e) => setComment(e.target.value)} />
           </div>

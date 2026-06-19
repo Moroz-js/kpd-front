@@ -1262,7 +1262,7 @@ function CreatePaymentDialog({ executorId, bankAccounts, onClose, onCreated }: {
   const now = new Date();
   const [year, setYear] = useState(String(now.getFullYear()));
   const [month, setMonth] = useState(String(now.getMonth() + 1));
-  const [amount, setAmount] = useState("0");
+  const [amount, setAmount] = useState("");
   const [bankAccountId, setBankAccountId] = useState("");
   const [plannedPayAt, setPlannedPayAt] = useState(toLocalDateString(nearestPaymentDate()));
   const [comment, setComment] = useState("");
@@ -1272,6 +1272,10 @@ function CreatePaymentDialog({ executorId, bankAccounts, onClose, onCreated }: {
   const years = [currentYear - 1, currentYear, currentYear + 1];
 
   async function handleSave() {
+    if (!amount || parseFloat(amount) <= 0) {
+      toast.error("Введите сумму больше нуля");
+      return;
+    }
     setSaving(true);
     try {
       const r = await fetch(`/api/executors/${executorId}/payments`, {

@@ -57,7 +57,7 @@ function formatRuDateShort(iso: string) {
 }
 
 const VERIFICATION_COL =
-  "w-[92px] min-w-[92px] max-w-[92px] px-1.5 border-r last:border-r-0";
+  "w-[128px] min-w-[128px] max-w-[128px] px-1.5 border-r last:border-r-0";
 
 function CommentCell({
   verificationId,

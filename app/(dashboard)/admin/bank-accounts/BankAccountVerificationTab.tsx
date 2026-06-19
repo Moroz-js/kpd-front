@@ -383,11 +383,8 @@ export function BankAccountVerificationTab() {
       </div>
 
       {reconciliations.length === 0 ? (
-        <div className="text-sm text-neutral-500 text-center py-12 space-y-3">
+        <div className="text-sm text-neutral-500 text-center py-12">
           <p>Остатков пока нет. Создайте первую запись по дате.</p>
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            <Plus className="h-3.5 w-3.5 mr-1" /> Создать остатки
-          </Button>
         </div>
       ) : (
         <div className="overflow-auto rounded-lg border border-neutral-200 flex-1 min-h-0">

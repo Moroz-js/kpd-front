@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
 import { updateCharge, deleteCharge } from "@/lib/services/charges";
+import { prisma } from "@/lib/db";
 import { z } from "zod";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -9,7 +10,7 @@ type Ctx = { params: Promise<{ id: string }> };
 const patchSchema = z.object({
   bankAccountId: z.string().optional(),
   orderId: z.string().optional(),
-  amount: z.number().nullable().optional(),
+  amount: z.number().positive().nullable().optional(),
   issuedPlanAt: z.string().nullable().optional(),
   issuedAt: z.string().nullable().optional(),
   paidPlanAt: z.string().nullable().optional(),
@@ -26,6 +27,14 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   const body = await req.json().catch(() => null);
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Validation", details: parsed.error.flatten() }, { status: 422 });
+
+  if (parsed.data.status === "paid") {
+    const existing = await prisma.charge.findUnique({ where: { id }, select: { paidAt: true } });
+    const paidAt = parsed.data.paidAt !== undefined ? parsed.data.paidAt : existing?.paidAt;
+    if (!paidAt) {
+      return NextResponse.json({ error: "Укажите дату оплаты для статуса «Оплачено»" }, { status: 400 });
+    }
+  }
 
   try {
     const updated = await updateCharge(id, parsed.data, user.id);

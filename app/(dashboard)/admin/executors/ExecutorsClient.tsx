@@ -19,6 +19,10 @@ import {
   RECIPIENT_TYPES,
 } from "@/lib/statuses";
 import { normalizeExecutorType } from "@/lib/executor-type";
+
+function displayExecutorName(name: string, type: string) {
+  return normalizeExecutorType(type) === "service" ? name.toUpperCase() : name;
+}
 import { formatDate } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import {
@@ -454,7 +458,7 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
                           className="truncate hover:underline text-neutral-900"
                           title="Открыть настройки исполнителя"
                         >
-                          {r.name}
+                          {displayExecutorName(r.name, r.type)}
                         </Link>
                       ) : hasPersonalSmeta(r) ? (
                         <>
@@ -462,7 +466,7 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
                             href={`/admin/executors/${r.id}`}
                             className="truncate hover:underline text-neutral-900"
                           >
-                            {r.name}
+                            {displayExecutorName(r.name, r.type)}
                           </Link>
                           <Button
                             size="sm"
@@ -475,7 +479,7 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
                           </Button>
                         </>
                       ) : (
-                        <span className="truncate">{r.name}</span>
+                        <span className="truncate">{displayExecutorName(r.name, r.type)}</span>
                       )}
                     </div>
                     {r.email && <div className="text-xs text-neutral-500">{r.email}</div>}

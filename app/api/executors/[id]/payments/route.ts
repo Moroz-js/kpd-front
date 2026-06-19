@@ -8,7 +8,7 @@ import { z } from "zod";
 const createSchema = z.object({
   periodYear: z.number().int().min(2020).max(2100),
   periodMonth: z.number().int().min(1).max(12),
-  amount: z.number().min(0),
+  amount: z.number().positive(),
   paymentStatus: z.enum(["planned", "sent", "paid"]).optional(),
   bankAccountId: z.string().nullable().optional(),
   plannedPayAt: z.string().nullable().optional(),

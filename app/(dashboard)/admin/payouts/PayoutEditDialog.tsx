@@ -127,7 +127,7 @@ export function PayoutEditDialog({
 
           {!isPersonal && (
             <>
-              <div className="space-y-2">
+              <div className="space-y-2 min-w-0">
                 <Label htmlFor="executorId">Исполнитель</Label>
                 <Select value={executorId} onValueChange={(v) => setExecutorId(v ?? "")}>
                   <SelectTrigger id="executorId">
@@ -146,7 +146,7 @@ export function PayoutEditDialog({
                 </Select>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
+                <div className="space-y-2 min-w-0">
                   <Label htmlFor="periodMonth">Месяц выполнения</Label>
                   <Select value={periodMonth} onValueChange={(v) => setPeriodMonth(v ?? "")}>
                     <SelectTrigger id="periodMonth">
@@ -163,7 +163,7 @@ export function PayoutEditDialog({
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-2 min-w-0">
                   <Label htmlFor="periodYear">Год выполнения</Label>
                   <Input
                     id="periodYear"
@@ -177,7 +177,7 @@ export function PayoutEditDialog({
           )}
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
+            <div className="space-y-2 min-w-0">
               <Label htmlFor="amount">Сумма выплаты</Label>
               <Input
                 id="amount"
@@ -188,7 +188,7 @@ export function PayoutEditDialog({
                 required
               />
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2 min-w-0">
               <Label htmlFor="paymentStatus">Статус выплаты</Label>
               <Select value={paymentStatus} onValueChange={(v) => setPaymentStatus(v ?? "")}>
                 <SelectTrigger id="paymentStatus">
@@ -208,7 +208,7 @@ export function PayoutEditDialog({
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
+            <div className="space-y-2 min-w-0">
               <Label htmlFor="plannedPayAt">Дата оплаты — план</Label>
               <DateInput
                 id="plannedPayAt"
@@ -216,7 +216,7 @@ export function PayoutEditDialog({
                 onChange={(e) => setPlannedPayAt(e.target.value)}
               />
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2 min-w-0">
               <Label htmlFor="paidAt">Дата оплаты</Label>
               <DateInput
                 id="paidAt"
@@ -226,7 +226,7 @@ export function PayoutEditDialog({
             </div>
           </div>
 
-          <div className="space-y-2">
+                <div className="space-y-2 min-w-0">
             <Label htmlFor="bankAccountId">Источник оплаты</Label>
             <Select
               value={bankAccountId || "__none__"}
@@ -251,7 +251,7 @@ export function PayoutEditDialog({
             </Select>
           </div>
 
-          <div className="space-y-2">
+                <div className="space-y-2 min-w-0">
             <Label htmlFor="comment">Комментарий</Label>
             <Textarea
               id="comment"
