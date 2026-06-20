@@ -41,7 +41,7 @@ const compactHead =
 /** Ширины колонок (18) — table-fixed, иначе правые колонки сжимаются и наезжают друг на друга */
 const ACTIONS_COL_WIDTH = 96;
 const COL_WIDTHS = [
-  36, 72, 84, 64, 168, 128, 180, 100, 108, 92, 88, 80, 108, 108, 80, 104, 120, ACTIONS_COL_WIDTH,
+  36, 72, 84, 64, 168, 128, 180, 100, 108, 92, 88, 80, 108, 120, 80, 104, 120, ACTIONS_COL_WIDTH,
 ] as const;
 const TABLE_MIN_WIDTH = COL_WIDTHS.reduce((s, w) => s + w, 0);
 const cellClip = "overflow-hidden max-w-0";
