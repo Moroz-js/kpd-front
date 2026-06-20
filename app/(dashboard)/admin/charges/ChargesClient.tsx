@@ -19,7 +19,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { formatMoney, formatDate, formatDateShort } from "@/lib/format";
+import { formatMoney, formatMoneyRub, formatDate, formatDateShort } from "@/lib/format";
 import { getISOWeek, getISOWeekYear, weekLabel } from "@/lib/iso-weeks";
 import { CHARGE_STATUSES, BADGE_TONE_CLASS } from "@/lib/statuses";
 import {
@@ -236,6 +236,7 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
   const [fOrder, setFOrder] = useState<string[]>([]);
   const [fStatus, setFStatus] = useState<string[]>([]);
   const [fClient, setFClient] = useState<string[]>([]);
+  const [fProject, setFProject] = useState<string[]>([]);
 
   const [bulkStatus, setBulkStatus] = useState("");
 
@@ -263,21 +264,40 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
       const clientId = r.order?.project?.client?.id ?? "__empty__";
       if (!fClient.includes(clientId)) return false;
     }
+    if (fProject.length) {
+      const projectId = r.order?.project?.id ?? "__empty__";
+      if (!fProject.includes(projectId)) return false;
+    }
     return true;
   });
 
   const orderedRowIds = React.useMemo(() => filtered.map((r) => r.id), [filtered]);
   const { selectedIds, handleRowSelect, toggleAll, clearSelection } = useTableRowSelection(orderedRowIds);
 
+  const selectedSum = React.useMemo(
+    () => rows.filter((r) => selectedIds.has(r.id)).reduce((s, r) => s + (r.amount ?? 0), 0),
+    [rows, selectedIds]
+  );
+
   const clientOptions = React.useMemo(() => {
     const map = new Map<string, string>();
-    for (const r of rows) {
-      const id = r.order?.project?.client?.id ?? "__empty__";
-      const name = r.order?.project?.client?.name ?? "Пусто";
-      map.set(id, name);
+    // Полный список клиентов берём из заказов (стабильный источник),
+    // чтобы лейбл резолвился даже когда таблица начислений отфильтрована/пуста.
+    for (const o of orders) {
+      if (o.project?.client) map.set(o.project.client.id, o.project.client.name);
     }
+    if (rows.some((r) => !r.order?.project?.client)) map.set("__empty__", "Пусто");
     return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
-  }, [rows]);
+  }, [orders, rows]);
+
+  const projectOptions = React.useMemo(() => {
+    const map = new Map<string, string>();
+    for (const o of orders) {
+      if (o.project) map.set(o.project.id, o.project.name);
+    }
+    if (rows.some((r) => !r.order?.project)) map.set("__empty__", "Пусто");
+    return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
+  }, [orders, rows]);
 
   async function patchInlineStatus(id: string, status: string) {
     const res = await fetch(`/api/charges/${id}`, {
@@ -363,6 +383,12 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
             onChange={setFClient}
           />
           <MultiSelectFilter
+            label="Проект"
+            options={projectOptions}
+            value={fProject}
+            onChange={setFProject}
+          />
+          <MultiSelectFilter
             label="Заказ"
             options={orders.map(o => ({ value: o.id, label: `№${o.orderNumber}${o.description ? ` ${o.description}` : ""}` }))}
             value={fOrder}
@@ -381,6 +407,7 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
       {selectedIds.size > 0 && (
         <div className="flex items-center gap-2 rounded-md border bg-blue-50 border-blue-200 px-3 py-2">
           <span className="text-xs text-blue-700 font-medium">Выбрано: {selectedIds.size}</span>
+          <span className="text-xs font-medium tabular-nums text-blue-900">{formatMoneyRub(selectedSum)}</span>
           <Select value={bulkStatus} onValueChange={(v) => setBulkStatus(v ?? "")}>
             <SelectTrigger className="h-7 text-xs w-40 bg-white">
               <SelectValue>{bulkStatus ? (CHARGE_STATUSES[bulkStatus as keyof typeof CHARGE_STATUSES]?.label ?? bulkStatus) : "— статус —"}</SelectValue>

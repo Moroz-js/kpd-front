@@ -508,7 +508,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
             onSave={(d) => patchWorkPlannedDate(w.id, d)}
           />
         </td>
-        <td className={cn(td, "whitespace-nowrap text-neutral-500")}>{formatDate(w.paidAt)}</td>
+        <td className={cn(td, "whitespace-nowrap text-neutral-500", w.workStatus === "paid" && !w.paidAt && "bg-red-100 text-red-700")}>{formatDate(w.paidAt)}</td>
         <td className={cn(td, "min-w-[110px]")}><StatusBadge status={w.workStatus} type="work" /></td>
         <td className={dim}>—</td>
         <td className={cn(td, stickyActionsCell, active && "bg-blue-100/70")}>

@@ -222,7 +222,7 @@ export function WorksReviewTable({
             <TableHead className="text-right">Сумма</TableHead>
             <TableHead className="min-w-[150px]">Статус</TableHead>
             <TableHead className="min-w-[160px]">Комментарий</TableHead>
-            <TableHead>Дата оплаты</TableHead>
+            <TableHead className="whitespace-nowrap">Дата оплаты план-факт</TableHead>
             <TableHead className={stickyActionsHead} />
           </TableRow>
         </TableHeader>
@@ -293,8 +293,20 @@ export function WorksReviewTable({
                   <TableCell>
                     <CommentCell value={r.comment ?? ""} disabled={busy || isPaid} onSave={(v) => patchRow(r, { comment: v || null })} />
                   </TableCell>
-                  <TableCell className="text-xs whitespace-nowrap">
-                    {formatDateShort(r.paidAt ?? r.plannedPayAt)}
+                  <TableCell className={cn("text-xs whitespace-nowrap", r.workStatus === "paid" && !r.paidAt && "bg-red-100 text-red-700")}>
+                    {r.paidAt ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        {formatDateShort(r.paidAt)}
+                        <span className="text-[10px] font-medium text-green-600">факт</span>
+                      </span>
+                    ) : r.plannedPayAt ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        {formatDateShort(r.plannedPayAt)}
+                        <span className="text-[10px] font-medium text-neutral-400">план</span>
+                      </span>
+                    ) : (
+                      "—"
+                    )}
                   </TableCell>
                   <TableCell className={stickyActionsCell}>
                     <div className={stickyActionsInner}>

@@ -483,7 +483,10 @@ export function PayoutsClient() {
 
                     {/* Inline дата оплаты */}
                     <TableCell
-                      className="cursor-pointer hover:bg-neutral-50 min-w-[100px]"
+                      className={cn(
+                        "cursor-pointer hover:bg-neutral-50 min-w-[100px]",
+                        (r.paymentStatus === "paid" || r.paymentStatus === "sent") && !r.paidAt && "bg-red-100 text-red-700"
+                      )}
                       onClick={() => !isEditing("paidAt") && startInline(r, "paidAt")}
                     >
                       {isEditing("paidAt") ? (

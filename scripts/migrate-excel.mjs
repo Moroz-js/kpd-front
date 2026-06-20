@@ -125,9 +125,9 @@ const WORK_STATUS_MAP = {
 
 const CHARGE_STATUS_MAP = {
   "В плане": "planned",
-  "К оплате": "issued",
+  "К оплате": "to_pay",
   "Оплачено": "paid",
-  "Просрочено": "overdue",
+  "Просрочено": "to_pay", // просрочка вычисляется по датам, отдельного статуса нет
 };
 
 const PAYMENT_STATUS_MAP = {
@@ -670,11 +670,17 @@ function extractWorks(wb, executorMap, projectMap, workTypeMap) {
     };
 
     if (sourceType === "Прочие траты") {
+      // Выплатная часть прочей траты выводится из статуса работы (как в приложении):
+      // paid → выплата «Оплачено», checked → «Запланировано», иначе выплаты ещё нет.
+      let paymentStatus = null;
+      let paymentAmount = null;
+      if (common.workStatus === "paid") { paymentStatus = "paid"; paymentAmount = amount; }
+      else if (common.workStatus === "checked") { paymentStatus = "planned"; paymentAmount = amount; }
       otherExpenses.push({
         ...common,
         description: `${workTypeName ?? "Работа"} — ${executorName}`,
-        paymentAmount: null,
-        paymentStatus: null,
+        paymentAmount,
+        paymentStatus,
       });
     } else {
       works.push(common);
@@ -1125,8 +1131,8 @@ async function main() {
       console.log("\n  ⚠️  ВНИМАНИЕ: запись в PRODUCTION БД (NeonDB)");
       console.log(`  DATABASE_URL: ${(process.env.DATABASE_URL ?? "").slice(0, 50)}...`);
       console.log("  БД будет ПОЛНОСТЬЮ ОЧИЩЕНА перед записью.");
-      console.log("  Нажми Ctrl+C чтобы отменить, или подожди 15 секунд...\n");
-      await new Promise((r) => setTimeout(r, 15000));
+      console.log("  Нажми Ctrl+C чтобы отменить, или подожди 5 секунд...\n");
+      await new Promise((r) => setTimeout(r, 5000));
     }
 
     console.log("\n  Начинаем запись в БД...");
@@ -1454,16 +1460,25 @@ async function runMigration(prisma, all) {
 
   // 10. works
   await step("[10/13] works", async () => {
+    // Ответственный по умолчанию = РП проекта (KPD-284): берём исполнителя
+    // по имени руководителя проекта (РП — постоянный исполнитель).
+    const projResponsibleName = {};
+    for (const p of all.projects.projects) {
+      projResponsibleName[normKey(p.name)] = p._responsibleName || null;
+    }
     const rows = [];
     for (const w of all.works.works) {
       const executorId = w._executorName ? (executorIds[normKey(w._executorName)] ?? null) : null;
       const projectId = w._projectName ? (projectIds[normKey(w._projectName)] ?? null) : null;
       const workTypeId = w._workTypeName ? (wtIds[normKey(w._workTypeName)] ?? null) : null;
       if (!executorId || !projectId || !workTypeId) continue;
+      const respName = w._projectName ? projResponsibleName[normKey(w._projectName)] : null;
+      const responsibleExecutorId = respName ? (executorIds[normKey(respName)] ?? null) : null;
       rows.push({
         executorId,
         projectId,
         workTypeId,
+        responsibleExecutorId,
         executionYear: w.executionYear,
         executionMonth: w.executionMonth,
         amount: w.amount,
@@ -1481,21 +1496,42 @@ async function runMigration(prisma, all) {
   // 11. other_expenses
   const defaultUserId = Object.values(userIds)[0];
   await step("[11/13] other_expenses", async () => {
+    // Ответственный = РП проекта (как у работ); счёт и способ оплаты — из исполнителя.
+    const projResponsibleName = {};
+    for (const p of all.projects.projects) {
+      projResponsibleName[normKey(p.name)] = p._responsibleName || null;
+    }
+    const execBankName = {};
+    const execRecipientType = {};
+    for (const e of all.executors.executors) {
+      execBankName[normKey(e.name)] = e._bankName || null;
+      execRecipientType[normKey(e.name)] = e.recipientType || null;
+    }
     const rows = [];
     for (const o of all.works.otherExpenses) {
       const executorId = o._executorName ? (executorIds[normKey(o._executorName)] ?? null) : null;
       const projectId = o._projectName ? (projectIds[normKey(o._projectName)] ?? null) : null;
       const workTypeId = o._workTypeName ? (wtIds[normKey(o._workTypeName)] ?? null) : null;
       if (!executorId || !projectId || !workTypeId) continue;
+      const respName = o._projectName ? projResponsibleName[normKey(o._projectName)] : null;
+      const responsibleExecutorId = respName ? (executorIds[normKey(respName)] ?? null) : null;
+      const bankName = o._executorName ? execBankName[normKey(o._executorName)] : null;
+      const bankAccountId = bankName ? (bankIds[normKey(bankName)] ?? null) : null;
+      const preferredPayMethod = o._executorName ? execRecipientType[normKey(o._executorName)] : null;
       rows.push({
         executorId,
         projectId,
         workTypeId,
+        responsibleExecutorId,
+        bankAccountId,
+        preferredPayMethod,
         executionYear: o.executionYear,
         executionMonth: o.executionMonth,
         amount: o.amount,
+        paymentAmount: o.paymentAmount,
         description: o.description,
         workStatus: o.workStatus,
+        paymentStatus: o.paymentStatus,
         comment: o.comment,
         checkedAt: o.checkedAt,
         paidAt: o.paidAt,

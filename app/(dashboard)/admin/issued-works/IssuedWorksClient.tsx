@@ -503,7 +503,7 @@ export function IssuedWorksClient() {
                   </TableCell>
                   <TableCell>{formatDateShort(r.checkedAt)}</TableCell>
                   <TableCell>{formatDateShort(r.plannedPayAt)}</TableCell>
-                  <TableCell>{formatDateShort(r.paidAt)}</TableCell>
+                  <TableCell className={cn(r.workStatus === "paid" && !r.paidAt && "bg-red-100 text-red-700")}>{formatDateShort(r.paidAt)}</TableCell>
                   <TableCell className="text-sm">{SMETA_LABEL[r.sourceType]}</TableCell>
                   <TableCell
                     className={cn(

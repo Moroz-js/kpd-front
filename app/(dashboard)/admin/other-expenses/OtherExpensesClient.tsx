@@ -35,13 +35,13 @@ import { ExpandableListCell } from "@/components/ui-custom/ExpandableListCell";
 import { stickyActionsHead, stickyActionsCell } from "@/lib/table-styles";
 
 const compactPeriodHead =
-  "text-[10px] leading-tight font-medium whitespace-normal normal-case align-bottom";
+  "text-[10px] leading-tight font-medium whitespace-normal normal-case align-middle!";
 const compactHead =
-  "text-[10px] leading-tight font-medium whitespace-normal normal-case align-bottom";
-/** Ширины колонок (19) — table-fixed, иначе правые колонки сжимаются и наезжают друг на друга */
+  "text-[10px] leading-tight font-medium whitespace-normal normal-case align-middle!";
+/** Ширины колонок (18) — table-fixed, иначе правые колонки сжимаются и наезжают друг на друга */
 const ACTIONS_COL_WIDTH = 96;
 const COL_WIDTHS = [
-  36, 72, 84, 64, 168, 128, 180, 100, 108, 92, 88, 80, 108, 108, 88, 80, 104, 120, ACTIONS_COL_WIDTH,
+  36, 72, 84, 64, 168, 128, 180, 100, 108, 92, 88, 80, 108, 108, 80, 104, 120, ACTIONS_COL_WIDTH,
 ] as const;
 const TABLE_MIN_WIDTH = COL_WIDTHS.reduce((s, w) => s + w, 0);
 const cellClip = "overflow-hidden max-w-0";
@@ -512,11 +512,10 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
               <TableHead className={compactHead}>Вид работ</TableHead>
               <TableHead className={compactHead}>Руководитель проекта</TableHead>
               <TableHead className={compactHead}>Способ оплаты</TableHead>
-              <TableHead className={compactHead}>Дата план (работа)</TableHead>
+              <TableHead className={compactHead}>Дата оплаты план</TableHead>
               <TableHead className={cn(compactHead, "text-right")}>Сумма</TableHead>
               <TableHead className={compactHead}>Статус работы</TableHead>
               <TableHead className={compactHead}>Статус выплаты</TableHead>
-              <TableHead className={compactHead}>Дата план (выплата)</TableHead>
               <TableHead className={cn(compactHead, "text-right")}>Выплата</TableHead>
               <EditableColHead className={compactHead} showPencil={isAdmin}>
                 Дата оплаты факт
@@ -528,11 +527,11 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
           <BulkSelectTableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={19} className="text-center text-neutral-500 py-8">Загрузка...</TableCell>
+                <TableCell colSpan={18} className="text-center text-neutral-500 py-8">Загрузка...</TableCell>
               </TableRow>
             ) : filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={19} className="text-center text-neutral-500 py-8">Нет данных</TableCell>
+                <TableCell colSpan={18} className="text-center text-neutral-500 py-8">Нет данных</TableCell>
               </TableRow>
             ) : filtered.map((row, rowIndex) => (
               <TableRow key={row.id} className={selectedIds.has(row.id) ? "bg-blue-50" : ""}>
@@ -584,9 +583,6 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
                   ) : (
                     <span className="text-neutral-300">—</span>
                   )}
-                </TableCell>
-                <TableCell className={cn(cellClip, "whitespace-nowrap")}>
-                  {renderPlanDateCell(row)}
                 </TableCell>
                 <TableCell className={cn(cellClip, "text-right tabular-nums whitespace-nowrap")}>
                   {row.paymentAmount != null ? formatMoney(row.paymentAmount) : "—"}
