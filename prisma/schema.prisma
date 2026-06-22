@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -108,6 +108,7 @@ model Project {
   responsible       User?    @relation("ProjectResponsible", fields: [responsibleUserId], references: [id])
   clientId          String?
   client            Client?  @relation(fields: [clientId], references: [id])
+  cashflowInitial   Int      @default(0)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 

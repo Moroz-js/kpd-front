@@ -39,6 +39,7 @@ const patchSchema = z.object({
   clientId: z.string().nullable().optional(),
   responsibleUserId: z.string().nullable().optional(),
   status: z.enum(["active", "archived"]).optional(),
+  cashflowInitial: z.number().int().optional(),
 });
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {

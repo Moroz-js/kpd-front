@@ -184,6 +184,7 @@ export type UpdateProjectInput = {
   clientId?: string | null;
   responsibleUserId?: string | null;
   status?: string;
+  cashflowInitial?: number;
 };
 
 export async function updateProject(id: string, patch: UpdateProjectInput, userId: string) {
@@ -220,6 +221,7 @@ export async function updateProject(id: string, patch: UpdateProjectInput, userI
       ...(patch.clientId !== undefined && { clientId: newClientId }),
       ...(patch.responsibleUserId !== undefined && { responsibleUserId: patch.responsibleUserId }),
       ...(patch.status !== undefined && { status: patch.status }),
+      ...(patch.cashflowInitial !== undefined && { cashflowInitial: patch.cashflowInitial }),
     },
   });
 

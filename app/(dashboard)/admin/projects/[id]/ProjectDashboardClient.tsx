@@ -68,7 +68,7 @@ type PlanLineRow = {
 };
 
 type DashboardData = {
-  project: { id: string; name: string; status: string; client: string | null; responsible: string | null };
+  project: { id: string; name: string; status: string; client: string | null; responsible: string | null; cashflowInitial: number };
   year: number;
   weeks: WeekHeader[];
   summary: Record<SummaryKey | "expensePlan" | "overspend", number[]>;
@@ -265,6 +265,8 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
   const [confirmRow, setConfirmRow] = useState<PlanLineRow | null>(null);
   const [deletingRowId, setDeletingRowId] = useState<string | null>(null);
   const [showOldWeeks, setShowOldWeeks] = useState(false);
+  const [cashflowInitialEdit, setCashflowInitialEdit] = useState<string | null>(null);
+  const [savingCashflow, setSavingCashflow] = useState(false);
 
   async function deletePlanRow(pl: PlanLineRow) {
     const ids = pl.lineIds.filter((id): id is string => id !== null);
@@ -283,6 +285,21 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
     setDeletingRowId(null);
     mutate();
     toast.success("Строка плана удалена");
+  }
+
+  async function saveCashflowInitial(raw: string) {
+    const val = parseInt(raw.replace(/\s/g, ""), 10);
+    if (isNaN(val)) { setCashflowInitialEdit(null); return; }
+    setSavingCashflow(true);
+    const res = await fetch(`/api/projects/${projectId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cashflowInitial: val }),
+    });
+    setSavingCashflow(false);
+    setCashflowInitialEdit(null);
+    if (res.ok) { mutate(); toast.success("Кэшфлоу сохранён"); }
+    else toast.error("Ошибка сохранения");
   }
 
   const { data, mutate } = useSWR<DashboardData>(
@@ -439,9 +456,12 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
               </tr>
               {SUMMARY_DEFS.map(({ key, label, signed, highlight }) => {
                 const arr = summary[key] ?? [];
-                const total = key === "marginPct"
-                  ? (rowTotal(summary.incomeCumulative ?? []) === 0 ? 0 : (summary.cashflow[summary.cashflow.length - 1] ?? 0) / rowTotal(summary.incomeCumulative ?? []))
-                  : rowTotal(arr);
+                const totalRaw: number | null =
+                  key === "cashflow"
+                    ? (project.cashflowInitial ?? 0)
+                    : key === "incomeCumulative" || key === "marginPct"
+                    ? null
+                    : rowTotal(arr);
                 const cellVal = (v: number) =>
                   key === "marginPct"
                     ? (v === 0 ? "—" : `${(v * 100).toFixed(0)}%`)
@@ -452,7 +472,29 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                     highlight && "bg-blue-50/30 font-semibold"
                   )}>
                     <td className={cn(stickyLbl, !highlight && "font-normal italic text-neutral-500")}>{label}</td>
-                    <td className={cn(stickyTotal, highlight && "font-semibold")}>{cellVal(total)}</td>
+                    <td className={cn(stickyTotal, highlight && "font-semibold")}>
+                      {key === "cashflow" && isAdmin ? (
+                        cashflowInitialEdit !== null ? (
+                          <input
+                            autoFocus
+                            className="w-24 text-right text-xs tabular-nums bg-white border border-blue-400 rounded px-1 outline-none"
+                            value={cashflowInitialEdit}
+                            onChange={e => setCashflowInitialEdit(e.target.value)}
+                            onBlur={e => saveCashflowInitial(e.target.value)}
+                            onKeyDown={e => { if (e.key === "Enter") { (e.target as HTMLInputElement).blur(); } else if (e.key === "Escape") { setCashflowInitialEdit(null); } }}
+                            disabled={savingCashflow}
+                          />
+                        ) : (
+                          <span
+                            className="cursor-pointer hover:bg-blue-50 rounded px-1 py-0.5"
+                            title="Нажмите для редактирования начального баланса"
+                            onClick={() => setCashflowInitialEdit(String(project.cashflowInitial ?? 0))}
+                          >
+                            {totalRaw === null ? "—" : cellVal(totalRaw)}
+                          </span>
+                        )
+                      ) : totalRaw === null ? "—" : cellVal(totalRaw)}
+                    </td>
                     {visibleWeekIndices.map((idx, vi) => {
                       const v = arr[idx] ?? 0;
                       const wh = visibleWeeks[vi];

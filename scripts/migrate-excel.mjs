@@ -927,12 +927,14 @@ function previewPayments({ payments, warnings }) {
   if (warnings.length > 5) console.log(`     ⋯ ещё ${warnings.length-5} предупреждений`);
 }
 
-function previewSpendingPlan({ lines, warnings }) {
-  section("11. ПЛАН РАСХОДОВ  ←  БД_План_расходов_полный (не используется)");
-  console.log(`  ℹ️  Весь план расходов формируется из выставленных работ (нед. ≤ 24).`);
-  console.log(`  ℹ️  БД_План_расходов_полный игнорируется.`);
-  const total = lines.reduce((s, l) => s + l.amount, 0);
-  console.log(`  (прочитано из листа для справки: ${lines.length} строк, ${total.toLocaleString("ru-RU")} ₽ — в БД НЕ записываются)`);
+function previewSpendingPlan({ lines, warnings }, works) {
+  const fromWorks = works.filter(w => w._week && w._week <= 25).length;
+  const fromSheet = lines.filter(l => l.week && l.week > 25).length;
+  section("11. ПЛАН РАСХОДОВ  ←  работы (нед. ≤ 25) + БД_План_расходов_полный (нед. > 25)");
+  console.log(`  ℹ️  Нед. 1–25: из выставленных работ (${fromWorks} строк).`);
+  console.log(`  ℹ️  Нед. 26+:  из БД_План_расходов_полный (${fromSheet} строк).`);
+  const total = lines.filter(l => l.week > 25).reduce((s, l) => s + l.amount, 0);
+  console.log(`  (из листа БД_План_расходов_полный нед. > 25: ${fromSheet} строк, ${total.toLocaleString("ru-RU")} ₽)`);
 
   const poka = lines.filter((l) => (l._executorName ?? "").toLowerCase().includes("пока не известен")).length;
   const noWt = lines.filter((l) => !l._workTypeName).length;
@@ -971,7 +973,7 @@ function printSummary(all) {
     { e: "works",               n: all.works.works.length,          note: "выставленные работы" },
     { e: "other_expenses",      n: all.works.otherExpenses.length,  note: "прочие траты" },
     { e: "payments",            n: all.payments.payments.length,    note: "выплаты" },
-    { e: "spending_plan_lines", n: all.works.works.filter(w => w._week && w._week <= 24).length, note: "план расходов (из работ, нед. ≤ 24)" },
+    { e: "spending_plan_lines", n: all.works.works.filter(w => w._week && w._week <= 25).length + all.spendingPlan.lines.filter(l => l.week && l.week > 25).length, note: "план расходов (работы нед. ≤ 25 + план нед. > 25)" },
   ];
   printTable(rows, [
     { key: "e",    label: "Таблица",   max: 26 },
@@ -1121,7 +1123,7 @@ async function main() {
   previewCharges(chargesData);
   previewWorks(worksData);
   previewPayments(paymentsData);
-  previewSpendingPlan(spendingPlanData);
+  previewSpendingPlan(spendingPlanData, all.works.works);
   printSummary(all);
 
   // ── Реальная запись ──────────────────────────────────────────────────────────
@@ -1543,13 +1545,14 @@ async function runMigration(prisma, all) {
     return createManyBatched(prisma.otherExpense, rows);
   });
 
-  // 12. spending_plan_lines — из выставленных работ (нед. ≤ 24)
+  // 12. spending_plan_lines — нед. ≤ 25 из работ, нед. > 25 из БД_План_расходов_полный
   await step("[12/13] spending_plan_lines", async () => {
     const rows = [];
 
+    // Part A: из выставленных работ, недели 1–25
     for (const w of all.works.works) {
       const week = w._week;
-      if (!week || week > 24) continue;
+      if (!week || week > 25) continue;
       const executorId = w._executorName ? (executorIds[normKey(w._executorName)] ?? null) : null;
       const projectId = w._projectName ? (projectIds[normKey(w._projectName)] ?? null) : null;
       const workTypeId = w._workTypeName ? (wtIds[normKey(w._workTypeName)] ?? null) : null;
@@ -1564,7 +1567,28 @@ async function runMigration(prisma, all) {
         createdById: defaultUserId,
       });
     }
-    console.log(`     ↳ из выставленных работ (≤ нед. 24): ${rows.length}`);
+    console.log(`     ↳ из выставленных работ (≤ нед. 25): ${rows.length}`);
+
+    // Part B: из БД_План_расходов_полный, недели > 25
+    let fromPlan = 0;
+    for (const l of all.spendingPlan.lines) {
+      if (!l.week || l.week <= 25) continue;
+      const executorId = l._executorName ? (executorIds[normKey(l._executorName)] ?? null) : null;
+      const projectId  = l._projectName  ? (projectIds[normKey(l._projectName)]  ?? null) : null;
+      const workTypeId = l._workTypeName ? (wtIds[normKey(l._workTypeName)]       ?? null) : null;
+      if (!executorId || !projectId || !workTypeId) continue;
+      rows.push({
+        projectId,
+        executorId,
+        workTypeId,
+        year:        l.year,
+        week:        l.week,
+        amount:      l.amount,
+        createdById: defaultUserId,
+      });
+      fromPlan++;
+    }
+    console.log(`     ↳ из БД_План_расходов_полный (> нед. 25): ${fromPlan}`);
 
     return createManyBatched(prisma.spendingPlanLine, rows);
   });

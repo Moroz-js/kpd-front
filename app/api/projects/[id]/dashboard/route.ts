@@ -133,7 +133,7 @@ export async function GET(req: NextRequest, { params }: Ctx) {
     overspend: [],
   };
 
-  let prevCashflow = 0;
+  let prevCashflow = project.cashflowInitial ?? 0;
   let prevCumulative = 0;
 
   for (const w of weeks) {
@@ -231,6 +231,7 @@ export async function GET(req: NextRequest, { params }: Ctx) {
       status: project.status,
       client: project.client?.name ?? null,
       responsible: project.responsible?.fullName ?? null,
+      cashflowInitial: project.cashflowInitial ?? 0,
     },
     year,
     weeks: weekHeaders,
