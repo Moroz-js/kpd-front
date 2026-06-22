@@ -285,6 +285,14 @@ function parseYear(val) {
   return isNaN(n) || n < 2000 || n > 2100 ? null : n;
 }
 
+/** ISO-год для даты (неделя с понедельника; дата в янв может принадлежать прошлому году и наоборот) */
+function isoWeekYear(date) {
+  if (!date) return null;
+  const d = new Date(date);
+  d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
+  return d.getFullYear();
+}
+
 function parseDate(val) {
   if (val == null) return null;
   if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
@@ -316,11 +324,12 @@ function translit(s) {
           .join("").replace(/[^a-z0-9.]/g, "");
 }
 
-function makeEmail(fullName) {
+function makeEmail(fullName, idx) {
   const [last, first] = fullName.trim().split(/\s+/);
-  return first
-    ? `${translit(last)}.${translit(first)}@kpd.ru`
-    : `${translit(last)}@kpd.ru`;
+  const base = first
+    ? `${translit(last)}.${translit(first)}`
+    : `${translit(last)}`;
+  return `${base}.${idx}@noemail.local`;
 }
 
 // Составное имя клиента: "Департамент – Компания" (как TEXTJOIN в Excel)
@@ -339,9 +348,9 @@ function extractUsers(wb) {
   const rows = readSheet(wb, "БД_Ответственные", { identifyBy: "Имя" });
   return rows
     .filter((r) => str(r["Имя"]))
-    .map((r) => ({
+    .map((r, idx) => ({
       fullName: str(r["Имя"]),
-      email: makeEmail(str(r["Имя"])),
+      email: makeEmail(str(r["Имя"]), idx),
       password: "$2b$10$placeholder_needs_manual_reset",
       role: "responsible",
       isActive: str(r["Статус"]) === "Активный",
@@ -602,13 +611,15 @@ function extractSpendingPlan(wb, projectMap, executorMap, workTypeMap) {
     if (!year || !week) continue;
 
     // Лист читается только для справки в preview — в БД не записывается
-
-    if (!projectMap[normKey(projectName)])
-      warnings.push(`План расходов: проект "${projectName}" не найден`);
-    if (workTypeName && !workTypeMap[normKey(workTypeName)])
-      warnings.push(`План расходов: вид работ "${workTypeName}" не найден`);
-    if (executorName && !executorMap[normKey(executorName)])
-      warnings.push(`План расходов: исполнитель "${executorName}" не найден`);
+    // Недели ≤ 25 берутся из работ, поэтому предупреждения для них не нужны
+    if (week > 25) {
+      if (!projectMap[normKey(projectName)])
+        warnings.push(`План расходов: проект "${projectName}" не найден`);
+      if (workTypeName && !workTypeMap[normKey(workTypeName)])
+        warnings.push(`План расходов: вид работ "${workTypeName}" не найден`);
+      if (executorName && !executorMap[normKey(executorName)])
+        warnings.push(`План расходов: исполнитель "${executorName}" не найден`);
+    }
 
     lines.push({
       year,
@@ -1557,11 +1568,12 @@ async function runMigration(prisma, all) {
       const projectId = w._projectName ? (projectIds[normKey(w._projectName)] ?? null) : null;
       const workTypeId = w._workTypeName ? (wtIds[normKey(w._workTypeName)] ?? null) : null;
       if (!executorId || !projectId || !workTypeId) continue;
+      const payYear = isoWeekYear(w.plannedPayAt ?? w.paidAt) ?? w.executionYear;
       rows.push({
         projectId,
         executorId,
         workTypeId,
-        year:        w.executionYear,
+        year:        payYear,
         week,
         amount:      w.amount,
         createdById: defaultUserId,

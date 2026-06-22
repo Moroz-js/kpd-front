@@ -47,58 +47,79 @@ function mapExecutorRow(
 }
 
 export async function listResponsibles(): Promise<ResponsibleListRow[]> {
-  const [fromExecutors, legacyUsers] = await Promise.all([
-    prisma.executor.findMany({
-      where: { isResponsible: true, userId: { not: null } },
-      orderBy: { name: "asc" },
-      include: {
-        user: { select: { id: true, fullName: true, email: true } },
-      },
-    }),
-    prisma.user.findMany({
-      where: { role: "responsible", executor: null },
-      orderBy: { fullName: "asc" },
-      include: {
-        responsibleProjects: {
-          select: { id: true, name: true },
-          orderBy: { name: "asc" },
-        },
-      },
-    }),
-  ]);
+  // Берём все проекты с назначенным руководителем
+  const projects = await prisma.project.findMany({
+    where: { responsibleUserId: { not: null } },
+    select: { id: true, name: true, responsibleUserId: true },
+    orderBy: { name: "asc" },
+  });
 
-  const userIds = fromExecutors.map((e) => e.userId!).filter(Boolean);
   const projectsByUser = new Map<string, { id: string; name: string }[]>();
-  if (userIds.length) {
-    const projects = await prisma.project.findMany({
-      where: { responsibleUserId: { in: userIds } },
-      select: { id: true, name: true, responsibleUserId: true },
-      orderBy: { name: "asc" },
-    });
-    for (const p of projects) {
-      if (!p.responsibleUserId) continue;
-      const list = projectsByUser.get(p.responsibleUserId) ?? [];
-      list.push({ id: p.id, name: p.name });
-      projectsByUser.set(p.responsibleUserId, list);
-    }
+  const userIdsWithProjects = new Set<string>();
+  for (const p of projects) {
+    if (!p.responsibleUserId) continue;
+    userIdsWithProjects.add(p.responsibleUserId);
+    const list = projectsByUser.get(p.responsibleUserId) ?? [];
+    list.push({ id: p.id, name: p.name });
+    projectsByUser.set(p.responsibleUserId, list);
   }
+
+  if (userIdsWithProjects.size === 0) {
+    // no-op: могут быть исполнители с isResponsible=true без проектов
+  }
+
+  // Исполнители: isResponsible=true ИЛИ есть проекты
+  const executors = await prisma.executor.findMany({
+    where: {
+      userId: { not: null },
+      OR: [
+        { isResponsible: true },
+        { userId: { in: Array.from(userIdsWithProjects) } },
+      ],
+    },
+    orderBy: { name: "asc" },
+    include: {
+      user: { select: { id: true, fullName: true, email: true } },
+    },
+  });
 
   const rows: ResponsibleListRow[] = [];
-  for (const e of fromExecutors) {
-    const mapped = mapExecutorRow(e, projectsByUser.get(e.userId!) ?? []);
-    if (mapped) rows.push(mapped);
-  }
-  for (const u of legacyUsers) {
+  const coveredUserIds = new Set<string>();
+
+  for (const e of executors) {
+    if (!e.userId || !e.user) continue;
+    coveredUserIds.add(e.userId);
     rows.push({
-      id: u.id,
-      fullName: u.fullName,
-      email: u.email,
-      isActive: u.isActive,
-      executorId: null,
-      projectCount: u.responsibleProjects.length,
-      projects: u.responsibleProjects.map((p) => ({ id: p.id, name: p.name })),
-      createdAt: u.createdAt,
+      id: e.user.id,
+      fullName: e.user.fullName,
+      email: e.user.email,
+      isActive: e.responsibleActive,
+      executorId: e.id,
+      projectCount: (projectsByUser.get(e.userId) ?? []).length,
+      projects: projectsByUser.get(e.userId) ?? [],
+      createdAt: e.createdAt,
     });
+  }
+
+  // Legacy: role=responsible без executor, есть проекты
+  const remainingUserIds = Array.from(userIdsWithProjects).filter((id) => !coveredUserIds.has(id));
+  if (remainingUserIds.length > 0) {
+    const legacyUsers = await prisma.user.findMany({
+      where: { id: { in: remainingUserIds }, role: "responsible" },
+      orderBy: { fullName: "asc" },
+    });
+    for (const u of legacyUsers) {
+      rows.push({
+        id: u.id,
+        fullName: u.fullName,
+        email: u.email,
+        isActive: u.isActive,
+        executorId: null,
+        projectCount: (projectsByUser.get(u.id) ?? []).length,
+        projects: projectsByUser.get(u.id) ?? [],
+        createdAt: u.createdAt,
+      });
+    }
   }
 
   return rows.sort((a, b) => a.fullName.localeCompare(b.fullName, "ru"));

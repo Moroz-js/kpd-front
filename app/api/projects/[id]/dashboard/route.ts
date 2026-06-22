@@ -210,7 +210,8 @@ export async function GET(req: NextRequest, { params }: Ctx) {
       });
     }
     const entry = planGroupMap.get(key)!;
-    entry.weeks[pl.week - 1] = String(pl.amount);
+    const prev = entry.weeks[pl.week - 1];
+    entry.weeks[pl.week - 1] = String((prev !== null ? parseFloat(prev) : 0) + pl.amount);
     entry.lineIds[pl.week - 1] = pl.id;
   }
 

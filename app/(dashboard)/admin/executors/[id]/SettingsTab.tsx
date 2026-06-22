@@ -24,7 +24,7 @@ import {
   normalizeExecutorType,
 } from "@/lib/executor-type";
 import type { ExecutorType } from "@/lib/statuses";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, X } from "lucide-react";
 
 function generatePassword(): string {
   const chars = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789!@#$%";
@@ -548,6 +548,29 @@ export function SettingsTab({
 
       <div className="border rounded-lg p-4 space-y-3">
         <h3 className="text-sm font-semibold text-neutral-800">Виды работ</h3>
+        {selectedWorkTypeIds.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {selectedWorkTypeIds.map((id) => {
+              const wt = allWorkTypes.find((w) => w.id === id);
+              if (!wt) return null;
+              return (
+                <span
+                  key={id}
+                  className="inline-flex items-center gap-1 rounded-full bg-neutral-100 border border-neutral-200 px-2.5 py-0.5 text-xs font-medium text-neutral-700"
+                >
+                  {wt.name}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedWorkTypeIds(selectedWorkTypeIds.filter((x) => x !== id))}
+                    className="ml-0.5 rounded-full hover:bg-neutral-300 p-0.5"
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        )}
         {allWorkTypes.length === 0 ? (
           <span className="text-xs text-neutral-400">Нет доступных видов работ</span>
         ) : (
