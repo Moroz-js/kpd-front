@@ -8,6 +8,7 @@ import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import { WORK_STATUSES, WORK_STATUSES_SETTABLE } from "@/lib/statuses";
 import { formatMoney, formatDateShort, monthLabel } from "@/lib/format";
+import { getISOWeek, weekLabel } from "@/lib/iso-weeks";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -64,6 +65,11 @@ function rowId(r: ReviewRow) {
 
 const PAID = new Set(["paid"]);
 
+const SOURCE_TYPE_LABELS: Record<string, string> = {
+  personal: "Личная",
+  "other-expense": "Прочие траты",
+};
+
 /**
  * Переиспользуемая таблица «работ на проверку» (KPD-287 дашборд проекта,
  * KPD-288 личная смета). Позволяет рецензенту менять статус, ответственного и
@@ -89,6 +95,9 @@ export function WorksReviewTable({
 
   const [executorFilter, setExecutorFilter] = React.useState<string[]>([]);
   const [statusFilter, setStatusFilter] = React.useState<string[]>([]);
+  const [projectFilter, setProjectFilter] = React.useState<string[]>([]);
+  const [workTypeFilter, setWorkTypeFilter] = React.useState<string[]>([]);
+  const [weekFilter, setWeekFilter] = React.useState<string[]>([]);
   const [hidePaid, setHidePaid] = React.useState(false);
   const [busyIds, setBusyIds] = React.useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = React.useState(false);
@@ -103,17 +112,55 @@ export function WorksReviewTable({
     [allRows]
   );
 
+  const projectOptions = React.useMemo(
+    () =>
+      Array.from(new Map(allRows.map((r) => [r.projectId, r.projectName])).entries())
+        .sort((a, b) => a[1].localeCompare(b[1], "ru"))
+        .map(([value, label]) => ({ value, label })),
+    [allRows]
+  );
+
+  const workTypeOptions = React.useMemo(
+    () =>
+      Array.from(new Map(allRows.map((r) => [r.workTypeId, r.workTypeName])).entries())
+        .sort((a, b) => a[1].localeCompare(b[1], "ru"))
+        .map(([value, label]) => ({ value, label })),
+    [allRows]
+  );
+
+  const weekOptions = React.useMemo(() => {
+    const weeks = new Set<string>();
+    for (const r of allRows) {
+      if (r.plannedPayAt) {
+        const w = getISOWeek(new Date(r.plannedPayAt));
+        weeks.add(String(w).padStart(2, "0"));
+      }
+    }
+    return Array.from(weeks)
+      .sort()
+      .map((w) => ({ value: w, label: weekLabel(parseInt(w)) }));
+  }, [allRows]);
+
   const rows = React.useMemo(() => {
     let list = allRows;
     if (executorFilter.length) list = list.filter((r) => executorFilter.includes(r.executorId));
     if (statusFilter.length) list = list.filter((r) => statusFilter.includes(r.workStatus));
+    if (projectFilter.length) list = list.filter((r) => projectFilter.includes(r.projectId));
+    if (workTypeFilter.length) list = list.filter((r) => workTypeFilter.includes(r.workTypeId));
+    if (weekFilter.length) {
+      list = list.filter((r) => {
+        if (!r.plannedPayAt) return false;
+        const w = String(getISOWeek(new Date(r.plannedPayAt))).padStart(2, "0");
+        return weekFilter.includes(w);
+      });
+    }
     if (hidePaid) list = list.filter((r) => !PAID.has(r.workStatus));
     return [...list].sort((a, b) =>
       a.executionYear !== b.executionYear
         ? b.executionYear - a.executionYear
         : b.executionMonth - a.executionMonth
     );
-  }, [allRows, executorFilter, statusFilter, hidePaid]);
+  }, [allRows, executorFilter, statusFilter, projectFilter, workTypeFilter, weekFilter, hidePaid]);
 
   const checkableRows = rows.filter((r) => r.workStatus === "submitted" || r.workStatus === "rework");
 
@@ -163,7 +210,7 @@ export function WorksReviewTable({
   }
 
   const total = rows.reduce((s, r) => s + r.amount, 0);
-  const colSpan = showProjectColumn ? 11 : 10;
+  const colSpan = showProjectColumn ? 12 : 11;
 
   return (
     <div className="flex flex-col gap-2">
@@ -183,6 +230,28 @@ export function WorksReviewTable({
             <Checkbox checked={hidePaid} onCheckedChange={(v) => setHidePaid(Boolean(v))} />
             Свернуть оплаченные
           </label>
+          {showProjectColumn && projectOptions.length > 1 && (
+            <MultiSelectFilter
+              label="Проект"
+              options={projectOptions}
+              value={projectFilter}
+              onChange={setProjectFilter}
+            />
+          )}
+          <MultiSelectFilter
+            label="Вид работ"
+            options={workTypeOptions}
+            value={workTypeFilter}
+            onChange={setWorkTypeFilter}
+          />
+          {weekOptions.length > 0 && (
+            <MultiSelectFilter
+              label="Неделя оплаты"
+              options={weekOptions}
+              value={weekFilter}
+              onChange={setWeekFilter}
+            />
+          )}
           {showExecutorFilter && (
             <MultiSelectFilter
               label="Исполнитель"
@@ -211,13 +280,14 @@ export function WorksReviewTable({
         className="min-w-[1100px]"
         containerClassName="rounded-md border bg-white max-h-[60vh] overflow-auto"
       >
-        <TableHeader>
+        <TableHeader className="sticky top-0 z-10 bg-white">
           <TableRow>
             <TableHead className="w-16 text-[10px]">Год</TableHead>
             <TableHead className="w-20 text-[10px]">Месяц</TableHead>
             <TableHead>Исполнитель</TableHead>
             {showProjectColumn && <TableHead>Проект</TableHead>}
             <TableHead>Вид работ</TableHead>
+            <TableHead className="w-24 text-[10px]">Тип сметы</TableHead>
             <TableHead className="min-w-[150px]">Ответственный</TableHead>
             <TableHead className="text-right">Сумма</TableHead>
             <TableHead className="min-w-[150px]">Статус</TableHead>
@@ -251,6 +321,9 @@ export function WorksReviewTable({
                   <TableCell className="text-sm">{r.executorName}</TableCell>
                   {showProjectColumn && <TableCell className="text-sm">{r.projectName}</TableCell>}
                   <TableCell className="text-sm">{r.workTypeName}</TableCell>
+                  <TableCell className="text-xs text-neutral-500 whitespace-nowrap">
+                    {SOURCE_TYPE_LABELS[r.sourceType] ?? r.sourceType}
+                  </TableCell>
                   <TableCell>
                     <Select
                       value={r.responsibleExecutorId ?? ""}

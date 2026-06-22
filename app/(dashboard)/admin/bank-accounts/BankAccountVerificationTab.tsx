@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { DateInput } from "@/components/ui-custom/DateInput";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { toLocalDateString } from "@/lib/iso-weeks";
 import {
   Dialog,
   DialogContent,
@@ -56,6 +57,7 @@ function formatRuDate(iso: string) {
     day: "numeric",
     month: "long",
     year: "numeric",
+    timeZone: "Europe/Moscow",
   });
 }
 
@@ -64,6 +66,7 @@ function formatRuDateShort(iso: string) {
     day: "numeric",
     month: "short",
     year: "numeric",
+    timeZone: "Europe/Moscow",
   });
 }
 
@@ -187,7 +190,7 @@ function CreateReconciliationDialog({
   onClose: () => void;
   onCreated: () => void;
 }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toLocalDateString(new Date());
   const [date, setDate] = useState(today);
   const [saving, setSaving] = useState(false);
 

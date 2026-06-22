@@ -748,7 +748,7 @@ function OtherExpenseFormDialog({
   const [description, setDescription] = useState(initial?.description ?? "");
   const [amount, setAmount] = useState(initial?.amount != null ? String(initial.amount) : "");
   const [preferredPayMethod, setPreferredPayMethod] = useState(initial?.preferredPayMethod ?? "");
-  const [plannedPayAt, setPlannedPayAt] = useState(initial?.plannedPayAt ? new Date(initial.plannedPayAt).toISOString().slice(0, 10) : "");
+  const [plannedPayAt, setPlannedPayAt] = useState(initial?.plannedPayAt ? toLocalDateString(new Date(initial.plannedPayAt)) : "");
   const [workStatus, setWorkStatus] = useState(initial?.workStatus ?? "submitted");
   const [comment, setComment] = useState(initial?.comment ?? "");
   const [saving, setSaving] = useState(false);

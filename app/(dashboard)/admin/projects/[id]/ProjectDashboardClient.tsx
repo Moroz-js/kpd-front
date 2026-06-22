@@ -309,7 +309,13 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
 
   if (!data) return <div className="p-6 text-sm text-neutral-500">Загрузка…</div>;
 
-  const { project, summary, workTypes, planLines, executors, availableWorkTypes } = data;
+  const { project, summary, planLines: rawPlanLines, executors, availableWorkTypes } = data;
+  const workTypes = [...(data.workTypes ?? [])].sort((a, b) =>
+    a.name.localeCompare(b.name, "ru")
+  );
+  const planLines = [...rawPlanLines].sort((a, b) =>
+    a.workTypeName.localeCompare(b.workTypeName, "ru")
+  );
 
   // Group month headers
   const monthGroups: { label: string; count: number }[] = [];

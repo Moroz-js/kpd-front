@@ -20,7 +20,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { formatMoney, formatMoneyRub, formatDate, formatDateShort } from "@/lib/format";
-import { getISOWeek, getISOWeekYear, weekLabel } from "@/lib/iso-weeks";
+import { getISOWeek, getISOWeekYear, weekLabel, toLocalDateString } from "@/lib/iso-weeks";
 import { CHARGE_STATUSES, BADGE_TONE_CLASS } from "@/lib/statuses";
 import {
   Table, TableCell, TableHead, TableHeader, TableRow,
@@ -612,10 +612,10 @@ function ChargeFormDialog({
   const [bankAccountId, setBankAccountId] = useState(initial?.bankAccountId ?? "");
   const [orderId, setOrderId] = useState(initial?.orderId ?? "");
   const [amount, setAmount] = useState(initial?.amount != null ? String(initial.amount) : "");
-  const [issuedPlanAt, setIssuedPlanAt] = useState(initial?.issuedPlanAt ? new Date(initial.issuedPlanAt).toISOString().slice(0, 10) : "");
-  const [issuedAt, setIssuedAt] = useState(initial?.issuedAt ? new Date(initial.issuedAt).toISOString().slice(0, 10) : "");
-  const [paidPlanAt, setPaidPlanAt] = useState(initial?.paidPlanAt ? new Date(initial.paidPlanAt).toISOString().slice(0, 10) : "");
-  const [paidAt, setPaidAt] = useState(initial?.paidAt ? new Date(initial.paidAt).toISOString().slice(0, 10) : "");
+  const [issuedPlanAt, setIssuedPlanAt] = useState(initial?.issuedPlanAt ? toLocalDateString(new Date(initial.issuedPlanAt)) : "");
+  const [issuedAt, setIssuedAt] = useState(initial?.issuedAt ? toLocalDateString(new Date(initial.issuedAt)) : "");
+  const [paidPlanAt, setPaidPlanAt] = useState(initial?.paidPlanAt ? toLocalDateString(new Date(initial.paidPlanAt)) : "");
+  const [paidAt, setPaidAt] = useState(initial?.paidAt ? toLocalDateString(new Date(initial.paidAt)) : "");
   const [paymentPurpose, setPaymentPurpose] = useState(initial?.paymentPurpose ?? "");
   const [status, setStatus] = useState(initial?.status ?? "planned");
   const [saving, setSaving] = useState(false);

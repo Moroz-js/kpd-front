@@ -32,6 +32,7 @@ import {
   isoWeekMonthGroups,
   isoWeeksOfYear,
   weekLabel,
+  toLocalDateString,
 } from "@/lib/iso-weeks";
 import { VACATION_STATUSES, BADGE_TONE_CLASS } from "@/lib/statuses";
 import { cn } from "@/lib/utils";
@@ -414,13 +415,13 @@ function VacationFormDialog({
   onSaved: () => void;
 }) {
   const [startAt, setStartAt] = useState(
-    entry?.startAt ? new Date(entry.startAt).toISOString().slice(0, 10) : ""
+    entry?.startAt ? toLocalDateString(new Date(entry.startAt)) : ""
   );
   const [endAt, setEndAt] = useState(
-    entry?.endAt ? new Date(entry.endAt).toISOString().slice(0, 10) : ""
+    entry?.endAt ? toLocalDateString(new Date(entry.endAt)) : ""
   );
   const [secondStartAt, setSecondStartAt] = useState(
-    entry?.secondStartAt ? new Date(entry.secondStartAt).toISOString().slice(0, 10) : ""
+    entry?.secondStartAt ? toLocalDateString(new Date(entry.secondStartAt)) : ""
   );
   const [secondEndAt, setSecondEndAt] = useState(
     entry?.secondEndAt ? new Date(entry.secondEndAt).toISOString().slice(0, 10) : ""

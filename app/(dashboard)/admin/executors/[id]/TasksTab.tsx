@@ -180,7 +180,7 @@ export function TasksTab({ executorId, isAdmin, isOwner, onTaskCountChange }: Pr
       ) : (
         <div className="min-w-0">
           <table className="w-full text-xs border-separate border-spacing-0">
-            <thead>
+            <thead className="sticky top-0 z-10">
               <tr className="bg-neutral-100">
                 <th className="border-b border-neutral-200 px-3 py-2 text-left text-xs font-medium text-neutral-600 uppercase tracking-wide min-w-[300px]">Задача</th>
                 <th className="border-b border-neutral-200 px-3 py-2 text-left text-xs font-medium text-neutral-600 uppercase tracking-wide min-w-[110px]">Статус</th>

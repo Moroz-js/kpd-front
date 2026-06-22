@@ -503,7 +503,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
         </td>
         <td className={td}>
           <InlineDateInput
-            value={w.plannedPayAt ? new Date(w.plannedPayAt).toISOString().slice(0, 10) : ""}
+            value={w.plannedPayAt ? toLocalDateString(new Date(w.plannedPayAt)) : ""}
             disabled={!dateEditable}
             onSave={(d) => patchWorkPlannedDate(w.id, d)}
           />
@@ -545,7 +545,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
         <td className={tdr + " font-semibold text-green-800"}>{formatMoney(p.amount)}</td>
         <td className={td}>
           <InlineDateInput
-            value={p.plannedPayAt ? new Date(p.plannedPayAt).toISOString().slice(0, 10) : ""}
+            value={p.plannedPayAt ? toLocalDateString(new Date(p.plannedPayAt)) : ""}
             disabled={!isAdmin}
             onSave={(d) => patchPaymentPlannedDate(p.id, d)}
           />
@@ -672,7 +672,10 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
               </SelectContent>
             </Select>
           )}
-          <Input type="date" className="h-7 text-xs w-36" value={bulkDate} onChange={(e) => setBulkDate(e.target.value)} />
+          <label className="flex items-center gap-1.5 text-xs text-blue-700 whitespace-nowrap">
+            Дата оплаты план
+            <Input type="date" className="h-7 text-xs w-36" value={bulkDate} onChange={(e) => setBulkDate(e.target.value)} />
+          </label>
           <Button size="sm" className="h-7" onClick={handleBulkApply} disabled={!bulkStatus && !bulkDate}>Применить</Button>
           <Button size="sm" variant="ghost" className="h-7" onClick={() => setSelectedIds(new Set())}>
             <X className="h-3.5 w-3.5 mr-1" /> Снять
@@ -691,7 +694,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
           </div>
         ) : (
           <table className="w-full text-[10px] border-separate border-spacing-0">
-            <thead>
+            <thead className="sticky top-0 z-10">
               <tr>
                 <th className={cn(th, "w-8")} />
                 <th className={th}>Год</th>
@@ -731,8 +734,8 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
                     onMouseEnter={() => setHoverPaymentId(g.payment.id)}
                     onMouseLeave={() => setHoverPaymentId(null)}
                     className={cn(
-                      "border-l-2 border-b-2 border-b-neutral-300 transition-colors",
-                      active ? "bg-blue-100 border-l-blue-500" : "bg-blue-50/60 hover:bg-blue-50 border-l-blue-400"
+                      "border-l-2 border-b-2 border-b-neutral-200 transition-colors font-medium",
+                      active ? "bg-emerald-100 border-l-emerald-600" : "bg-emerald-50 hover:bg-emerald-100 border-l-emerald-400"
                     )}
                   >
                     <PaymentCells p={g.payment} />
@@ -751,7 +754,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
                     <WorkCells w={item.work} />
                   </tr>
                 ) : (
-                  <tr key={item.payment.id} className="hover:bg-green-50/40">
+                  <tr key={item.payment.id} className="bg-emerald-50/60 hover:bg-emerald-100 font-medium">
                     <PaymentCells p={item.payment} />
                   </tr>
                 )
@@ -864,6 +867,30 @@ function FilterSelect({
 }
 
 // ─── DateInput ────────────────────────────────────────────────────────────────
+
+function MoneyInput({ value, onChange, placeholder, disabled, className }: {
+  value: string; onChange: (v: string) => void;
+  placeholder?: string; disabled?: boolean; className?: string;
+}) {
+  const [focused, setFocused] = React.useState(false);
+  const numVal = parseFloat(value.replace(/[\s\u00A0]/g, ""));
+  const display = !focused && value && !isNaN(numVal)
+    ? numVal.toLocaleString("ru-RU", { maximumFractionDigits: 2 })
+    : value;
+  return (
+    <Input
+      type="text"
+      inputMode="decimal"
+      value={display}
+      onChange={(e) => onChange(e.target.value.replace(/[\s\u00A0 ]/g, ""))}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      placeholder={placeholder}
+      disabled={disabled}
+      className={className}
+    />
+  );
+}
 
 function DateInput({ value, onChange, className }: { value: string; onChange: (v: string) => void; className?: string }) {
   const ref = useRef<HTMLInputElement>(null);
@@ -1080,12 +1107,12 @@ function CreateWorkDialog({ executorId, onClose, onCreated }: { executorId: stri
           </div>
           <div className="space-y-1.5">
             <Label>Техническое задание *</Label>
-            <Input value={techTask} onChange={(e) => setTechTask(e.target.value)} placeholder="Описание задания" />
+            <Input value={techTask} onChange={(e) => setTechTask(e.target.value)} placeholder="Введите текст ТЗ" />
           </div>
           <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-1.5"><Label>Объём</Label><Input type="number" value={volume} onChange={(e) => setVolume(e.target.value)} placeholder="0" /></div>
-            <div className="space-y-1.5"><Label>Ставка</Label><Input type="number" value={rate} onChange={(e) => setRate(e.target.value)} placeholder="0" /></div>
-            <div className="space-y-1.5"><Label>Сумма *</Label><Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" /></div>
+            <div className="space-y-1.5"><Label>Объём</Label><MoneyInput value={volume} onChange={setVolume} placeholder="0" /></div>
+            <div className="space-y-1.5"><Label>Ставка</Label><MoneyInput value={rate} onChange={setRate} placeholder="0" /></div>
+            <div className="space-y-1.5"><Label>Сумма *</Label><MoneyInput value={amount} onChange={setAmount} placeholder="0" /></div>
           </div>
           <div className="space-y-1.5"><Label>Дата оплаты план</Label><DateInput value={plannedPayAt} onChange={setPlannedPayAt} /></div>
           <div className="space-y-1.5"><Label>Ссылка</Label><Input value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://..." /></div>
@@ -1122,11 +1149,9 @@ function EditWorkDialog({
   const [rate, setRate] = useState(work.rate != null ? String(work.rate) : "");
   const [amount, setAmount] = useState(String(work.amount));
   const [responsibleExecutorId, setResponsibleExecutorId] = useState(work.responsibleExecutorId ?? "");
-  const [plannedPayAt, setPlannedPayAt] = useState(work.plannedPayAt ? new Date(work.plannedPayAt).toISOString().slice(0, 10) : "");
+  const [plannedPayAt, setPlannedPayAt] = useState(work.plannedPayAt ? toLocalDateString(new Date(work.plannedPayAt)) : "");
   const [link, setLink] = useState(work.link ?? "");
   const [report, setReport] = useState(work.report ?? "");
-  const [filledTechTask, setFilledTechTask] = useState(work.filledTechTask ?? "");
-  const [filledAct, setFilledAct] = useState(work.filledAct ?? "");
   const [workStatus, setWorkStatus] = useState(work.workStatus);
   const [comment, setComment] = useState(work.comment ?? "");
   const [saving, setSaving] = useState(false);
@@ -1162,7 +1187,6 @@ function EditWorkDialog({
           responsibleExecutorId: responsibleExecutorId || null,
           ...(isLinked ? {} : { plannedPayAt: plannedPayAt || null }),
           link: link || null, report: report || null,
-          filledTechTask: filledTechTask || null, filledAct: filledAct || null,
           ...(isAdmin && !isLinked ? { workStatus } : {}),
           comment: comment || null,
         }),
@@ -1225,9 +1249,9 @@ function EditWorkDialog({
             <Input value={techTask} onChange={(e) => setTechTask(e.target.value)} />
           </div>
           <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-1.5"><Label>Объём</Label><Input type="number" value={volume} onChange={(e) => setVolume(e.target.value)} /></div>
-            <div className="space-y-1.5"><Label>Ставка</Label><Input type="number" value={rate} onChange={(e) => setRate(e.target.value)} /></div>
-            <div className="space-y-1.5"><Label>Сумма</Label><Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
+            <div className="space-y-1.5"><Label>Объём</Label><MoneyInput value={volume} onChange={setVolume} /></div>
+            <div className="space-y-1.5"><Label>Ставка</Label><MoneyInput value={rate} onChange={setRate} /></div>
+            <div className="space-y-1.5"><Label>Сумма</Label><MoneyInput value={amount} onChange={setAmount} /></div>
           </div>
           {!isLinked && (
             <div className="space-y-1.5"><Label>Дата оплаты план</Label><DateInput value={plannedPayAt} onChange={setPlannedPayAt} /></div>
@@ -1243,8 +1267,6 @@ function EditWorkDialog({
           )}
           <div className="space-y-1.5"><Label>Ссылка</Label><Input value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://..." /></div>
           <div className="space-y-1.5"><Label>Отчёт (URL)</Label><Input value={report} onChange={(e) => setReport(e.target.value)} placeholder="https://..." /></div>
-          <div className="space-y-1.5"><Label>Заполненное ТЗ (URL)</Label><Input value={filledTechTask} onChange={(e) => setFilledTechTask(e.target.value)} placeholder="https://..." /></div>
-          <div className="space-y-1.5"><Label>Заполненный акт (URL)</Label><Input value={filledAct} onChange={(e) => setFilledAct(e.target.value)} placeholder="https://..." /></div>
           <div className="space-y-1.5"><Label>Комментарий</Label><Input value={comment} onChange={(e) => setComment(e.target.value)} /></div>
         </div>
         <DialogFooter>
@@ -1317,7 +1339,7 @@ function CreatePaymentDialog({ executorId, bankAccounts, onClose, onCreated }: {
               </Select>
             </div>
           </div>
-          <div className="space-y-1.5"><Label>Сумма</Label><Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" /></div>
+          <div className="space-y-1.5"><Label>Сумма</Label><MoneyInput value={amount} onChange={setAmount} placeholder="0" /></div>
           <div className="space-y-1.5">
             <Label>Источник оплаты</Label>
             <Select value={bankAccountId} onValueChange={(v) => setBankAccountId(v ?? "")}>
@@ -1390,7 +1412,7 @@ function EditPaymentDialog({
   const [amount, setAmount] = useState(String(payment.amount));
   const [paymentStatus, setPaymentStatus] = useState(payment.paymentStatus);
   const [bankAccountId, setBankAccountId] = useState(payment.bankAccountId ?? "");
-  const [plannedPayAt, setPlannedPayAt] = useState(payment.plannedPayAt ? new Date(payment.plannedPayAt).toISOString().slice(0, 10) : "");
+  const [plannedPayAt, setPlannedPayAt] = useState(payment.plannedPayAt ? toLocalDateString(new Date(payment.plannedPayAt)) : "");
   const [comment, setComment] = useState(payment.comment ?? "");
   const [removeIds, setRemoveIds] = useState<Set<string>>(new Set());
   const [addIds, setAddIds] = useState<Set<string>>(new Set());
@@ -1452,7 +1474,7 @@ function EditPaymentDialog({
             </div>
             <div className="space-y-1.5">
               <Label>Сумма {hasWorks && <span className="text-neutral-400">(= сумма работ)</span>}</Label>
-              <Input type="number" value={hasWorks ? String(linkedWorks.reduce((s, w) => s + w.amount, 0)) : amount} onChange={(e) => setAmount(e.target.value)} disabled={hasWorks} />
+              <MoneyInput value={hasWorks ? String(linkedWorks.reduce((s, w) => s + w.amount, 0)) : amount} onChange={setAmount} disabled={hasWorks} />
             </div>
           </div>
           <div className="space-y-1.5">

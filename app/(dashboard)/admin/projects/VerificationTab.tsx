@@ -8,6 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { toLocalDateString } from "@/lib/iso-weeks";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -45,6 +46,7 @@ function formatRuDate(iso: string) {
     day: "numeric",
     month: "long",
     year: "numeric",
+    timeZone: "Europe/Moscow",
   });
 }
 
@@ -53,6 +55,7 @@ function formatRuDateShort(iso: string) {
     day: "numeric",
     month: "short",
     year: "numeric",
+    timeZone: "Europe/Moscow",
   });
 }
 
@@ -129,7 +132,7 @@ function CreateVerificationDialog({
   onClose: () => void;
   onCreated: () => void;
 }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toLocalDateString(new Date());
   const [date, setDate] = useState(today);
   const [saving, setSaving] = useState(false);
 
