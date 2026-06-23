@@ -92,10 +92,6 @@ export default function LoginPage() {
               {loading ? "Вход..." : "Войти"}
             </Button>
           </form>
-          <div className="mt-6 text-xs text-neutral-400 space-y-1">
-            <p className="font-medium text-neutral-500">Тестовый аккаунт (Phase 0):</p>
-            <p>admin@kpd.local / Password123!</p>
-          </div>
         </CardContent>
       </Card>
     </div>

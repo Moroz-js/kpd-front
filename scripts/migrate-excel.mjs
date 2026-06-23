@@ -340,6 +340,11 @@ function makeEmail(fullName, idx) {
   return `${base}.${idx}@noemail.local`;
 }
 
+function generatePassword() {
+  const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$";
+  return Array.from({ length: 12 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+}
+
 // Составное имя клиента: "Департамент – Компания" (как TEXTJOIN в Excel)
 function buildClientName(company, department) {
   return department ? `${department} – ${company}` : company;
@@ -489,6 +494,7 @@ function extractExecutors(wb, userMap, bankMap, workTypeMap) {
       status: mapV(str(r["Статус исполнителя"]), STATUS_RU, "active"),
       accessRevokedAt: accessField === "закрыт" ? new Date("2024-01-01") : null,
       oldEstimateUrl: str(r["Старая смета"]),
+      _email: str(r["email"]) || str(r["Email"]) || null,
       _bankName: bankName,
       _responsibleName: respName,
       _workTypeNames: workTypeNames,
@@ -1351,7 +1357,32 @@ async function runMigration(prisma, all) {
 
   // 6. executors + links
   const executorIds = {};
+  const credentialsLines = [];
   await step("[6/13] executors + links", async () => {
+    const bcrypt = await import("bcryptjs");
+
+    // Создаём User-аккаунты для исполнителей у которых заполнен email
+    const executorUserIds = {};
+    const withEmail = all.executors.executors.filter((e) => e._email);
+    if (withEmail.length > 0) {
+      const userRows = await Promise.all(
+        withEmail.map(async (e) => {
+          const pwd = generatePassword();
+          const hash = await bcrypt.hash(pwd, 10);
+          credentialsLines.push(`${e._email}:${pwd}`);
+          return {
+            email: e._email,
+            password: hash,
+            fullName: e.name,
+            role: "executor",
+            isActive: e.status === "active",
+          };
+        })
+      );
+      const createdUsers = await createManyAndReturnBatched(prisma.user, userRows);
+      for (const u of createdUsers) executorUserIds[normKey(u.fullName)] = u.id;
+    }
+
     const created = await createManyAndReturnBatched(
       prisma.executor,
       all.executors.executors.map((e) => ({
@@ -1369,6 +1400,7 @@ async function runMigration(prisma, all) {
         status: e.status,
         accessRevokedAt: e.accessRevokedAt,
         oldEstimateUrl: e.oldEstimateUrl,
+        userId: executorUserIds[normKey(e.name)] ?? null,
         defaultBankAccountId: e._bankName ? (bankIds[normKey(e._bankName)] ?? null) : null,
         responsibleUserId: e._responsibleName ? (userIds[normKey(e._responsibleName)] ?? null) : null,
       }))
@@ -1653,6 +1685,12 @@ async function runMigration(prisma, all) {
     console.log("     admin@kpd.local / Password123! ✓");
     return 1;
   });
+
+  // Сохраняем доступы в файл
+  const allCredentials = ["admin@kpd.local:Password123!", ...credentialsLines];
+  const credPath = path.resolve(__dirname, "import-credentials.txt");
+  fs.writeFileSync(credPath, allCredentials.join("\n") + "\n", "utf8");
+  console.log(`  📄 Доступы (${allCredentials.length}) → ${credPath}`);
 
   console.log(`  ⏱  Итого: ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 }
