@@ -6,6 +6,7 @@ import {
   canViewExecutorsList,
   canEditExecutorSettings,
   isAdmin,
+  isResponsible,
 } from "@/lib/permissions";
 import { updateExecutor } from "@/lib/services/executors";
 import { prisma } from "@/lib/db";
@@ -69,6 +70,11 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!canEditExecutorSettings(me)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { id } = await ctx.params;
+
+  // Постоянный исполнитель (не admin и не активный PM) может редактировать только себя
+  if (!isAdmin(me) && !isResponsible(me) && me.executorId !== id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const body = await req.json().catch(() => null);
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) {

@@ -293,6 +293,14 @@ function isoWeekYear(date) {
   return d.getFullYear();
 }
 
+/** Нормализует дату в строку YYYY-MM-DD по московскому времени (UTC+3),
+ *  чтобы избежать ±1 день из-за timezone при сравнении ключей выплат. */
+function toMoscowDateKey(date) {
+  if (!date) return null;
+  const MOSCOW_OFFSET_MS = 3 * 60 * 60 * 1000;
+  return new Date(date.getTime() + MOSCOW_OFFSET_MS).toISOString().slice(0, 10);
+}
+
 function parseDate(val) {
   if (val == null) return null;
   if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
@@ -1461,12 +1469,23 @@ async function runMigration(prisma, all) {
         bankAccountId: p._bankName ? (bankIds[normKey(p._bankName)] ?? null) : null,
         comment: p.comment,
       });
-      meta.push({ nameKey: normKey(p._executorName), year: p.periodYear, month: p.periodMonth });
+      meta.push({
+        nameKey: normKey(p._executorName),
+        year: p.periodYear,
+        month: p.periodMonth,
+        paidAt: toMoscowDateKey(p.paidAt) ?? toMoscowDateKey(p.plannedPayAt),
+      });
     }
     const created = await createManyAndReturnBatched(prisma.payment, rows);
     for (let i = 0; i < created.length; i++) {
       const m = meta[i];
-      paymentIds[`${m.nameKey}|${m.year}|${m.month}`] = created[i].id;
+      if (m.paidAt) {
+        paymentIds[`${m.nameKey}|${m.year}|${m.month}|${m.paidAt}`] = created[i].id;
+      } else {
+        // fallback: без даты — старый ключ (не перезаписывает если уже есть с датой)
+        const fallbackKey = `${m.nameKey}|${m.year}|${m.month}`;
+        if (!paymentIds[fallbackKey]) paymentIds[fallbackKey] = created[i].id;
+      }
     }
     return created.length;
   });
@@ -1500,7 +1519,18 @@ async function runMigration(prisma, all) {
         checkedAt: w.checkedAt,
         paidAt: w.paidAt,
         plannedPayAt: w.plannedPayAt,
-        paymentId: paymentIds[`${normKey(w._executorName)}|${w.executionYear}|${w.executionMonth}`] ?? null,
+        paymentId: (() => {
+          const workDate = toMoscowDateKey(w.paidAt) ?? toMoscowDateKey(w.plannedPayAt);
+          const nameKey = normKey(w._executorName);
+          const y = w.executionYear;
+          const mo = w.executionMonth;
+          if (workDate) {
+            return paymentIds[`${nameKey}|${y}|${mo}|${workDate}`]
+              ?? paymentIds[`${nameKey}|${y}|${mo}`]
+              ?? null;
+          }
+          return paymentIds[`${nameKey}|${y}|${mo}`] ?? null;
+        })(),
       });
     }
     return createManyBatched(prisma.work, rows);

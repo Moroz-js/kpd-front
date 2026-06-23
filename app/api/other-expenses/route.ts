@@ -15,7 +15,7 @@ const createSchema = z.object({
   executionYear: z.number().int().min(2020).max(2100),
   executionMonth: z.number().int().min(1).max(12),
   description: z.string().min(1),
-  amount: z.number().min(0),
+  amount: z.number().positive(),
   paymentAmount: z.number().nullable().optional(),
   preferredPayMethod: z.string().nullable().optional(),
   plannedPayAt: z.string().nullable().optional(),

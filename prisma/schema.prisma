@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -214,8 +214,6 @@ model Work {
   amount          Float // Сумма к выплате
   plannedPayAt    DateTime? // Дата оплаты — план (раздельная с Payment)
   paidAt          DateTime?
-  filledTechTask  String? // URL «Заполненное ТЗ»
-  filledAct       String? // URL «Заполненный акт»
   workStatus      String    @default("submitted") // submitted | checked | paid | rework
   checkedAt       DateTime? // Дата проверки
   comment         String?
@@ -252,6 +250,8 @@ model Payment {
   bankAccountId  String?
   bankAccount    BankAccount? @relation(fields: [bankAccountId], references: [id])
   comment        String?
+  filledTechTask  String? // URL «Заполненное ТЗ»
+  filledAct       String? // URL «Заполненный акт»
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 

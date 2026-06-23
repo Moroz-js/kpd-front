@@ -250,6 +250,8 @@ export function CashflowClient() {
   const stickyHdr = "sticky left-0 z-[15] bg-neutral-50 border-r border-neutral-200 shadow-[1px_0_0_0_#e5e7eb] px-3 py-1 text-xs font-semibold text-neutral-500 tracking-wide uppercase whitespace-nowrap overflow-hidden text-ellipsis w-[240px] min-w-[200px] max-w-[240px]";
   const compactHdr =
     "sticky left-0 z-[15] bg-neutral-50 border-r border-neutral-200 shadow-[1px_0_0_0_#e5e7eb] px-2.5 py-0.5 text-[11px] font-semibold text-neutral-500 tracking-wide uppercase whitespace-nowrap overflow-hidden text-ellipsis w-[240px] min-w-[200px] max-w-[240px]";
+  const stickyTotalHdr = "sticky left-[240px] z-30 bg-neutral-100 px-2 py-0.5 text-right text-xs font-semibold text-neutral-600 whitespace-nowrap min-w-[104px] border-r border-neutral-200 shadow-[1px_0_0_0_#e5e7eb]";
+  const stickyTotal = "sticky left-[240px] z-10 bg-neutral-50 px-2 py-0.5 text-right text-[11px] tabular-nums whitespace-nowrap font-medium border-r border-neutral-200 min-w-[104px] shadow-[1px_0_0_0_#e5e7eb]";
   const isFuture = (wIdx: number) =>
     year > currentISOYear ||
     (year === currentISOYear && (weeks[wIdx]?.week ?? 0) > currentISOWeek);
@@ -387,12 +389,12 @@ export function CashflowClient() {
                 <th className={cn(compactLbl, "z-30 font-medium text-neutral-600 bg-neutral-50 py-0.5")}>
                   Показатель / Проект
                 </th>
+                <th rowSpan={2} className={stickyTotalHdr}>Итого</th>
                 {visibleMonthGroups.map((mg, i) => (
                   <th key={i} colSpan={mg.count} className={cn(thCls, "bg-neutral-50")}>
                     {mg.label}
                   </th>
                 ))}
-                <th className={cn(thCls, "bg-neutral-100 font-semibold")}>Итого</th>
               </tr>
               <tr className="bg-neutral-50 border-b border-neutral-200">
                 <th className={cn(stickyLbl, "z-30 text-left font-semibold text-neutral-600 bg-neutral-50")}>
@@ -409,13 +411,13 @@ export function CashflowClient() {
                     </th>
                   );
                 })}
-                <th className={cn(thCls, "bg-neutral-100")} />
               </tr>
             </thead>
             <tbody>
               <tr className="bg-neutral-50 border-b border-neutral-200">
                 <td className={compactHdr}>Сводка</td>
-                <td colSpan={visibleWeeks.length + 1} className="bg-neutral-50 py-0" />
+                <td className={cn(stickyTotal, "bg-neutral-50")} />
+                <td colSpan={visibleWeeks.length} className="bg-neutral-50 py-0" />
               </tr>
               {SUMMARY_DEFS.map(def => {
                 const arr = summary[def.key];
@@ -438,6 +440,9 @@ export function CashflowClient() {
                     >
                       {def.label}
                     </td>
+                    <td className={cn(stickyTotal, valueCls, def.highlight && "font-medium")}>
+                      {"signed" in def && def.signed ? fmtSign(total) : fmt(total)}
+                    </td>
                     {visibleWeekIndices.map((idx) =>
                       renderWeekCell(
                         `summary:${def.key}`,
@@ -449,9 +454,6 @@ export function CashflowClient() {
                         true
                       )
                     )}
-                    <td className={cn(compactTdCls, "bg-neutral-50", valueCls, def.highlight && "font-medium")}>
-                      {"signed" in def && def.signed ? fmtSign(total) : fmt(total)}
-                    </td>
                   </tr>
                 );
               })}
@@ -470,6 +472,9 @@ export function CashflowClient() {
                     >
                       {def.label}
                     </td>
+                    <td className={cn(stickyTotal, def.bold ? "font-medium" : "")}>
+                      {fmt(total)}
+                    </td>
                     {visibleWeekIndices.map((idx) =>
                       renderWeekCell(
                         `aggregate:${def.key}`,
@@ -479,9 +484,6 @@ export function CashflowClient() {
                         true
                       )
                     )}
-                    <td className={cn(compactTdCls, "bg-neutral-50", def.bold ? "font-medium" : "")}>
-                      {fmt(total)}
-                    </td>
                   </tr>
                 );
               })}
@@ -506,7 +508,8 @@ export function CashflowClient() {
                       <td className={stickyHdr} title={blockLabels[blockKey]}>
                         <span className="block truncate">{blockLabels[blockKey]}</span>
                       </td>
-                      <td colSpan={visibleWeeks.length + 1} className="bg-neutral-50" />
+                      <td className={cn(stickyTotal, "bg-neutral-50")} />
+                      <td colSpan={visibleWeeks.length} className="bg-neutral-50" />
                     </tr>
                     {extProjects.map(p => {
                       const arr = blockKey === "plan" ? p.plan : blockKey === "iw" ? p.iw : blockKey === "charges" ? p.charges : p.cashflow;
@@ -516,6 +519,9 @@ export function CashflowClient() {
                           <td className={cn(stickyLbl, "font-normal")} title={p.name}>
                             <span className="block truncate">{p.name}</span>
                           </td>
+                          <td className={cn(stickyTotal, "font-medium")}>
+                            {blockKey === "cf" ? fmtSign(last) : fmt(rowTotal(arr))}
+                          </td>
                           {visibleWeekIndices.map((idx) =>
                             renderWeekCell(
                               `project:${p.id}:${blockKey}`,
@@ -523,9 +529,6 @@ export function CashflowClient() {
                               blockKey === "cf" ? fmtSign(arr[idx] ?? 0) : fmt(arr[idx] ?? 0)
                             )
                           )}
-                          <td className={cn(tdCls, "bg-neutral-50 font-medium")}>
-                            {blockKey === "cf" ? fmtSign(last) : fmt(rowTotal(arr))}
-                          </td>
                         </tr>
                       );
                     })}
@@ -542,6 +545,9 @@ export function CashflowClient() {
                           <td className={cn(stickyLbl, "font-normal text-neutral-500")} title={p.name}>
                             <span className="block truncate">{p.name}</span>
                           </td>
+                          <td className={cn(stickyTotal, "font-medium text-neutral-500")}>
+                            {blockKey === "cf" ? fmtSign(last) : fmt(rowTotal(arr))}
+                          </td>
                           {visibleWeekIndices.map((idx) =>
                             renderWeekCell(
                               `project:${p.id}:${blockKey}`,
@@ -550,9 +556,6 @@ export function CashflowClient() {
                               "text-neutral-500"
                             )
                           )}
-                          <td className={cn(tdCls, "bg-neutral-50 font-medium text-neutral-500")}>
-                            {blockKey === "cf" ? fmtSign(last) : fmt(rowTotal(arr))}
-                          </td>
                         </tr>
                       );
                     })}

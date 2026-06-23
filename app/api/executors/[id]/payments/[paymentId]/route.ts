@@ -6,7 +6,7 @@ import { prisma } from "@/lib/db";
 import { z } from "zod";
 
 const patchSchema = z.object({
-  amount: z.number().min(0).optional(),
+  amount: z.number().positive().optional(),
   paymentStatus: z.enum(["planned", "sent", "paid"]).optional(),
   bankAccountId: z.string().nullable().optional(),
   plannedPayAt: z.string().nullable().optional(),
@@ -14,6 +14,8 @@ const patchSchema = z.object({
   comment: z.string().nullable().optional(),
   periodYear: z.number().int().min(2020).max(2100).optional(),
   periodMonth: z.number().int().min(1).max(12).optional(),
+  filledTechTask: z.string().nullable().optional(),
+  filledAct: z.string().nullable().optional(),
 });
 
 type Ctx = { params: Promise<{ id: string; paymentId: string }> };

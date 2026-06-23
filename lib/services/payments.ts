@@ -211,6 +211,8 @@ export type UpdatePaymentInput = {
   comment?: string | null;
   periodYear?: number;
   periodMonth?: number;
+  filledTechTask?: string | null;
+  filledAct?: string | null;
 };
 
 export async function updatePayment(
@@ -278,6 +280,8 @@ export async function updatePayment(
       ...(patch.comment !== undefined && { comment: patch.comment }),
       ...(patch.periodYear !== undefined && { periodYear: patch.periodYear }),
       ...(patch.periodMonth !== undefined && { periodMonth: patch.periodMonth }),
+      ...(patch.filledTechTask !== undefined && { filledTechTask: patch.filledTechTask }),
+      ...(patch.filledAct !== undefined && { filledAct: patch.filledAct }),
     },
   });
 

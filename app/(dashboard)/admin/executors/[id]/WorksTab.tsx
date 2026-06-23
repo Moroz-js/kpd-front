@@ -51,6 +51,8 @@ type PaymentRow = {
   bankAccountId: string | null;
   bankAccount: { id: string; name: string } | null;
   comment: string | null;
+  filledTechTask: string | null;
+  filledAct: string | null;
 };
 type AllPaymentRow = PaymentRow & { periodYear: number; periodMonth: number };
 
@@ -70,8 +72,6 @@ type WorkRow = {
   amount: number;
   plannedPayAt: string | null;
   paidAt: string | null;
-  filledTechTask: string | null;
-  filledAct: string | null;
   workStatus: string;
   checkedAt: string | null;
   comment: string | null;
@@ -162,6 +162,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
   const [filterWeek, setFilterWeek] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<string>(""); // "" | unpaid | paid
   const [filterBank, setFilterBank] = useState<string>("");
+  const [filterRowType, setFilterRowType] = useState<string>(""); // "" | "works" | "payments"
   const [hidePaidGroups, setHidePaidGroups] = useState(false);
 
   // Диалоги
@@ -451,8 +452,8 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
   }
 
   // ── Рендер ───────────────────────────────────────────────────────────────────
-  const showWorkRows = !paymentOnlyFilterActive;
-  const showPaymentRows = !workOnlyFilterActive;
+  const showWorkRows = !paymentOnlyFilterActive && filterRowType !== "payments";
+  const showPaymentRows = !workOnlyFilterActive && filterRowType !== "works";
 
   const COL_COUNT = 12;
   const th = "border-b border-neutral-200 px-1.5 py-1 text-left text-[10px] leading-tight font-medium text-neutral-600 bg-neutral-100 whitespace-nowrap";
@@ -571,9 +572,10 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
   // (год/месяц/проект) группа без подходящих работ скрывается целиком.
   const visibleGroups = groups
     .filter((g) => !(hidePaidGroups && PAID_STATUSES_PAYMENT.has(g.payment.paymentStatus)))
-    .filter((g) => paymentPasses(g.payment))
+    .filter((g) => filterRowType === "works" || paymentPasses(g.payment))
     .map((g) => ({ payment: g.payment, works: g.works.filter(workPasses) }))
-    .filter((g) => !workOnlyFilterActive || g.works.length > 0);
+    .filter((g) => filterRowType === "payments" || !workOnlyFilterActive || g.works.length > 0)
+    .filter((g) => filterRowType !== "works" || g.works.length > 0);
 
   const visibleUnlinkedWorks = unlinkedWorks.filter(workPasses);
   const visibleUnlinkedPayments = unlinkedPayments.filter(paymentPasses);
@@ -601,7 +603,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
   ].sort((a, b) => a.sortKey - b.sortKey);
 
   const isEmpty =
-    visibleGroups.length === 0 &&
+    visibleGroups.filter((g) => (showWorkRows && g.works.length > 0) || showPaymentRows).length === 0 &&
     (!showWorkRows || visibleUnlinkedWorks.length === 0) &&
     (!showPaymentRows || visibleUnlinkedPayments.length === 0);
 
@@ -643,6 +645,8 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
             <Checkbox checked={hidePaidGroups} onCheckedChange={(v) => setHidePaidGroups(Boolean(v))} />
             Спрятать оплаченные группы
           </label>
+          <FilterSelect label="Тип строк" value={filterRowType} onChange={setFilterRowType} placeholder="Работы и выплаты"
+            options={[{ value: "works", label: "Только работы" }, { value: "payments", label: "Только выплаты" }]} />
           <FilterSelect label="Неделя оплаты" value={filterWeek} onChange={setFilterWeek} placeholder="Все недели"
             options={weekOptions.map((w) => ({ value: w, label: w }))} />
           <FilterSelect label="Год" value={filterYear} onChange={setFilterYear} placeholder="Все годы"
@@ -688,7 +692,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
           <div className="text-sm text-neutral-400 py-8 text-center">Загрузка...</div>
         ) : isEmpty ? (
           <div className="text-sm text-neutral-400 py-8 text-center">
-            {workOnlyFilterActive || paymentOnlyFilterActive || filterWeek || filterStatus
+            {workOnlyFilterActive || paymentOnlyFilterActive || filterWeek || filterStatus || filterRowType
               ? "Нет данных по фильтрам"
               : "Работ ещё нет. Создайте первую работу."}
           </div>
@@ -699,7 +703,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
                 <th className={cn(th, "w-8")} />
                 <th className={th}>Год</th>
                 <th className={th}>Месяц</th>
-                <th className={th}>Проект / описание</th>
+                <th className={th}>Проект / ТЗ</th>
                 <th className={th}>Вид работ</th>
                 <th className={th}>Ответственный</th>
                 <th className={thr}>Сумма</th>
@@ -717,7 +721,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
                 const active = hoverPaymentId === g.payment.id;
                 return (
                 <React.Fragment key={g.payment.id}>
-                  {g.works.map((w) => (
+                  {showWorkRows && g.works.map((w) => (
                     <tr
                       key={w.id}
                       onMouseEnter={() => setHoverPaymentId(g.payment.id)}
@@ -730,6 +734,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
                       <WorkCells w={w} />
                     </tr>
                   ))}
+                  {showPaymentRows && (
                   <tr
                     onMouseEnter={() => setHoverPaymentId(g.payment.id)}
                     onMouseLeave={() => setHoverPaymentId(null)}
@@ -740,6 +745,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
                   >
                     <PaymentCells p={g.payment} />
                   </tr>
+                  )}
                 </React.Fragment>
                 );
               })}
@@ -1414,6 +1420,8 @@ function EditPaymentDialog({
   const [bankAccountId, setBankAccountId] = useState(payment.bankAccountId ?? "");
   const [plannedPayAt, setPlannedPayAt] = useState(payment.plannedPayAt ? toLocalDateString(new Date(payment.plannedPayAt)) : "");
   const [comment, setComment] = useState(payment.comment ?? "");
+  const [filledTechTask, setFilledTechTask] = useState(payment.filledTechTask ?? "");
+  const [filledAct, setFilledAct] = useState(payment.filledAct ?? "");
   const [removeIds, setRemoveIds] = useState<Set<string>>(new Set());
   const [addIds, setAddIds] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
@@ -1442,6 +1450,8 @@ function EditPaymentDialog({
         bankAccountId: bankAccountId || null,
         plannedPayAt: plannedPayAt || null,
         comment: comment || null,
+        filledTechTask: filledTechTask || null,
+        filledAct: filledAct || null,
       };
       if (!hasWorks && addIds.size === 0) body.amount = amount ? parseFloat(amount) : 0;
       const r = await fetch(`/api/executors/${executorId}/payments/${payment.id}`, {
@@ -1489,6 +1499,8 @@ function EditPaymentDialog({
           </div>
           <div className="space-y-1.5"><Label>Дата оплаты план</Label><DateInput value={plannedPayAt} onChange={setPlannedPayAt} /></div>
           <div className="space-y-1.5"><Label>Комментарий</Label><Input value={comment} onChange={(e) => setComment(e.target.value)} /></div>
+          <div className="space-y-1.5"><Label>Заполненное ТЗ (URL)</Label><Input value={filledTechTask} onChange={(e) => setFilledTechTask(e.target.value)} placeholder="https://..." /></div>
+          <div className="space-y-1.5"><Label>Заполненный акт (URL)</Label><Input value={filledAct} onChange={(e) => setFilledAct(e.target.value)} placeholder="https://..." /></div>
 
           {/* Управление связями */}
           <div className="border-t pt-3 space-y-2">

@@ -20,7 +20,7 @@ const patchSchema = z.object({
   executionYear: z.number().int().min(2020).max(2100).optional(),
   executionMonth: z.number().int().min(1).max(12).optional(),
   description: z.string().min(1).optional(),
-  amount: z.number().min(0).optional(),
+  amount: z.number().positive().optional(),
   paymentAmount: z.number().nullable().optional(),
   preferredPayMethod: z.string().nullable().optional(),
   plannedPayAt: z.string().nullable().optional(),

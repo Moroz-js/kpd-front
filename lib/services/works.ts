@@ -19,8 +19,6 @@ export type CreateWorkInput = {
   amount: number;
   plannedPayAt?: string | null;
   responsibleExecutorId?: string | null;
-  filledTechTask?: string | null;
-  filledAct?: string | null;
   comment?: string | null;
 };
 
@@ -82,8 +80,6 @@ export async function createWork(
       amount: input.amount,
       plannedPayAt: input.plannedPayAt ? new Date(input.plannedPayAt) : nearestPaymentDate(),
       responsibleExecutorId: responsibleExecutorId ?? null,
-      filledTechTask: input.filledTechTask ?? null,
-      filledAct: input.filledAct ?? null,
       workStatus: "submitted",
       comment: input.comment ?? null,
     },
@@ -150,8 +146,6 @@ export async function updateWork(
         ...(patch.responsibleExecutorId !== undefined && {
           responsibleExecutorId: patch.responsibleExecutorId,
         }),
-        ...(patch.filledTechTask !== undefined && { filledTechTask: patch.filledTechTask }),
-        ...(patch.filledAct !== undefined && { filledAct: patch.filledAct }),
         ...(patch.workStatus !== undefined && { workStatus: patch.workStatus }),
         ...(patch.comment !== undefined && { comment: patch.comment }),
       },

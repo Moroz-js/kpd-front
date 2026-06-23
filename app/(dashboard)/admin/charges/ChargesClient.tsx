@@ -237,6 +237,7 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
   const [fStatus, setFStatus] = useState<string[]>([]);
   const [fClient, setFClient] = useState<string[]>([]);
   const [fProject, setFProject] = useState<string[]>([]);
+  const [fWeek, setFWeek] = useState<string[]>([]);
 
   const [bulkStatus, setBulkStatus] = useState("");
 
@@ -268,6 +269,12 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
       const projectId = r.order?.project?.id ?? "__empty__";
       if (!fProject.includes(projectId)) return false;
     }
+    if (fWeek.length) {
+      const w = payWeekPF(r);
+      const y = payYearPF(r);
+      const key = w !== null && y !== null ? `${y}-${w}` : "__empty__";
+      if (!fWeek.includes(key)) return false;
+    }
     return true;
   });
 
@@ -298,6 +305,21 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
     if (rows.some((r) => !r.order?.project)) map.set("__empty__", "Пусто");
     return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
   }, [orders, rows]);
+
+  const weekOptions = React.useMemo(() => {
+    const map = new Map<string, string>();
+    for (const r of rows) {
+      const w = payWeekPF(r);
+      const y = payYearPF(r);
+      if (w !== null && y !== null) {
+        const key = `${y}-${w}`;
+        if (!map.has(key)) map.set(key, `${weekLabel(w)} ${y}`);
+      }
+    }
+    return Array.from(map.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([value, label]) => ({ value, label }));
+  }, [rows]);
 
   async function patchInlineStatus(id: string, status: string) {
     const res = await fetch(`/api/charges/${id}`, {
@@ -399,6 +421,12 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
             options={Object.entries(CHARGE_STATUSES).map(([v, s]) => ({ value: v, label: s.label }))}
             value={fStatus}
             onChange={setFStatus}
+          />
+          <MultiSelectFilter
+            label="Неделя оплаты"
+            options={weekOptions}
+            value={fWeek}
+            onChange={setFWeek}
           />
         </div>
       </div>
