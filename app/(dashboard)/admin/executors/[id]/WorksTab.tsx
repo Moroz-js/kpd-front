@@ -22,6 +22,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -483,9 +485,22 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
         </td>
         <td className={td}>{w.executionYear}</td>
         <td className={cn(td, "whitespace-nowrap")}>{monthFullLabel(w.executionMonth)}</td>
-        <td className={cn(td, "max-w-[140px]")}>
+        <td className={cn(td, "max-w-[140px] overflow-hidden")}>
           <div className="truncate" title={w.project.name}>{w.project.name}</div>
-          <div className="truncate text-neutral-400" title={w.techTask ?? ""}>{w.techTask || "—"}</div>
+          {w.techTask ? (
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger className="w-full text-left">
+                  <div className="truncate text-neutral-400">{w.techTask}</div>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-xs whitespace-pre-wrap text-xs">
+                  {w.techTask}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : (
+            <div className="text-neutral-300">—</div>
+          )}
         </td>
         <td className={cn(td, "max-w-[90px] truncate text-neutral-600")} title={w.workType.name}>{w.workType.name}</td>
         <td className={tdr}>{w.volume != null ? w.volume.toLocaleString("ru-RU") : "—"}</td>
@@ -1120,7 +1135,7 @@ function CreateWorkDialog({ executorId, onClose, onCreated }: { executorId: stri
           </div>
           <div className="space-y-1.5">
             <Label>Техническое задание *</Label>
-            <Input value={techTask} onChange={(e) => setTechTask(e.target.value)} placeholder="Введите текст ТЗ" />
+            <Textarea value={techTask} onChange={(e) => setTechTask(e.target.value)} placeholder="Введите текст ТЗ" rows={4} className="resize-y text-xs" />
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5"><Label>Объём</Label><MoneyInput value={volume} onChange={setVolume} placeholder="0" /></div>
@@ -1259,7 +1274,7 @@ function EditWorkDialog({
           </div>
           <div className="space-y-1.5">
             <Label>Техническое задание</Label>
-            <Input value={techTask} onChange={(e) => setTechTask(e.target.value)} />
+            <Textarea value={techTask} onChange={(e) => setTechTask(e.target.value)} rows={4} className="resize-y text-xs" />
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5"><Label>Объём</Label><MoneyInput value={volume} onChange={setVolume} /></div>
