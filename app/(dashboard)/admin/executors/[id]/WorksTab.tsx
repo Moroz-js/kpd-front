@@ -493,7 +493,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
                 <TooltipTrigger className="w-full text-left">
                   <div className="truncate text-neutral-400">{w.techTask}</div>
                 </TooltipTrigger>
-                <TooltipContent side="bottom" className="max-w-xs whitespace-pre-wrap text-xs bg-white text-neutral-800 border border-neutral-200 shadow-md">
+                <TooltipContent hideArrow side="bottom" className="max-w-xs max-h-48 overflow-y-auto whitespace-pre-wrap text-xs bg-white text-neutral-800 border border-neutral-200 shadow-md">
                   {w.techTask}
                 </TooltipContent>
               </Tooltip>
