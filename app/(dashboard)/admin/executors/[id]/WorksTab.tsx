@@ -268,23 +268,17 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
     worksByPayment.set(w.paymentId, arr);
   }
 
+  // Все выплаты идут в groups (с работами или без), затем непривязанные работы отдельно
   const groups: Group[] = [];
-  const unlinkedPayments: AllPaymentRow[] = [];
+  const unlinkedPayments: AllPaymentRow[] = []; // оставляем для совместимости с фильтрами
   for (const p of allPayments) {
     const linked = worksByPayment.get(p.id) ?? [];
-    if (linked.length > 0) {
-      groups.push({ payment: p, works: linked });
-    } else {
-      unlinkedPayments.push(p);
-    }
+    groups.push({ payment: p, works: linked });
   }
   groups.sort(
     (a, b) =>
       payWeekSortKey(a.payment.paidAt ?? a.payment.plannedPayAt) -
       payWeekSortKey(b.payment.paidAt ?? b.payment.plannedPayAt)
-  );
-  unlinkedPayments.sort(
-    (a, b) => payMonthSortKey(a.paidAt ?? a.plannedPayAt) - payMonthSortKey(b.paidAt ?? b.plannedPayAt)
   );
 
   const unlinkedWorks = works
@@ -596,27 +590,18 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
   type UnlinkedItem =
     | { kind: "work"; sortKey: number; work: WorkRow }
     | { kind: "payment"; sortKey: number; payment: AllPaymentRow };
-  const unlinkedItems: UnlinkedItem[] = [
-    ...(showWorkRows
-      ? visibleUnlinkedWorks.map<UnlinkedItem>((w) => ({
-          kind: "work",
-          sortKey: w.executionYear * 100 + w.executionMonth,
-          work: w,
-        }))
-      : []),
-    ...(showPaymentRows
-      ? visibleUnlinkedPayments.map<UnlinkedItem>((p) => ({
-          kind: "payment",
-          sortKey: payMonthSortKey(p.paidAt ?? p.plannedPayAt),
-          payment: p,
-        }))
-      : []),
-  ].sort((a, b) => a.sortKey - b.sortKey);
+  // Секция "Без выплаты" — только непривязанные работы, по месяцу выполнения
+  const unlinkedItems: UnlinkedItem[] = showWorkRows
+    ? visibleUnlinkedWorks.map<UnlinkedItem>((w) => ({
+        kind: "work",
+        sortKey: w.executionYear * 100 + w.executionMonth,
+        work: w,
+      }))
+    : [];
 
   const isEmpty =
     visibleGroups.filter((g) => (showWorkRows && g.works.length > 0) || showPaymentRows).length === 0 &&
-    (!showWorkRows || visibleUnlinkedWorks.length === 0) &&
-    (!showPaymentRows || visibleUnlinkedPayments.length === 0);
+    (!showWorkRows || visibleUnlinkedWorks.length === 0);
 
   return (
     <div className="flex flex-col h-full min-h-0 gap-3">
