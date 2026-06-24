@@ -179,7 +179,9 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
     if (companyStatusFilter.length) {
       list = list.filter((r) => {
         if (companyStatusFilter.includes("__none__") && !r.companyStatus) return true;
-        return r.companyStatus != null && companyStatusFilter.includes(r.companyStatus);
+        if (!r.companyStatus) return false;
+        const values = r.companyStatus.split(",").map((s) => s.trim());
+        return companyStatusFilter.some((f) => f !== "__none__" && values.includes(f));
       });
     }
 
@@ -485,11 +487,9 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
                     {r.email && <div className="text-xs text-neutral-500">{r.email}</div>}
                   </TableCell>
                   <TableCell className="w-20 min-w-20 px-1">
-                    {r.companyStatus === "core"
-                      ? "Ядро"
-                      : r.companyStatus === "orbit"
-                        ? "Орбита"
-                        : "—"}
+                    {r.companyStatus
+                      ? r.companyStatus.split(",").map((s) => EXECUTOR_COMPANY_STATUSES[s.trim() as keyof typeof EXECUTOR_COMPANY_STATUSES] ?? s).join(", ")
+                      : "—"}
                   </TableCell>
                   <TableCell>
                     {EXECUTOR_TYPES[normalizeExecutorType(r.type)] ?? r.type}

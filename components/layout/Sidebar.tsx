@@ -38,10 +38,7 @@ type NavGroup = {
   items: NavItem[];
 };
 
-/**
- * Состав sidebar по ролям (см. TZ Приложение B / TDNB-31).
- * Часть пунктов на Phase 0 ведёт на заглушки — заполнятся реальными в Phase 1+.
- */
+/** Состав sidebar по ролям (см. TZ Приложение B / TDNB-31). */
 const ADMIN_NAV: NavGroup[] = [
   {
     items: [

@@ -2,7 +2,7 @@
  * db-reset.mjs — дропает все данные и запускает seed заново.
  *
  * SQLite  → удаляет файл БД, prisma db push, prisma db seed
- * Postgres → prisma migrate reset --force, prisma db seed
+ * Postgres → prisma db push --force-reset (Neon), prisma db seed
  *
  * Использование:
  *   npm run db:reset         (через package.json)
@@ -13,12 +13,12 @@ import { execSync } from "node:child_process";
 import { existsSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { getDatabaseUrl } from "./database-url.mjs";
+import { getDatabaseUrl, getMigrationDatabaseUrl } from "./database-url.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const url  = getDatabaseUrl();
 const isPg = /^postgres(ql)?:\/\//i.test(url);
-const run  = (cmd) => execSync(cmd, { stdio: "inherit", cwd: root });
+const run = (cmd, opts = {}) => execSync(cmd, { stdio: "inherit", cwd: root, ...opts });
 
 console.log(`[db-reset] provider: ${isPg ? "postgresql" : "sqlite"}`);
 
@@ -27,11 +27,11 @@ run("node scripts/set-prisma-provider.mjs");
 run("npx prisma generate");
 
 if (isPg) {
-  // ── PostgreSQL ─────────────────────────────────────────────────────────────
-  console.log("[db-reset] Running: prisma migrate reset --force");
-  run("npx prisma migrate reset --force --skip-seed");
-  console.log("[db-reset] Running: prisma migrate deploy");
-  run("npx prisma migrate deploy");
+  const migrationUrl = getMigrationDatabaseUrl();
+  console.log("[db-reset] Running: prisma db push --force-reset (Neon)");
+  run(`npx prisma db push --force-reset --skip-generate`, {
+    env: { ...process.env, DATABASE_URL: migrationUrl },
+  });
 } else {
   // ── SQLite ─────────────────────────────────────────────────────────────────
   for (const f of ["kpd.db", "kpd.db-journal", "kpd.db-shm", "kpd.db-wal"]) {

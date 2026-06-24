@@ -297,6 +297,15 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
 
   // Проверенные непривязанные работы — для формирования выплат (§4)
   const checkedUnlinked = works.filter((w) => w.workStatus === "checked" && !w.paymentId);
+
+  // Сумма неоплаченных: все работы у которых нет оплаченной выплаты
+  const unpaidTotal = works
+    .filter((w) => {
+      if (w.workStatus === "paid") return false;
+      if (w.paymentId && w.payment?.paymentStatus === "paid") return false;
+      return true;
+    })
+    .reduce((sum, w) => sum + w.amount, 0);
   const selectedArray = Array.from(selectedIds);
   const selectedWorks = works.filter((w) => selectedIds.has(w.id));
   const selectedAllCheckedUnlinked =
@@ -455,7 +464,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
   const showWorkRows = !paymentOnlyFilterActive && filterRowType !== "payments";
   const showPaymentRows = !workOnlyFilterActive && filterRowType !== "works";
 
-  const COL_COUNT = 12;
+  const COL_COUNT = 14;
   const th = "border-b border-neutral-200 px-1.5 py-1 text-left text-[10px] leading-tight font-medium text-neutral-600 bg-neutral-100 whitespace-nowrap";
   const thr = th + " text-right";
   const td = "border-b border-neutral-100 px-1.5 py-1 text-[10px] leading-tight align-middle";
@@ -485,6 +494,8 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
           <div className="truncate text-neutral-400" title={w.techTask ?? ""}>{w.techTask || "—"}</div>
         </td>
         <td className={cn(td, "max-w-[90px] truncate text-neutral-600")} title={w.workType.name}>{w.workType.name}</td>
+        <td className={tdr}>{w.volume != null ? w.volume.toLocaleString("ru-RU") : "—"}</td>
+        <td className={tdr}>{w.rate != null ? w.rate.toLocaleString("ru-RU") : "—"}</td>
         <td className={cn(td, "min-w-[120px]")}>
           {respEditable ? (
             <Select value={w.responsibleExecutorId ?? ""} onValueChange={(v) => v && patchWorkResponsible(w.id, v)}>
@@ -609,6 +620,15 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
 
   return (
     <div className="flex flex-col h-full min-h-0 gap-3">
+      {/* Сумма неоплаченных */}
+      {unpaidTotal > 0 && (
+        <div className="shrink-0 flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-sm">
+          <span className="text-amber-700 font-medium">К выплате:</span>
+          <span className="text-amber-900 font-semibold tabular-nums">
+            {unpaidTotal.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ₽
+          </span>
+        </div>
+      )}
       {/* Toolbar */}
       <div className="shrink-0 flex flex-wrap items-center gap-2">
         {canCreate && (
@@ -705,6 +725,8 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
                 <th className={th}>Месяц</th>
                 <th className={th}>Проект / ТЗ</th>
                 <th className={th}>Вид работ</th>
+                <th className={thr}>Объём</th>
+                <th className={thr}>Ставка</th>
                 <th className={th}>Ответственный</th>
                 <th className={thr}>Сумма</th>
                 <th className={th}>Дата оплаты план</th>

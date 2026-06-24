@@ -4,8 +4,6 @@
  * Ответственный = исполнитель с `isResponsible = true` (и привязанный User для проектов).
  * Статус ответственного: `Executor.responsibleActive` (активный/архивный в UI).
  * Статус исполнителя: `Executor.status` — независим.
- *
- * Учётные записи только с role=responsible (без Executor) — legacy, архив через User.isActive.
  */
 
 import { prisma } from "@/lib/db";
@@ -22,29 +20,6 @@ export type ResponsibleListRow = {
   projects: { id: string; name: string }[];
   createdAt: Date;
 };
-
-function mapExecutorRow(
-  e: {
-    id: string;
-    responsibleActive: boolean;
-    createdAt: Date;
-    user: { id: string; fullName: string; email: string } | null;
-    userId: string | null;
-  },
-  projects: { id: string; name: string }[]
-): ResponsibleListRow | null {
-  if (!e.userId || !e.user) return null;
-  return {
-    id: e.user.id,
-    fullName: e.user.fullName,
-    email: e.user.email,
-    isActive: e.responsibleActive,
-    executorId: e.id,
-    projectCount: projects.length,
-    projects,
-    createdAt: e.createdAt,
-  };
-}
 
 export async function listResponsibles(): Promise<ResponsibleListRow[]> {
   // Берём все проекты с назначенным руководителем
@@ -84,11 +59,9 @@ export async function listResponsibles(): Promise<ResponsibleListRow[]> {
   });
 
   const rows: ResponsibleListRow[] = [];
-  const coveredUserIds = new Set<string>();
 
   for (const e of executors) {
     if (!e.userId || !e.user) continue;
-    coveredUserIds.add(e.userId);
     rows.push({
       id: e.user.id,
       fullName: e.user.fullName,
@@ -99,27 +72,6 @@ export async function listResponsibles(): Promise<ResponsibleListRow[]> {
       projects: projectsByUser.get(e.userId) ?? [],
       createdAt: e.createdAt,
     });
-  }
-
-  // Legacy: role=responsible без executor, есть проекты
-  const remainingUserIds = Array.from(userIdsWithProjects).filter((id) => !coveredUserIds.has(id));
-  if (remainingUserIds.length > 0) {
-    const legacyUsers = await prisma.user.findMany({
-      where: { id: { in: remainingUserIds }, role: "responsible" },
-      orderBy: { fullName: "asc" },
-    });
-    for (const u of legacyUsers) {
-      rows.push({
-        id: u.id,
-        fullName: u.fullName,
-        email: u.email,
-        isActive: u.isActive,
-        executorId: null,
-        projectCount: (projectsByUser.get(u.id) ?? []).length,
-        projects: projectsByUser.get(u.id) ?? [],
-        createdAt: u.createdAt,
-      });
-    }
   }
 
   return rows.sort((a, b) => a.fullName.localeCompare(b.fullName, "ru"));
@@ -174,7 +126,6 @@ async function findResponsibleTarget(userId: string) {
   });
   if (!user) return null;
   if (user.executor?.isResponsible) return { user, executor: user.executor };
-  if (user.role === "responsible") return { user, executor: null };
   return null;
 }
 
@@ -245,64 +196,40 @@ export async function updateResponsible(id: string, patch: UpdateResponsibleInpu
 
 export async function archiveResponsible(id: string, userId: string) {
   const target = await findResponsibleTarget(id);
-  if (!target) throw new Error("Responsible not found");
+  if (!target?.executor) throw new Error("Responsible not found");
 
-  if (target.executor) {
-    const updated = await prisma.executor.update({
-      where: { id: target.executor.id },
-      data: { responsibleActive: false },
-    });
-    await logActivity({
-      userId,
-      action: "archive",
-      entityType: "Executor",
-      entityId: updated.id,
-      entityLabel: updated.name,
-      changes: { responsibleActive: { from: true, to: false } },
-    });
-    return target.user;
-  }
-
-  const updated = await prisma.user.update({ where: { id }, data: { isActive: false } });
+  const updated = await prisma.executor.update({
+    where: { id: target.executor.id },
+    data: { responsibleActive: false },
+  });
   await logActivity({
     userId,
     action: "archive",
-    entityType: "User",
-    entityId: id,
-    entityLabel: updated.fullName,
+    entityType: "Executor",
+    entityId: updated.id,
+    entityLabel: updated.name,
+    changes: { responsibleActive: { from: true, to: false } },
   });
-  return updated;
+  return target.user;
 }
 
 export async function unarchiveResponsible(id: string, userId: string) {
   const target = await findResponsibleTarget(id);
-  if (!target) throw new Error("Responsible not found");
+  if (!target?.executor) throw new Error("Responsible not found");
 
-  if (target.executor) {
-    const updated = await prisma.executor.update({
-      where: { id: target.executor.id },
-      data: { responsibleActive: true },
-    });
-    await logActivity({
-      userId,
-      action: "unarchive",
-      entityType: "Executor",
-      entityId: updated.id,
-      entityLabel: updated.name,
-      changes: { responsibleActive: { from: false, to: true } },
-    });
-    return target.user;
-  }
-
-  const updated = await prisma.user.update({ where: { id }, data: { isActive: true } });
+  const updated = await prisma.executor.update({
+    where: { id: target.executor.id },
+    data: { responsibleActive: true },
+  });
   await logActivity({
     userId,
     action: "unarchive",
-    entityType: "User",
-    entityId: id,
-    entityLabel: updated.fullName,
+    entityType: "Executor",
+    entityId: updated.id,
+    entityLabel: updated.name,
+    changes: { responsibleActive: { from: false, to: true } },
   });
-  return updated;
+  return target.user;
 }
 
 /**

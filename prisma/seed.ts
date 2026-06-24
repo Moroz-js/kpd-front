@@ -213,17 +213,6 @@ async function seedResponsibleManagers(hash: string) {
     }
   }
 
-  // Убрать устаревших «чистых» responsible без исполнителя
-  const legacy = await prisma.user.findMany({
-    where: { role: "responsible", executor: null },
-  });
-  for (const u of legacy) {
-    await prisma.user.update({
-      where: { id: u.id },
-      data: { role: "executor", isActive: false },
-    });
-  }
-
   console.log(`[seed] responsible managers: ${managers.length} (executor + isResponsible)`);
 }
 

@@ -71,6 +71,12 @@ const EXCEL_PATH =
   process.env.EXCEL_PATH ??
   path.resolve(__dirname, "../../Смета_23.xlsx");
 
+// Папка с файлами личных смет (все *.xlsx в папке считаются LS файлами).
+// По умолчанию — подпапка personal-sheets рядом с EXCEL_PATH.
+const LS_FOLDER =
+  process.env.LS_FOLDER ??
+  path.join(path.dirname(EXCEL_PATH), "personal-sheets");
+
 const DRY_RUN    = !process.argv.includes("--run");
 const PRODUCTION = process.argv.includes("--production");
 
@@ -222,7 +228,7 @@ function readSheet(wb, sheetName, { identifyBy, dataOffset = 1 }) {
     header: 1,
     defval: null,
     blankrows: true,   // сохраняем индексы строк как в Excel
-    cellDates: true,
+    cellDates: false,  // читаем даты как числа (серийные номера Excel) → parseDate конвертирует в UTC
   });
 
   // Ищем строку, в которой ТОЧНО есть identifyBy как значение ячейки
@@ -303,7 +309,18 @@ function toMoscowDateKey(date) {
 
 function parseDate(val) {
   if (val == null) return null;
-  if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+  // Числовой серийный номер Excel → UTC полночь (без сдвига часового пояса)
+  if (typeof val === "number" && val > 1) {
+    // Excel epoch: 25569 дней от 01.01.1900 до 01.01.1970 (с учётом бага 1900 года)
+    const ms = Math.round((val - 25569) * 86400) * 1000;
+    const d = new Date(ms);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) return null;
+    // Нормализуем до UTC полночи по локальным компонентам даты
+    return new Date(Date.UTC(val.getFullYear(), val.getMonth(), val.getDate()));
+  }
   if (typeof val === "string" && val.trim() !== "") {
     const d = new Date(val);
     return isNaN(d.getTime()) ? null : d;
@@ -320,6 +337,10 @@ function splitItems(val) {
 function normKey(s) {
   if (!s) return "";
   return String(s).trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function normEmail(email) {
+  return String(email).trim().toLowerCase();
 }
 
 // Транслитерация для email
@@ -380,36 +401,6 @@ function extractBankAccounts(wb) {
     }));
 }
 
-function extractWorkTypes(wb) {
-  const rows = readSheet(wb, "БД_Виды_работ", { identifyBy: "Вид работ" });
-  return rows
-    .filter((r) => str(r["Вид работ"]))
-    .map((r) => ({
-      name: str(r["Вид работ"]),
-      segment: str(r["Сегмент"]) ?? "Без категории",
-      status: mapV(str(r["Статус"]), STATUS_RU, "active"),
-    }));
-}
-
-function extractClients(wb) {
-  const rows = readSheet(wb, "БД_Клиенты", { identifyBy: "Клиент" });
-  return rows
-    .filter((r) => str(r["Компания"]))
-    .map((r) => {
-      const company = str(r["Компания"]);
-      const department = str(r["Департамент"]);
-      return {
-        // Вычисляем имя так же как в Excel: TEXTJOIN(" – ", true, Департамент, Компания)
-        name: buildClientName(company, department),
-        company,
-        department: department ?? "",
-        status: "active",
-        _rawStatusProjects: str(r["Статус проектов"]),
-        _revenue: num(r["Выручка"]),
-      };
-    });
-}
-
 function extractProjects(wb, userMap, clientMap) {
   const rows = readSheet(wb, "БД_Проекты", { identifyBy: "Проект" });
   const projects = [];
@@ -447,6 +438,48 @@ function extractProjects(wb, userMap, clientMap) {
   return { projects, warnings };
 }
 
+function extractWorkTypes(wb) {
+  const rows = readSheet(wb, "БД_Виды_работ", { identifyBy: "Вид работ" });
+  return rows
+    .filter((r) => str(r["Вид работ"]))
+    .map((r) => ({
+      name: str(r["Вид работ"]),
+      segment: str(r["Сегмент"]) ?? "Без категории",
+      status: mapV(str(r["Статус"]), STATUS_RU, "active"),
+    }));
+}
+
+function extractClients(wb) {
+  const rows = readSheet(wb, "БД_Клиенты", { identifyBy: "Клиент" });
+  return rows
+    .filter((r) => str(r["Компания"]))
+    .map((r) => {
+      const company = str(r["Компания"]);
+      const department = str(r["Департамент"]);
+      return {
+        name: buildClientName(company, department),
+        company,
+        department: department ?? "",
+        status: "active",
+        _rawStatusProjects: str(r["Статус проектов"]),
+        _revenue: num(r["Выручка"]),
+      };
+    });
+}
+
+/** Переводит русское значение «Статус в компании» в английский ключ для БД */
+function mapCompanyStatus(raw) {
+  if (!raw) return null;
+  const parts = raw.split(/[,/]/).map((s) => s.trim().toLowerCase());
+  const mapped = [];
+  for (const p of parts) {
+    if (p.includes("ядро") || p === "core")  mapped.push("core");
+    else if (p.includes("орбита") || p === "orbit") mapped.push("orbit");
+  }
+  if (!mapped.length) return null;
+  return [...new Set(mapped)].join(","); // "core" | "orbit" | "core,orbit"
+}
+
 function extractExecutors(wb, userMap, bankMap, workTypeMap) {
   const rows = readSheet(wb, "БД_Исполнители", { identifyBy: "Исполнитель" });
   const executors = [];
@@ -481,7 +514,7 @@ function extractExecutors(wb, userMap, bankMap, workTypeMap) {
 
     executors.push({
       name,
-      companyStatus: str(r["Статус в компании"]),
+      companyStatus: mapCompanyStatus(str(r["Статус в компании"])),
       type: mapV(str(r["Тип"]), EXECUTOR_TYPE_MAP, "external"),
       recipientType: str(r["Тип получателя"]),
       specialty: str(r["Специальность"]),
@@ -647,6 +680,84 @@ function extractSpendingPlan(wb, projectMap, executorMap, workTypeMap) {
   return { lines, warnings };
 }
 
+/**
+ * Читает все файлы личных смет из lsFolder (имя содержит «Личная смета»)
+ * и строит карту позиционной привязки: work_srcUid → payment_srcUid.
+ * Работы в LS-листах идут перед строкой выплаты, которой они принадлежат.
+ * Тип строки определяется по первому сегменту __SRC_UID: «ls» = работа, «pay» = выплата.
+ */
+function buildWorkPaymentMap(lsFolder) {
+  /** @type {Map<string,string>} work_uid → payment_uid */
+  const map = new Map();
+  /** @type {Map<string,{techTask:string|null,volume:number|null,rate:number|null}>} work_uid → meta */
+  const workMeta = new Map();
+  let files = [];
+  try {
+    files = fs.readdirSync(lsFolder)
+      .filter((f) => f.toLowerCase().endsWith(".xlsx"))
+      .map((f) => path.join(lsFolder, f));
+  } catch {
+    return { map, workMeta };
+  }
+
+  for (const filePath of files) {
+    try {
+      const lsWb = XLSX.readFile(filePath);
+      for (const sheetName of lsWb.SheetNames) {
+        const ws = lsWb.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+
+        // Ищем строку заголовка с __SRC_UID
+        let uidCol = -1;
+        let headerIdx = -1;
+        for (let i = 0; i < Math.min(10, rows.length); i++) {
+          const idx = rows[i]?.indexOf("__SRC_UID");
+          if (idx !== undefined && idx >= 0) { uidCol = idx; headerIdx = i; break; }
+        }
+        if (uidCol < 0) continue;
+
+        const hdrRow = rows[headerIdx];
+        const paidAtCol   = hdrRow ? hdrRow.indexOf("Дата оплаты")         : -1;
+        const techTaskCol = hdrRow ? hdrRow.indexOf("Техническое задание*") : -1;
+        const volumeCol   = hdrRow ? hdrRow.indexOf("Объём работ")          : -1;
+        const rateCol     = hdrRow ? hdrRow.indexOf("Ставка")               : -1;
+
+        // Сканируем строки: ls-строки копим, pay-строка замыкает группу.
+        // Привязываем только те работы, у которых дата совпадает с датой выплаты (точно).
+        const pending = []; // { uid, paidSerial }
+        for (let i = headerIdx + 1; i < rows.length; i++) {
+          const r = rows[i];
+          if (!r || !r[uidCol]) continue;
+          const uid = String(r[uidCol]);
+          if (uid.startsWith("ls|")) {
+            const paidSerial = paidAtCol >= 0 ? (r[paidAtCol] ?? null) : null;
+            pending.push({ uid, paidSerial });
+            // Собираем ТЗ, объём, ставку из LS файла
+            const techTask = techTaskCol >= 0 ? (r[techTaskCol] != null ? String(r[techTaskCol]) : null) : null;
+            const volume   = volumeCol >= 0 ? (r[volumeCol] != null ? Number(r[volumeCol]) : null) : null;
+            const rate     = rateCol   >= 0 ? (r[rateCol]   != null ? Number(r[rateCol])   : null) : null;
+            if (techTask || volume != null || rate != null) {
+              workMeta.set(uid, { techTask, volume: isNaN(volume) ? null : volume, rate: isNaN(rate) ? null : rate });
+            }
+          } else if (uid.startsWith("pay|")) {
+            const paySerial = paidAtCol >= 0 ? (r[paidAtCol] ?? null) : null;
+            for (const w of pending) {
+              if (paySerial != null && w.paidSerial != null) {
+                if (Math.abs(w.paidSerial - paySerial) > 0) continue;
+              }
+              map.set(w.uid, uid);
+            }
+            pending.length = 0;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`  ⚠ ЛС файл пропущен: ${path.basename(filePath)}: ${e.message}`);
+    }
+  }
+  return { map, workMeta };
+}
+
 function extractWorks(wb, executorMap, projectMap, workTypeMap) {
   // dataOffset=2: после строки заголовков есть строка аннотаций перед данными
   const rows = readSheet(wb, "БД_Выставленные_работы", {
@@ -692,6 +803,7 @@ function extractWorks(wb, executorMap, projectMap, workTypeMap) {
       _sourceType:   sourceType,
       _rawStatus:    rawStatus,
       _week:         week,
+      _srcUid:       str(r["__SRC_UID"]),
     };
 
     if (sourceType === "Прочие траты") {
@@ -743,6 +855,7 @@ function extractPayments(wb, executorMap, bankMap) {
       _executorName: executorName,
       _bankName:     bankName,
       _rawStatus:    rawStatus,
+      _srcUid:       str(r["__SRC_UID"]),
     });
   }
   return { payments, warnings: [...warnings] };
@@ -1101,7 +1214,7 @@ async function main() {
   console.log(`  preview-rows:  ${PREVIEW_ROWS}`);
   console.log("\n  Загрузка файла...");
 
-  const wb = XLSX.readFile(EXCEL_PATH, { cellDates: true });
+  const wb = XLSX.readFile(EXCEL_PATH);
   console.log(`  Листов: ${wb.SheetNames.length}\n`);
 
   // ── Извлекаем данные (порядок важен — каждый шаг строит lookup для следующего) ──
@@ -1284,6 +1397,7 @@ async function runMigration(prisma, all) {
 
   // 1. users
   const userIds = {};
+  const userIdsByEmail = {};
   await step("[1/13] users", async () => {
     const created = await createManyAndReturnBatched(
       prisma.user,
@@ -1295,7 +1409,10 @@ async function runMigration(prisma, all) {
         isActive: u.isActive,
       }))
     );
-    for (const r of created) userIds[normKey(r.fullName)] = r.id;
+    for (const r of created) {
+      userIds[normKey(r.fullName)] = r.id;
+      userIdsByEmail[normEmail(r.email)] = r.id;
+    }
     return created.length;
   });
 
@@ -1361,17 +1478,25 @@ async function runMigration(prisma, all) {
   await step("[6/13] executors + links", async () => {
     const bcrypt = await import("bcryptjs");
 
-    // Создаём User-аккаунты для исполнителей у которых заполнен email
-    const executorUserIds = {};
-    const withEmail = all.executors.executors.filter((e) => e._email);
-    if (withEmail.length > 0) {
+    // Аккаунты только для исполнителей с заполненным email (доступ к личной смете)
+    const emailToUserId = { ...userIdsByEmail };
+    const seenEmails = new Set(Object.keys(userIdsByEmail));
+    const toCreate = [];
+    for (const e of all.executors.executors) {
+      if (!e._email) continue;
+      const emailKey = normEmail(e._email);
+      if (seenEmails.has(emailKey)) continue;
+      seenEmails.add(emailKey);
+      toCreate.push(e);
+    }
+    if (toCreate.length > 0) {
       const userRows = await Promise.all(
-        withEmail.map(async (e) => {
+        toCreate.map(async (e) => {
           const pwd = generatePassword();
           const hash = await bcrypt.hash(pwd, 10);
-          credentialsLines.push(`${e._email}:${pwd}`);
+          credentialsLines.push(`${e._email.trim()}:${pwd}`);
           return {
-            email: e._email,
+            email: e._email.trim(),
             password: hash,
             fullName: e.name,
             role: "executor",
@@ -1380,12 +1505,23 @@ async function runMigration(prisma, all) {
         })
       );
       const createdUsers = await createManyAndReturnBatched(prisma.user, userRows);
-      for (const u of createdUsers) executorUserIds[normKey(u.fullName)] = u.id;
+      for (const u of createdUsers) emailToUserId[normEmail(u.email)] = u.id;
     }
 
+    // userId уникален — один аккаунт только у первого исполнителя с этим email
+    const usedUserIds = new Set();
     const created = await createManyAndReturnBatched(
       prisma.executor,
-      all.executors.executors.map((e) => ({
+      all.executors.executors.map((e) => {
+        let userId = null;
+        if (e._email) {
+          const uid = emailToUserId[normEmail(e._email)] ?? null;
+          if (uid && !usedUserIds.has(uid)) {
+            userId = uid;
+            usedUserIds.add(uid);
+          }
+        }
+        return {
         name: e.name,
         type: e.type,
         companyStatus: e.companyStatus,
@@ -1400,10 +1536,11 @@ async function runMigration(prisma, all) {
         status: e.status,
         accessRevokedAt: e.accessRevokedAt,
         oldEstimateUrl: e.oldEstimateUrl,
-        userId: executorUserIds[normKey(e.name)] ?? null,
+        userId,
         defaultBankAccountId: e._bankName ? (bankIds[normKey(e._bankName)] ?? null) : null,
         responsibleUserId: e._responsibleName ? (userIds[normKey(e._responsibleName)] ?? null) : null,
-      }))
+      };
+      })
     );
     for (const r of created) executorIds[normKey(r.name)] = r.id;
 
@@ -1482,7 +1619,15 @@ async function runMigration(prisma, all) {
     return createManyBatched(prisma.charge, rows);
   });
 
+  // Карта позиционной привязки из LS файлов личных смет: work_srcUid → payment_srcUid
+  // + метаданные работ (ТЗ, объём, ставка) из LS файлов
+  const { map: workPaymentMap, workMeta: lsWorkMeta } = buildWorkPaymentMap(LS_FOLDER);
+  console.log(`  ЛС файлы: ${workPaymentMap.size} работ позиционно привязаны к выплатам, ${lsWorkMeta.size} с метаданными`);
+
   // 9. payments
+  // paymentIdBySrcUid: payment_srcUid (из LS файлов) → id — основной ключ
+  // paymentIds:        "nameKey|y|mo|dateStr" и "nameKey|y|mo" → id — запасной ключ по дате
+  const paymentIdBySrcUid = {};
   const paymentIds = {};
   await step("[9/13] payments", async () => {
     const rows = [];
@@ -1506,18 +1651,22 @@ async function runMigration(prisma, all) {
         year: p.periodYear,
         month: p.periodMonth,
         paidAt: toMoscowDateKey(p.paidAt) ?? toMoscowDateKey(p.plannedPayAt),
+        srcUid: p._srcUid ?? null,
       });
     }
     const created = await createManyAndReturnBatched(prisma.payment, rows);
     for (let i = 0; i < created.length; i++) {
       const m = meta[i];
+      const id = created[i].id;
+      // UID-ключ (основной, из LS файлов)
+      if (m.srcUid) paymentIdBySrcUid[m.srcUid] = id;
+      // Ключ по дате (запасной): не перезаписываем при коллизии дат
       if (m.paidAt) {
-        paymentIds[`${m.nameKey}|${m.year}|${m.month}|${m.paidAt}`] = created[i].id;
-      } else {
-        // fallback: без даты — старый ключ (не перезаписывает если уже есть с датой)
-        const fallbackKey = `${m.nameKey}|${m.year}|${m.month}`;
-        if (!paymentIds[fallbackKey]) paymentIds[fallbackKey] = created[i].id;
+        const dateKey = `${m.nameKey}|${m.year}|${m.month}|${m.paidAt}`;
+        if (!paymentIds[dateKey]) paymentIds[dateKey] = id;
       }
+      const fallbackKey = `${m.nameKey}|${m.year}|${m.month}`;
+      if (!paymentIds[fallbackKey]) paymentIds[fallbackKey] = id;
     }
     return created.length;
   });
@@ -1538,6 +1687,8 @@ async function runMigration(prisma, all) {
       if (!executorId || !projectId || !workTypeId) continue;
       const respName = w._projectName ? projResponsibleName[normKey(w._projectName)] : null;
       const responsibleExecutorId = respName ? (executorIds[normKey(respName)] ?? null) : null;
+      // ТЗ, объём, ставка — из LS файла личной сметы (приоритет) или из БД_Выставленные_работы
+      const lsMeta = w._srcUid ? lsWorkMeta.get(w._srcUid) : null;
       rows.push({
         executorId,
         projectId,
@@ -1545,6 +1696,9 @@ async function runMigration(prisma, all) {
         responsibleExecutorId,
         executionYear: w.executionYear,
         executionMonth: w.executionMonth,
+        techTask: lsMeta?.techTask ?? null,
+        volume: lsMeta?.volume ?? null,
+        rate: lsMeta?.rate ?? null,
         amount: w.amount,
         workStatus: w.workStatus,
         comment: w.comment,
@@ -1552,15 +1706,33 @@ async function runMigration(prisma, all) {
         paidAt: w.paidAt,
         plannedPayAt: w.plannedPayAt,
         paymentId: (() => {
-          const workDate = toMoscowDateKey(w.paidAt) ?? toMoscowDateKey(w.plannedPayAt);
+          // 1. UID из LS файла личной сметы (основной, точный).
+          // Игнорируем если uid начинается с pay| — это человеческая ошибка в источнике
+          if (w._srcUid && w._srcUid.startsWith("ls|")) {
+            const payUid = workPaymentMap.get(w._srcUid);
+            if (payUid) {
+              const id = paymentIdBySrcUid[payUid];
+              if (id) return id;
+            }
+          }
           const nameKey = normKey(w._executorName);
           const y = w.executionYear;
           const mo = w.executionMonth;
+          // 2. Точное совпадение по дате оплаты
+          const workDate = toMoscowDateKey(w.paidAt) ?? toMoscowDateKey(w.plannedPayAt);
           if (workDate) {
-            return paymentIds[`${nameKey}|${y}|${mo}|${workDate}`]
-              ?? paymentIds[`${nameKey}|${y}|${mo}`]
-              ?? null;
+            const exact = paymentIds[`${nameKey}|${y}|${mo}|${workDate}`];
+            if (exact) return exact;
+            // 3. Допуск ±2 дня (сдвиг часового пояса, перенос выходного)
+            const d = new Date(workDate + "T12:00:00Z");
+            for (const delta of [-1, 1, -2, 2]) {
+              const alt = new Date(d);
+              alt.setUTCDate(alt.getUTCDate() + delta);
+              const altKey = `${nameKey}|${y}|${mo}|${alt.toISOString().slice(0, 10)}`;
+              if (paymentIds[altKey]) return paymentIds[altKey];
+            }
           }
+          // 4. Fallback по периоду (год + месяц)
           return paymentIds[`${nameKey}|${y}|${mo}`] ?? null;
         })(),
       });
