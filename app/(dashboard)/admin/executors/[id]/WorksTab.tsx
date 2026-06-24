@@ -544,7 +544,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
     return (
       <>
         <td className="border-b border-neutral-100 px-1 py-1 w-8" />
-        <td className={cn(td, "align-middle")} colSpan={5}>
+        <td className={cn(td, "align-middle")} colSpan={7}>
           <div className="flex items-center gap-2 min-w-0">
             <span className="inline-flex items-center gap-1 font-semibold text-green-800 shrink-0">
               <CircleDollarSign className="h-3.5 w-3.5" /> Выплата

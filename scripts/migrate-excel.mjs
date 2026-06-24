@@ -719,6 +719,7 @@ function buildWorkPaymentMap(lsFolder) {
         const hdrRow = rows[headerIdx];
         const paidAtCol   = hdrRow ? hdrRow.indexOf("Дата оплаты")         : -1;
         const techTaskCol = hdrRow ? hdrRow.indexOf("Техническое задание*") : -1;
+        const reportCol   = hdrRow ? hdrRow.indexOf("Отчёт")               : -1;
         const volumeCol   = hdrRow ? hdrRow.indexOf("Объём работ")          : -1;
         const rateCol     = hdrRow ? hdrRow.indexOf("Ставка")               : -1;
 
@@ -732,12 +733,13 @@ function buildWorkPaymentMap(lsFolder) {
           if (uid.startsWith("ls|")) {
             const paidSerial = paidAtCol >= 0 ? (r[paidAtCol] ?? null) : null;
             pending.push({ uid, paidSerial });
-            // Собираем ТЗ, объём, ставку из LS файла
+            // Собираем ТЗ, отчёт, объём, ставку из LS файла
             const techTask = techTaskCol >= 0 ? (r[techTaskCol] != null ? String(r[techTaskCol]) : null) : null;
+            const report   = reportCol   >= 0 ? (r[reportCol]   != null ? String(r[reportCol])   : null) : null;
             const volume   = volumeCol >= 0 ? (r[volumeCol] != null ? Number(r[volumeCol]) : null) : null;
             const rate     = rateCol   >= 0 ? (r[rateCol]   != null ? Number(r[rateCol])   : null) : null;
-            if (techTask || volume != null || rate != null) {
-              workMeta.set(uid, { techTask, volume: isNaN(volume) ? null : volume, rate: isNaN(rate) ? null : rate });
+            if (techTask || report || volume != null || rate != null) {
+              workMeta.set(uid, { techTask, report, volume: isNaN(volume) ? null : volume, rate: isNaN(rate) ? null : rate });
             }
           } else if (uid.startsWith("pay|")) {
             const paySerial = paidAtCol >= 0 ? (r[paidAtCol] ?? null) : null;
@@ -1697,6 +1699,7 @@ async function runMigration(prisma, all) {
         executionYear: w.executionYear,
         executionMonth: w.executionMonth,
         techTask: lsMeta?.techTask ?? null,
+        report: lsMeta?.report ?? null,
         volume: lsMeta?.volume ?? null,
         rate: lsMeta?.rate ?? null,
         amount: w.amount,
