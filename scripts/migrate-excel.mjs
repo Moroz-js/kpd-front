@@ -77,6 +77,9 @@ const LS_FOLDER =
   process.env.LS_FOLDER ??
   path.join(path.dirname(EXCEL_PATH), "personal-sheets");
 
+/** Лист LS для синка (архив не участвует). */
+const LS_SHEET = "Текущий год";
+
 const DRY_RUN    = !process.argv.includes("--run");
 const PRODUCTION = process.argv.includes("--production");
 
@@ -681,10 +684,11 @@ function extractSpendingPlan(wb, projectMap, executorMap, workTypeMap) {
 }
 
 /**
- * Читает все файлы личных смет из lsFolder (имя содержит «Личная смета»)
+ * Читает файлы личных смет из lsFolder (лист «Текущий год»)
  * и строит карту позиционной привязки: work_srcUid → payment_srcUid.
  * Работы в LS-листах идут перед строкой выплаты, которой они принадлежат.
  * Тип строки определяется по первому сегменту __SRC_UID: «ls» = работа, «pay» = выплата.
+ * Выплаты с суммой 0 пропускаются (в новой системе их нельзя создать).
  */
 function buildWorkPaymentMap(lsFolder) {
   /** @type {Map<string,string>} work_uid → payment_uid */
@@ -703,8 +707,9 @@ function buildWorkPaymentMap(lsFolder) {
   for (const filePath of files) {
     try {
       const lsWb = XLSX.readFile(filePath);
-      for (const sheetName of lsWb.SheetNames) {
-        const ws = lsWb.Sheets[sheetName];
+      if (!lsWb.SheetNames.includes(LS_SHEET)) continue;
+      {
+        const ws = lsWb.Sheets[LS_SHEET];
         const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
 
         // Ищем строку заголовка с __SRC_UID
@@ -718,6 +723,7 @@ function buildWorkPaymentMap(lsFolder) {
 
         const hdrRow = rows[headerIdx];
         const paidAtCol   = hdrRow ? hdrRow.indexOf("Дата оплаты")         : -1;
+        const payAmtCol   = hdrRow ? hdrRow.indexOf("Выплата")             : -1;
         const techTaskCol = hdrRow ? hdrRow.indexOf("Техническое задание*") : -1;
         const reportCol   = hdrRow ? hdrRow.indexOf("Отчёт")               : -1;
         const volumeCol   = hdrRow ? hdrRow.indexOf("Объём работ")          : -1;
@@ -743,11 +749,14 @@ function buildWorkPaymentMap(lsFolder) {
             }
           } else if (uid.startsWith("pay|")) {
             const paySerial = paidAtCol >= 0 ? (r[paidAtCol] ?? null) : null;
-            for (const w of pending) {
-              if (paySerial != null && w.paidSerial != null) {
-                if (Math.abs(w.paidSerial - paySerial) > 0) continue;
+            const payAmount = payAmtCol >= 0 ? num(r[payAmtCol]) : null;
+            if (payAmount != null && payAmount > 0) {
+              for (const w of pending) {
+                if (paySerial != null && w.paidSerial != null) {
+                  if (Math.abs(w.paidSerial - paySerial) > 0) continue;
+                }
+                map.set(w.uid, uid);
               }
-              map.set(w.uid, uid);
             }
             pending.length = 0;
           }
@@ -831,6 +840,9 @@ function extractWorks(wb, executorMap, projectMap, workTypeMap) {
 function extractPayments(wb, executorMap, bankMap) {
   const rows = readSheet(wb, "БД_Выплаты", { identifyBy: "Исполнитель" });
   const payments = [];
+  // Прочие траты из БД_Выплаты: не создаём Payment-запись, а обновляем otherExpense
+  // Карта: srcUid → { paidAt, paymentStatus, bankAccountId }
+  const otherExpensePayments = {};
   const warnings = new Set();
 
   for (const r of rows) {
@@ -844,6 +856,23 @@ function extractPayments(wb, executorMap, bankMap) {
       warnings.add(`Выплата (${executorName}): счёт "${bankName}" не найден`);
 
     const rawStatus = str(r["Статус"]);
+    const tipSm = str(r["Тип сметы"]);
+    const srcUid = str(r["__SRC_UID"]);
+
+    if (tipSm === "Прочие траты") {
+      // Сохраняем данные оплаты для обновления otherExpense
+      if (srcUid) {
+        otherExpensePayments[srcUid] = {
+          paidAt:        parseDate(r["Дата оплаты"]),
+          plannedPayAt:  parseDate(r["Дата оплаты план"]),
+          paymentStatus: mapV(rawStatus, PAYMENT_STATUS_MAP, "planned"),
+          bankAccountId: bankMap[normKey(bankName)] ?? null,
+          paymentAmount: num(r["Выплата"]) ?? 0,
+        };
+      }
+      continue; // не создаём payment-запись
+    }
+
     payments.push({
       executorId:    executorMap[normKey(executorName)] ?? null,
       periodYear:    parseYear(r["Год выполнения"])          ?? new Date().getFullYear(),
@@ -857,10 +886,10 @@ function extractPayments(wb, executorMap, bankMap) {
       _executorName: executorName,
       _bankName:     bankName,
       _rawStatus:    rawStatus,
-      _srcUid:       str(r["__SRC_UID"]),
+      _srcUid:       srcUid,
     });
   }
-  return { payments, warnings: [...warnings] };
+  return { payments, otherExpensePayments, warnings: [...warnings] };
 }
 
 // ─── PREVIEW PRINTERS ─────────────────────────────────────────────────────────
@@ -1768,6 +1797,9 @@ async function runMigration(prisma, all) {
       const bankName = o._executorName ? execBankName[normKey(o._executorName)] : null;
       const bankAccountId = bankName ? (bankIds[normKey(bankName)] ?? null) : null;
       const preferredPayMethod = o._executorName ? execRecipientType[normKey(o._executorName)] : null;
+      // Берём paidAt/paymentStatus/paymentAmount из БД_Выплаты (точнее чем статус работы)
+      // bankAccountId — только из исполнителя (не из БД_Выплаты, чтобы не нарушить FK)
+      const ptPay = o._srcUid ? all.payments.otherExpensePayments?.[o._srcUid] : null;
       rows.push({
         executorId,
         projectId,
@@ -1778,14 +1810,14 @@ async function runMigration(prisma, all) {
         executionYear: o.executionYear,
         executionMonth: o.executionMonth,
         amount: o.amount,
-        paymentAmount: o.paymentAmount,
+        paymentAmount: ptPay?.paymentAmount ?? o.paymentAmount,
         description: o.description,
         workStatus: o.workStatus,
-        paymentStatus: o.paymentStatus,
+        paymentStatus: ptPay?.paymentStatus ?? o.paymentStatus,
         comment: o.comment,
         checkedAt: o.checkedAt,
-        paidAt: o.paidAt,
-        plannedPayAt: o.plannedPayAt,
+        paidAt:       ptPay?.paidAt        ?? o.paidAt,
+        plannedPayAt: ptPay?.plannedPayAt   ?? o.plannedPayAt,
         responsibleUserId: defaultUserId,
         createdById: defaultUserId,
       });

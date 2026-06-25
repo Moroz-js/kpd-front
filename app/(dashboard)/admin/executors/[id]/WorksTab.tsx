@@ -488,7 +488,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
         <td className={cn(td, "max-w-[140px] overflow-hidden")}>
           <div className="truncate" title={w.project.name}>{w.project.name}</div>
           {w.techTask ? (
-            <TooltipProvider delayDuration={200}>
+            <TooltipProvider delay={200}>
               <Tooltip>
                 <TooltipTrigger className="w-full text-left">
                   <div className="truncate text-neutral-400">{w.techTask}</div>
