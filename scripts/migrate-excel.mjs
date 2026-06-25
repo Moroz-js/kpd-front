@@ -684,11 +684,45 @@ function extractSpendingPlan(wb, projectMap, executorMap, workTypeMap) {
 }
 
 /**
+ * Ключ периода выполнения (год-месяц) из строки LS.
+ */
+function lsExecutionPeriodKey(r, hdrRow) {
+  const yrCol = hdrRow.findIndex((h) => String(h || "").startsWith("Год выполнения"));
+  const moCol = hdrRow.findIndex((h) => String(h || "").startsWith("Месяц выполнения"));
+  const yr = yrCol >= 0 ? parseYear(r[yrCol]) : null;
+  const mo = moCol >= 0 ? parseMonth(r[moCol]) : null;
+  if (yr == null || mo == null) return null;
+  return `${yr}-${String(mo).padStart(2, "0")}`;
+}
+
+function lsSerialDateMatch(a, b) {
+  return a != null && b != null && Math.abs(Number(a) - Number(b)) <= 0;
+}
+
+function lsAmountsClose(a, b, tol = 1) {
+  return a != null && b != null && Math.abs(Number(a) - Number(b)) <= tol;
+}
+
+/**
+ * Линковка работ к выплате внутри одного месяца выполнения (month-smart):
+ * sum(pool)≈pay → все; иначе paid → plan → одна работа в pool.
+ */
+function lsLinkWorksInPool(pool, payAmount, payPaid, payPlanned) {
+  if (!pool.length || payAmount == null || payAmount <= 0) return [];
+  const poolSum = pool.reduce((s, w) => s + (w.amount ?? 0), 0);
+  const byPaid = pool.filter((w) => lsSerialDateMatch(w.paidSerial, payPaid));
+  const byPlan = pool.filter((w) => lsSerialDateMatch(w.plannedSerial, payPlanned));
+  if (lsAmountsClose(poolSum, payAmount)) return pool;
+  if (byPaid.length) return byPaid;
+  if (byPlan.length) return byPlan;
+  if (pool.length === 1) return pool;
+  return [];
+}
+
+/**
  * Читает файлы личных смет из lsFolder (лист «Текущий год»)
- * и строит карту позиционной привязки: work_srcUid → payment_srcUid.
- * Работы в LS-листах идут перед строкой выплаты, которой они принадлежат.
- * Тип строки определяется по первому сегменту __SRC_UID: «ls» = работа, «pay» = выплата.
- * Выплаты с суммой 0 пропускаются (в новой системе их нельзя создать).
+ * и строит карту привязки work_srcUid → payment_srcUid (month-smart).
+ * Тип строки: «ls» = работа, «pay» = выплата. Выплаты с суммой 0 пропускаются.
  */
 function buildWorkPaymentMap(lsFolder) {
   /** @type {Map<string,string>} work_uid → payment_uid */
@@ -722,23 +756,29 @@ function buildWorkPaymentMap(lsFolder) {
         if (uidCol < 0) continue;
 
         const hdrRow = rows[headerIdx];
-        const paidAtCol   = hdrRow ? hdrRow.indexOf("Дата оплаты")         : -1;
-        const payAmtCol   = hdrRow ? hdrRow.indexOf("Выплата")             : -1;
+        const paidAtCol    = hdrRow ? hdrRow.indexOf("Дата оплаты")       : -1;
+        const plannedAtCol = hdrRow ? hdrRow.indexOf("Дата оплаты план") : -1;
+        const payAmtCol    = hdrRow ? hdrRow.indexOf("Выплата")           : -1;
+        const workAmtCol   = hdrRow ? hdrRow.findIndex((h) => String(h || "").startsWith("Сумма к выплате")) : -1;
         const techTaskCol = hdrRow ? hdrRow.indexOf("Техническое задание*") : -1;
         const reportCol   = hdrRow ? hdrRow.indexOf("Отчёт")               : -1;
         const volumeCol   = hdrRow ? hdrRow.indexOf("Объём работ")          : -1;
         const rateCol     = hdrRow ? hdrRow.indexOf("Ставка")               : -1;
 
-        // Сканируем строки: ls-строки копим, pay-строка замыкает группу.
-        // Привязываем только те работы, у которых дата совпадает с датой выплаты (точно).
-        const pending = []; // { uid, paidSerial }
+        // pending: работы с прошлой выплаты; pool = тот же год-месяц выполнения (month-smart).
+        const pending = [];
         for (let i = headerIdx + 1; i < rows.length; i++) {
           const r = rows[i];
           if (!r || !r[uidCol]) continue;
           const uid = String(r[uidCol]);
           if (uid.startsWith("ls|")) {
-            const paidSerial = paidAtCol >= 0 ? (r[paidAtCol] ?? null) : null;
-            pending.push({ uid, paidSerial });
+            pending.push({
+              uid,
+              monthKey: lsExecutionPeriodKey(r, hdrRow),
+              paidSerial:    paidAtCol    >= 0 ? (r[paidAtCol]    ?? null) : null,
+              plannedSerial: plannedAtCol >= 0 ? (r[plannedAtCol] ?? null) : null,
+              amount: workAmtCol >= 0 ? num(r[workAmtCol]) : null,
+            });
             // Собираем ТЗ, отчёт, объём, ставку из LS файла
             const techTask = techTaskCol >= 0 ? (r[techTaskCol] != null ? String(r[techTaskCol]) : null) : null;
             const report   = reportCol   >= 0 ? (r[reportCol]   != null ? String(r[reportCol])   : null) : null;
@@ -748,13 +788,15 @@ function buildWorkPaymentMap(lsFolder) {
               workMeta.set(uid, { techTask, report, volume: isNaN(volume) ? null : volume, rate: isNaN(rate) ? null : rate });
             }
           } else if (uid.startsWith("pay|")) {
-            const paySerial = paidAtCol >= 0 ? (r[paidAtCol] ?? null) : null;
             const payAmount = payAmtCol >= 0 ? num(r[payAmtCol]) : null;
             if (payAmount != null && payAmount > 0) {
-              for (const w of pending) {
-                if (paySerial != null && w.paidSerial != null) {
-                  if (Math.abs(w.paidSerial - paySerial) > 0) continue;
-                }
+              const payMonthKey = lsExecutionPeriodKey(r, hdrRow);
+              const pool = payMonthKey != null
+                ? pending.filter((w) => w.monthKey === payMonthKey)
+                : [];
+              const payPaid    = paidAtCol    >= 0 ? (r[paidAtCol]    ?? null) : null;
+              const payPlanned = plannedAtCol >= 0 ? (r[plannedAtCol] ?? null) : null;
+              for (const w of lsLinkWorksInPool(pool, payAmount, payPaid, payPlanned)) {
                 map.set(w.uid, uid);
               }
             }

@@ -3,7 +3,7 @@
  *
  * Правила:
  *   - только лист «Текущий год» (архив не участвует в синках)
- *   - выплаты с суммой 0 не учитываются (в новой системе их нельзя создать)
+ *   - month-smart линковка (как migrate-excel.mjs)
  *
  * Запуск: node scripts/compare-ls-vs-big.mjs
  */
@@ -66,6 +66,35 @@ function readBD(wb, sheet, identifyBy, dataOffset) {
   return data;
 }
 
+function lsMonthKey(r, hdr) {
+  const yrCol = col(hdr, "Год выполнения");
+  const moCol = col(hdr, "Месяц выполнения");
+  const yr = r[yrCol];
+  const m = String(r[moCol] ?? "").match(/^(\d{1,2})/);
+  if (yr == null || !m) return null;
+  return `${yr}-${m[1].padStart(2, "0")}`;
+}
+
+function lsSerialMatch(a, b) {
+  return a != null && b != null && Math.abs(Number(a) - Number(b)) <= 0;
+}
+
+function lsSumClose(a, b, tol = 1) {
+  return a != null && b != null && Math.abs(a - b) <= tol;
+}
+
+function lsLinkPool(pool, payAmount, payPaid, payPlanned) {
+  if (!pool.length || !isRealPayment(payAmount)) return [];
+  const poolSum = pool.reduce((s, w) => s + (w.amount ?? 0), 0);
+  const byPaid = pool.filter((w) => lsSerialMatch(w.paidSerial, payPaid));
+  const byPlan = pool.filter((w) => lsSerialMatch(w.plannedSerial, payPlanned));
+  if (lsSumClose(poolSum, payAmount)) return pool;
+  if (byPaid.length) return byPaid;
+  if (byPlan.length) return byPlan;
+  if (pool.length === 1) return pool;
+  return [];
+}
+
 function readLSFolder() {
   const lsWorks = new Map();
   const lsPays = new Map();
@@ -101,6 +130,7 @@ function readLSFolder() {
     const amtCol = col(hdr, "Сумма к выплате*", "Сумма к выплате");
     const payCol = col(hdr, "Выплата");
     const paidCol = col(hdr, "Дата оплаты");
+    const plannedCol = col(hdr, "Дата оплаты план");
     const pending = [];
 
     for (let i = hi + 1; i < rows.length; i++) {
@@ -108,10 +138,17 @@ function readLSFolder() {
       if (!r || !r[uidCol]) continue;
       const uid = String(r[uidCol]);
       const paidSerial = paidCol >= 0 ? r[paidCol] : null;
+      const plannedSerial = plannedCol >= 0 ? r[plannedCol] : null;
 
       if (uid.startsWith("ls|")) {
         lsWorks.set(uid, { uid, exec: execName, amount: num(r[amtCol]), file: f });
-        pending.push({ uid, paidSerial });
+        pending.push({
+          uid,
+          monthKey: lsMonthKey(r, hdr),
+          paidSerial,
+          plannedSerial,
+          amount: num(r[amtCol]),
+        });
       } else if (uid.startsWith("pay|")) {
         const amount = num(r[payCol]);
         if (isRealPayment(amount)) {
@@ -122,10 +159,11 @@ function readLSFolder() {
             paidAt: excelDate(paidSerial),
             file: f,
           });
-          for (const w of pending) {
-            if (paidSerial != null && w.paidSerial != null && Math.abs(w.paidSerial - paidSerial) > 0) {
-              continue;
-            }
+          const payMonthKey = lsMonthKey(r, hdr);
+          const pool = payMonthKey != null
+            ? pending.filter((w) => w.monthKey === payMonthKey)
+            : [];
+          for (const w of lsLinkPool(pool, amount, paidSerial, plannedSerial)) {
             lsLinks.set(w.uid, uid);
           }
         }
@@ -145,7 +183,7 @@ if (!fs.existsSync(EXCEL_PATH)) {
 console.log("Сверка LS ↔ большая смета");
 console.log("  Excel:", EXCEL_PATH);
 console.log("  LS:", LS_FOLDER);
-console.log("  Лист LS:", LS_SHEET, "| выплаты с 0 — пропускаем\n");
+console.log("  Лист LS:", LS_SHEET, "| month-smart линковка | выплаты с 0 — пропускаем\n");
 
 const wb = XLSX.readFile(EXCEL_PATH, { cellDates: false });
 const worksBD = readBD(wb, "БД_Выставленные_работы", "Исполнитель", 2);

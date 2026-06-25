@@ -540,7 +540,6 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
         <td className={dim}>—</td>
         <td className={cn(td, stickyActionsCell, active && "bg-blue-100/70")}>
           <div className={stickyActionsInner}>
-            {w.report && <a href={w.report} target="_blank" rel="noopener noreferrer" className="p-0.5 text-blue-600 hover:text-blue-800" title="Отчёт">отч</a>}
             {isAdmin && w.workStatus !== "checked" && w.workStatus !== "paid" && !w.paymentId && (
               <button title="Проверить" className="p-0.5 text-blue-600 hover:text-blue-800" onClick={() => handleCheck(w)}>
                 <CheckCircle className="h-3.5 w-3.5" />
@@ -1157,7 +1156,7 @@ function CreateWorkDialog({ executorId, onClose, onCreated }: { executorId: stri
           </div>
           <div className="space-y-1.5"><Label>Дата оплаты план</Label><DateInput value={plannedPayAt} onChange={setPlannedPayAt} /></div>
           <div className="space-y-1.5"><Label>Ссылка</Label><Input value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://..." /></div>
-          <div className="space-y-1.5"><Label>Отчёт</Label><Input value={report} onChange={(e) => setReport(e.target.value)} placeholder="https://..." /></div>
+          <div className="space-y-1.5"><Label>Отчёт</Label><Textarea value={report} onChange={(e) => setReport(e.target.value)} placeholder="Текст отчёта" rows={3} className="field-sizing-fixed min-w-0 resize-y break-words text-xs" /></div>
           <div className="space-y-1.5"><Label>Комментарий</Label><Input value={comment} onChange={(e) => setComment(e.target.value)} /></div>
         </div>
         <DialogFooter>
@@ -1307,7 +1306,7 @@ function EditWorkDialog({
             </div>
           )}
           <div className="space-y-1.5"><Label>Ссылка</Label><Input value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://..." /></div>
-          <div className="space-y-1.5"><Label>Отчёт (URL)</Label><Input value={report} onChange={(e) => setReport(e.target.value)} placeholder="https://..." /></div>
+          <div className="space-y-1.5"><Label>Отчёт</Label><Textarea value={report} onChange={(e) => setReport(e.target.value)} placeholder="Текст отчёта" rows={3} className="field-sizing-fixed min-w-0 resize-y break-words text-xs" /></div>
           <div className="space-y-1.5"><Label>Комментарий</Label><Input value={comment} onChange={(e) => setComment(e.target.value)} /></div>
         </div>
         <DialogFooter>
