@@ -461,6 +461,10 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
   const showPaymentRows = !workOnlyFilterActive && filterRowType !== "works";
 
   const COL_COUNT = 14;
+  /** table-fixed + colgroup — колонки не растягиваются от длинного ТЗ/URL */
+  const COL_WIDTHS = [32, 40, 72, 140, 90, 48, 56, 120, 72, 88, 80, 110, 110, 96] as const;
+  const TABLE_MIN_WIDTH = COL_WIDTHS.reduce((s, w) => s + w, 0);
+  const cellClip = "overflow-hidden max-w-0";
   const th = "border-b border-neutral-200 px-1.5 py-1 text-left text-[10px] leading-tight font-medium text-neutral-600 bg-neutral-100 whitespace-nowrap";
   const thr = th + " text-right";
   const td = "border-b border-neutral-100 px-1.5 py-1 text-[10px] leading-tight align-middle";
@@ -485,12 +489,12 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
         </td>
         <td className={td}>{w.executionYear}</td>
         <td className={cn(td, "whitespace-nowrap")}>{monthFullLabel(w.executionMonth)}</td>
-        <td className={cn(td, "max-w-[140px] min-w-0 overflow-hidden")}>
+        <td className={cn(td, cellClip)}>
           <div className="truncate" title={w.project.name}>{w.project.name}</div>
           {w.techTask ? (
             <TooltipProvider delay={200}>
               <Tooltip>
-                <TooltipTrigger className="w-full min-w-0 text-left">
+                <TooltipTrigger className="block w-full min-w-0 max-w-full overflow-hidden text-left">
                   <div className="truncate text-neutral-400">{w.techTask}</div>
                 </TooltipTrigger>
                 <TooltipContent hideArrow side="bottom" className="block max-w-sm max-h-96 overflow-x-hidden overflow-y-auto whitespace-pre-wrap break-all text-xs bg-white text-neutral-800 border border-neutral-200 shadow-md">
@@ -502,7 +506,9 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
             <div className="text-neutral-300">—</div>
           )}
         </td>
-        <td className={cn(td, "max-w-[90px] truncate text-neutral-600")} title={w.workType.name}>{w.workType.name}</td>
+        <td className={cn(td, cellClip, "text-neutral-600")} title={w.workType.name}>
+          <div className="truncate">{w.workType.name}</div>
+        </td>
         <td className={tdr}>{w.volume != null ? w.volume.toLocaleString("ru-RU") : "—"}</td>
         <td className={tdr}>{w.rate != null ? w.rate.toLocaleString("ru-RU") : "—"}</td>
         <td className={cn(td, "min-w-[120px]")}>
@@ -573,7 +579,9 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
         </td>
         <td className={cn(td, "whitespace-nowrap")}>{formatDate(p.paidAt)}</td>
         <td className={cn(td, "min-w-[110px]")}><StatusBadge status={p.paymentStatus} type="payment" /></td>
-        <td className={cn(td, "max-w-[110px] truncate text-neutral-600")} title={p.bankAccount?.name ?? undefined}>{p.bankAccount?.name ?? "—"}</td>
+        <td className={cn(td, cellClip, "text-neutral-600")} title={p.bankAccount?.name ?? undefined}>
+          <div className="truncate">{p.bankAccount?.name ?? "—"}</div>
+        </td>
         <td className={cn(td, stickyActionsCell, active && "bg-blue-100")}>
           {isAdmin && (
             <div className={stickyActionsInner}>
@@ -717,7 +725,12 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
               : "Работ ещё нет. Создайте первую работу."}
           </div>
         ) : (
-          <table className="w-full text-[10px] border-separate border-spacing-0">
+          <table className="table-fixed w-full text-[10px] border-separate border-spacing-0" style={{ minWidth: TABLE_MIN_WIDTH }}>
+            <colgroup>
+              {COL_WIDTHS.map((w, i) => (
+                <col key={i} style={{ width: w }} />
+              ))}
+            </colgroup>
             <thead className="sticky top-0 z-10">
               <tr>
                 <th className={cn(th, "w-8")} />
