@@ -485,15 +485,15 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
         </td>
         <td className={td}>{w.executionYear}</td>
         <td className={cn(td, "whitespace-nowrap")}>{monthFullLabel(w.executionMonth)}</td>
-        <td className={cn(td, "max-w-[140px] overflow-hidden")}>
+        <td className={cn(td, "max-w-[140px] min-w-0 overflow-hidden")}>
           <div className="truncate" title={w.project.name}>{w.project.name}</div>
           {w.techTask ? (
             <TooltipProvider delay={200}>
               <Tooltip>
-                <TooltipTrigger className="w-full text-left">
+                <TooltipTrigger className="w-full min-w-0 text-left">
                   <div className="truncate text-neutral-400">{w.techTask}</div>
                 </TooltipTrigger>
-                <TooltipContent hideArrow side="bottom" className="max-w-sm max-h-96 overflow-y-auto whitespace-pre-wrap text-xs bg-white text-neutral-800 border border-neutral-200 shadow-md">
+                <TooltipContent hideArrow side="bottom" className="block max-w-sm max-h-96 overflow-x-hidden overflow-y-auto whitespace-pre-wrap break-all text-xs bg-white text-neutral-800 border border-neutral-200 shadow-md">
                   {w.techTask}
                 </TooltipContent>
               </Tooltip>
@@ -1094,9 +1094,9 @@ function CreateWorkDialog({ executorId, onClose, onCreated }: { executorId: stri
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-x-hidden overflow-y-auto">
         <DialogHeader><DialogTitle>Новая работа</DialogTitle></DialogHeader>
-        <div className="space-y-3">
+        <div className="min-w-0 space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Год *</Label>
@@ -1135,7 +1135,7 @@ function CreateWorkDialog({ executorId, onClose, onCreated }: { executorId: stri
           </div>
           <div className="space-y-1.5">
             <Label>Техническое задание *</Label>
-            <Textarea value={techTask} onChange={(e) => setTechTask(e.target.value)} placeholder="Введите текст ТЗ" rows={4} className="resize-y text-xs" />
+            <Textarea value={techTask} onChange={(e) => setTechTask(e.target.value)} placeholder="Введите текст ТЗ" rows={4} className="field-sizing-fixed min-w-0 resize-y break-all text-xs" />
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5"><Label>Объём</Label><MoneyInput value={volume} onChange={setVolume} placeholder="0" /></div>
@@ -1227,14 +1227,14 @@ function EditWorkDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-x-hidden overflow-y-auto">
         <DialogHeader><DialogTitle>Редактировать работу</DialogTitle></DialogHeader>
         {isLinked && (
           <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
             Работа привязана к выплате: статус и даты управляются выплатой.
           </p>
         )}
-        <div className="space-y-3">
+        <div className="min-w-0 space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Год</Label>
@@ -1274,7 +1274,7 @@ function EditWorkDialog({
           </div>
           <div className="space-y-1.5">
             <Label>Техническое задание</Label>
-            <Textarea value={techTask} onChange={(e) => setTechTask(e.target.value)} rows={4} className="resize-y text-xs" />
+            <Textarea value={techTask} onChange={(e) => setTechTask(e.target.value)} rows={4} className="field-sizing-fixed min-w-0 resize-y break-all text-xs" />
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5"><Label>Объём</Label><MoneyInput value={volume} onChange={setVolume} /></div>
