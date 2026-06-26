@@ -307,6 +307,10 @@ export async function updateExecutor(id: string, patch: UpdateExecutorInput, use
     if (password.length < 6) {
       throw new Error("Пароль не короче 6 символов");
     }
+  } else if (before.userId && patch.password) {
+    if (patch.password.length < 6) {
+      throw new Error("Пароль не короче 6 символов");
+    }
   }
 
   const updated = await prisma.$transaction(async (tx) => {
@@ -347,7 +351,7 @@ export async function updateExecutor(id: string, patch: UpdateExecutorInput, use
       linkedUserId = user.id;
     }
 
-    return tx.executor.update({
+    const exec = await tx.executor.update({
       where: { id },
       data: {
         ...(linkedUserId && { userId: linkedUserId, accessRevokedAt: null }),
@@ -385,6 +389,23 @@ export async function updateExecutor(id: string, patch: UpdateExecutorInput, use
         }),
       },
     });
+
+    const userIdToSync = linkedUserId ?? before.userId;
+    if (resolvedName !== undefined && userIdToSync) {
+      await tx.user.update({
+        where: { id: userIdToSync },
+        data: { fullName: resolvedName },
+      });
+    }
+
+    if (before.userId && patch.password) {
+      await tx.user.update({
+        where: { id: before.userId },
+        data: { password: await hash(patch.password, 10) },
+      });
+    }
+
+    return exec;
   });
 
   const changes = diff(

@@ -224,7 +224,7 @@ export function SettingsTab({
         workTypeIds: selectedWorkTypeIds,
       };
       if (needsAccount) {
-        payload.email = email.trim();
+        payload.email = email.trim().toLowerCase();
         payload.password = password;
       }
 
@@ -238,11 +238,14 @@ export function SettingsTab({
         throw new Error((body as { error?: string }).error ?? "Ошибка сохранения");
       }
 
-      if ((isAdmin || isOwner) && executor.user) {
+      if (isAdmin && executor.user) {
         const ur = await fetch(`/api/users/${executor.user.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fullName: fullName || undefined, email: email || undefined }),
+          body: JSON.stringify({
+            fullName: fullName || undefined,
+            email: email.trim().toLowerCase() || undefined,
+          }),
         });
         if (!ur.ok) throw new Error("Ошибка обновления пользователя");
       }
