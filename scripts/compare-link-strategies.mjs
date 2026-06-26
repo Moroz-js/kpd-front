@@ -131,6 +131,25 @@ function buildMap(mode) {
             } else if (pool.length === 1) {
               linked = [{ uid: pool[0].uid, how: "pos-single" }];
             }
+          } else if (mode === "year-month") {
+            const payYear = pmk?.slice(0, 4);
+            const yearBatch = payYear ? pending.filter((w) => w.mk?.startsWith(payYear)) : [];
+            const yearSum = yearBatch.reduce((s, w) => s + (w.amt ?? 0), 0);
+            const poolSum = pool.reduce((s, w) => s + (w.amt ?? 0), 0);
+            const byPaid = pool.filter((w) => paidMatch(w.paid, pPaid));
+            const byPlan = pool.filter((w) => planMatch(w.plan, pPlan));
+
+            if (yearBatch.length && sumClose(yearSum, payAmt)) {
+              linked = yearBatch.map((w) => ({ uid: w.uid, how: "year-sum" }));
+            } else if (pool.length && sumClose(poolSum, payAmt)) {
+              linked = pool.map((w) => ({ uid: w.uid, how: "month-sum" }));
+            } else if (byPaid.length) {
+              linked = byPaid.map((w) => ({ uid: w.uid, how: "paid-month" }));
+            } else if (byPlan.length) {
+              linked = byPlan.map((w) => ({ uid: w.uid, how: "plan-month" }));
+            } else if (pool.length === 1) {
+              linked = [{ uid: pool[0].uid, how: "pos-single" }];
+            }
           } else if (mode === "month-cascade") {
             // paid → plan → pos (whole pool)
             const byPaid = pool.filter((w) => paidMatch(w.paid, pPaid));
@@ -224,7 +243,7 @@ function diffMaps(oldMap, newMap) {
   return { changed, onlyOld, onlyNew };
 }
 
-const strategies = ["hybrid", "month-smart", "month-cascade", "month-pos"];
+const strategies = ["hybrid", "month-smart", "year-month", "month-cascade", "month-pos"];
 const results = {};
 for (const s of strategies) {
   const { map, meta } = buildMap(s);

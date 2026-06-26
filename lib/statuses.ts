@@ -100,6 +100,15 @@ export const EXECUTOR_COMPANY_STATUSES = {
   orbit: "Орбита",
 } as const;
 
+/** «core,orbit» → «Ядро, Орбита» для UI */
+export function formatCompanyStatus(raw: string | null | undefined): string {
+  if (!raw) return "";
+  return raw
+    .split(",")
+    .map((s) => EXECUTOR_COMPANY_STATUSES[s.trim() as keyof typeof EXECUTOR_COMPANY_STATUSES] ?? s.trim())
+    .join(", ");
+}
+
 // «Тип получателя» (I) — 16 значений, см. TDNB-18 §Тип получателя.
 export const RECIPIENT_TYPES = [
   "Сервис заруб.",

@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { WorkTypesMultiSelect } from "@/components/ui-custom/WorkTypesMultiSelect";
-import { EXECUTOR_COMPANY_STATUSES, EXECUTOR_TYPES } from "@/lib/statuses";
+import { EXECUTOR_COMPANY_STATUSES, EXECUTOR_TYPES, formatCompanyStatus } from "@/lib/statuses";
 import { normalizeExecutorType } from "@/lib/executor-type";
 import { RecipientTypesPicker } from "@/components/ui-custom/RecipientTypesPicker";
 import type { ExecutorRow } from "./ExecutorsClient";
@@ -131,9 +131,7 @@ export function ExecutorEditDialog({
                 >
                   <SelectTrigger id="companyStatus">
                     <SelectValue>
-                      {companyStatus
-                        ? (EXECUTOR_COMPANY_STATUSES[companyStatus as keyof typeof EXECUTOR_COMPANY_STATUSES] ?? companyStatus)
-                        : "— Не задан —"}
+                      {companyStatus ? formatCompanyStatus(companyStatus) : "— Не задан —"}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>

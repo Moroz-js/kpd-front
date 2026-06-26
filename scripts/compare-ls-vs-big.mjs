@@ -3,7 +3,7 @@
  *
  * Правила:
  *   - только лист «Текущий год» (архив не участвует в синках)
- *   - month-smart линковка (как migrate-excel.mjs)
+ *   - year → month → paid/plan линковка (как migrate-excel.mjs)
  *
  * Запуск: node scripts/compare-ls-vs-big.mjs
  */
@@ -83,12 +83,31 @@ function lsSumClose(a, b, tol = 1) {
   return a != null && b != null && Math.abs(a - b) <= tol;
 }
 
-function lsLinkPool(pool, payAmount, payPaid, payPlanned) {
-  if (!pool.length || !isRealPayment(payAmount)) return [];
+function lsExecutionYear(monthKey) {
+  if (!monthKey) return null;
+  const yr = monthKey.slice(0, 4);
+  return /^\d{4}$/.test(yr) ? yr : null;
+}
+
+function lsLinkToPayment(pending, payMonthKey, payAmount, payPaid, payPlanned) {
+  if (!pending.length || !isRealPayment(payAmount)) return [];
+
+  const payYear = lsExecutionYear(payMonthKey);
+  const pool = payMonthKey != null
+    ? pending.filter((w) => w.monthKey === payMonthKey)
+    : [];
+  const yearBatch = payYear != null
+    ? pending.filter((w) => lsExecutionYear(w.monthKey) === payYear)
+    : [];
+
+  const yearSum = yearBatch.reduce((s, w) => s + (w.amount ?? 0), 0);
+  if (yearBatch.length && lsSumClose(yearSum, payAmount)) return yearBatch;
+
   const poolSum = pool.reduce((s, w) => s + (w.amount ?? 0), 0);
+  if (pool.length && lsSumClose(poolSum, payAmount)) return pool;
+
   const byPaid = pool.filter((w) => lsSerialMatch(w.paidSerial, payPaid));
   const byPlan = pool.filter((w) => lsSerialMatch(w.plannedSerial, payPlanned));
-  if (lsSumClose(poolSum, payAmount)) return pool;
   if (byPaid.length) return byPaid;
   if (byPlan.length) return byPlan;
   if (pool.length === 1) return pool;
@@ -160,10 +179,7 @@ function readLSFolder() {
             file: f,
           });
           const payMonthKey = lsMonthKey(r, hdr);
-          const pool = payMonthKey != null
-            ? pending.filter((w) => w.monthKey === payMonthKey)
-            : [];
-          for (const w of lsLinkPool(pool, amount, paidSerial, plannedSerial)) {
+          for (const w of lsLinkToPayment(pending, payMonthKey, amount, paidSerial, plannedSerial)) {
             lsLinks.set(w.uid, uid);
           }
         }
@@ -183,7 +199,7 @@ if (!fs.existsSync(EXCEL_PATH)) {
 console.log("Сверка LS ↔ большая смета");
 console.log("  Excel:", EXCEL_PATH);
 console.log("  LS:", LS_FOLDER);
-console.log("  Лист LS:", LS_SHEET, "| month-smart линковка | выплаты с 0 — пропускаем\n");
+console.log("  Лист LS:", LS_SHEET, "| year→month→paid линковка | выплаты с 0 — пропускаем\n");
 
 const wb = XLSX.readFile(EXCEL_PATH, { cellDates: false });
 const worksBD = readBD(wb, "БД_Выставленные_работы", "Исполнитель", 2);

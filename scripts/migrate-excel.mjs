@@ -381,10 +381,28 @@ function buildProjectName(shortName, clientName) {
 
 // ─── EXTRACTORS ───────────────────────────────────────────────────────────────
 
-function extractUsers(wb) {
+/** Руководители проектов из БД_Ответственные (имя + список проектов). */
+function extractResponsibles(wb) {
   const rows = readSheet(wb, "БД_Ответственные", { identifyBy: "Имя" });
   return rows
     .filter((r) => str(r["Имя"]))
+    .map((r) => {
+      const projectNames = splitItems(r["Проекты как руководитель"]);
+      return {
+        fullName: str(r["Имя"]),
+        isActive: str(r["Статус"]) === "Активный",
+        projectNames,
+      };
+    })
+    .filter((r) => r.projectNames.length > 0);
+}
+
+function extractUsers(wb, { skipNames = new Set() } = {}) {
+  const rows = readSheet(wb, "БД_Ответственные", { identifyBy: "Имя" });
+  return rows
+    .filter((r) => str(r["Имя"]))
+    .filter((r) => splitItems(r["Проекты как руководитель"]).length > 0)
+    .filter((r) => !skipNames.has(normKey(str(r["Имя"]))))
     .map((r, idx) => ({
       fullName: str(r["Имя"]),
       email: makeEmail(str(r["Имя"]), idx),
@@ -703,16 +721,36 @@ function lsAmountsClose(a, b, tol = 1) {
   return a != null && b != null && Math.abs(Number(a) - Number(b)) <= tol;
 }
 
+/** Год из ключа «YYYY-MM». */
+function lsExecutionYear(monthKey) {
+  if (!monthKey) return null;
+  const yr = monthKey.slice(0, 4);
+  return /^\d{4}$/.test(yr) ? yr : null;
+}
+
 /**
- * Линковка работ к выплате внутри одного месяца выполнения (month-smart):
- * sum(pool)≈pay → все; иначе paid → plan → одна работа в pool.
+ * Каскад линковки LS: year-batch → month-sum → paid → plan → single.
+ * year-batch — cross-month в одном году (Браун); month/paid — частичные выплаты (Шошин, Дьяков).
  */
-function lsLinkWorksInPool(pool, payAmount, payPaid, payPlanned) {
-  if (!pool.length || payAmount == null || payAmount <= 0) return [];
+function lsLinkWorksToPayment(pending, payMonthKey, payAmount, payPaid, payPlanned) {
+  if (!pending.length || payAmount == null || payAmount <= 0) return [];
+
+  const payYear = lsExecutionYear(payMonthKey);
+  const pool = payMonthKey != null
+    ? pending.filter((w) => w.monthKey === payMonthKey)
+    : [];
+  const yearBatch = payYear != null
+    ? pending.filter((w) => lsExecutionYear(w.monthKey) === payYear)
+    : [];
+
+  const yearSum = yearBatch.reduce((s, w) => s + (w.amount ?? 0), 0);
   const poolSum = pool.reduce((s, w) => s + (w.amount ?? 0), 0);
+
+  if (yearBatch.length && lsAmountsClose(yearSum, payAmount)) return yearBatch;
+  if (pool.length && lsAmountsClose(poolSum, payAmount)) return pool;
+
   const byPaid = pool.filter((w) => lsSerialDateMatch(w.paidSerial, payPaid));
   const byPlan = pool.filter((w) => lsSerialDateMatch(w.plannedSerial, payPlanned));
-  if (lsAmountsClose(poolSum, payAmount)) return pool;
   if (byPaid.length) return byPaid;
   if (byPlan.length) return byPlan;
   if (pool.length === 1) return pool;
@@ -721,7 +759,7 @@ function lsLinkWorksInPool(pool, payAmount, payPaid, payPlanned) {
 
 /**
  * Читает файлы личных смет из lsFolder (лист «Текущий год»)
- * и строит карту привязки work_srcUid → payment_srcUid (month-smart).
+ * и строит карту привязки work_srcUid → payment_srcUid (year → month → paid/plan).
  * Тип строки: «ls» = работа, «pay» = выплата. Выплаты с суммой 0 пропускаются.
  */
 function buildWorkPaymentMap(lsFolder) {
@@ -765,7 +803,7 @@ function buildWorkPaymentMap(lsFolder) {
         const volumeCol   = hdrRow ? hdrRow.indexOf("Объём работ")          : -1;
         const rateCol     = hdrRow ? hdrRow.indexOf("Ставка")               : -1;
 
-        // pending: работы с прошлой выплаты; pool = тот же год-месяц выполнения (month-smart).
+        // pending: работы с прошлой выплаты; каскад year-batch → month pool → paid/plan.
         const pending = [];
         for (let i = headerIdx + 1; i < rows.length; i++) {
           const r = rows[i];
@@ -791,12 +829,9 @@ function buildWorkPaymentMap(lsFolder) {
             const payAmount = payAmtCol >= 0 ? num(r[payAmtCol]) : null;
             if (payAmount != null && payAmount > 0) {
               const payMonthKey = lsExecutionPeriodKey(r, hdrRow);
-              const pool = payMonthKey != null
-                ? pending.filter((w) => w.monthKey === payMonthKey)
-                : [];
               const payPaid    = paidAtCol    >= 0 ? (r[paidAtCol]    ?? null) : null;
               const payPlanned = plannedAtCol >= 0 ? (r[plannedAtCol] ?? null) : null;
-              for (const w of lsLinkWorksInPool(pool, payAmount, payPaid, payPlanned)) {
+              for (const w of lsLinkWorksToPayment(pending, payMonthKey, payAmount, payPaid, payPlanned)) {
                 map.set(w.uid, uid);
               }
             }
@@ -1023,8 +1058,10 @@ function previewExecutors({ executors, executorWorkTypes, projectExecutors, warn
     { key: "_projCount",    label: "#proj",          max: 5  },
   ], { title: "executors", total: executors.length, warnings: warnings.slice(0, 5) });
   if (warnings.length > 5) console.log(`     ⋯ ещё ${warnings.length - 5} предупреждений`);
-  console.log(`\n  ↳ executor_work_types: ${executorWorkTypes.length} связей`);
+  console.log(`  ↳ executor_work_types: ${executorWorkTypes.length} связей`);
   console.log(`  ↳ project_executors:   ${projectExecutors.length} связей`);
+  const pmCount = executors.filter((e) => e._isProjectManager).length;
+  if (pmCount) console.log(`  ↳ руководители проектов (isResponsible): ${pmCount}`);
 }
 
 function previewOrders({ orders, warnings }) {
@@ -1292,22 +1329,47 @@ async function main() {
 
   // ── Извлекаем данные (порядок важен — каждый шаг строит lookup для следующего) ──
 
-  const users        = extractUsers(wb);
+  const responsibles = extractResponsibles(wb);
+  const responsiblesByName = Object.fromEntries(
+    responsibles.map((r) => [normKey(r.fullName), r]),
+  );
+
   const bankAccounts = extractBankAccounts(wb);
   const workTypes    = extractWorkTypes(wb);
   const clients      = extractClients(wb);
 
-  // lookup: нормализованное имя → временный ключ (при --run заменяется на real cuid)
-  const userMap    = Object.fromEntries(users.map((u, i)        => [normKey(u.fullName), `u${i}`]));
   const bankMap    = Object.fromEntries(bankAccounts.map((b, i) => [normKey(b.name),     `b${i}`]));
   const workTypeMap = Object.fromEntries(workTypes.map((w, i)   => [normKey(w.name),     `wt${i}`]));
   const clientMap  = Object.fromEntries(clients.map((c, i)      => [normKey(c.name),     `cl${i}`]));
 
-  const projectsData  = extractProjects(wb, userMap, clientMap);
-  const projectMap    = Object.fromEntries(projectsData.projects.map((p, i) => [normKey(p.name), `pr${i}`]));
+  // Исполнители с email получат User в шаге 6 — не дублируем User из БД_Ответственные.
+  const executorsDataPre = extractExecutors(wb, {}, bankMap, workTypeMap);
+  const executorNamesWithEmail = new Set(
+    executorsDataPre.executors.filter((e) => e._email).map((e) => normKey(e.name)),
+  );
+  const users = extractUsers(wb, { skipNames: executorNamesWithEmail });
+
+  const userMap = Object.fromEntries(users.map((u, i) => [normKey(u.fullName), `u${i}`]));
 
   const executorsData = extractExecutors(wb, userMap, bankMap, workTypeMap);
-  const executorMap   = Object.fromEntries(executorsData.executors.map((e, i) => [normKey(e.name), `ex${i}`]));
+
+  const projectsData  = extractProjects(wb, userMap, clientMap);
+  const pmProjectCountByName = {};
+  for (const p of projectsData.projects) {
+    if (!p._responsibleName) continue;
+    const k = normKey(p._responsibleName);
+    pmProjectCountByName[k] = (pmProjectCountByName[k] || 0) + 1;
+  }
+  for (const e of executorsData.executors) {
+    const pm = responsiblesByName[normKey(e.name)];
+    const projectCount = pmProjectCountByName[normKey(e.name)] || 0;
+    e._isProjectManager = projectCount > 0 && e.type === "permanent";
+    e._responsibleActive = pm?.isActive ?? true;
+    e._pmProjectNames = pm?.projectNames ?? [];
+  }
+  const executorMap = Object.fromEntries(executorsData.executors.map((e, i) => [normKey(e.name), `ex${i}`]));
+
+  const projectMap    = Object.fromEntries(projectsData.projects.map((p, i) => [normKey(p.name), `pr${i}`]));
 
   const ordersData  = extractOrders(wb, projectMap);
   const orderMap    = Object.fromEntries(ordersData.orders.map((o, i) => [o._rawNumber, `ord${i}`]));
@@ -1317,7 +1379,7 @@ async function main() {
   const paymentsData  = extractPayments(wb, executorMap, bankMap);
   const spendingPlanData = extractSpendingPlan(wb, projectMap, executorMap, workTypeMap);
 
-  const all = { users, bankAccounts, workTypes, clients,
+  const all = { users, responsibles, bankAccounts, workTypes, clients,
     projects: projectsData, executors: executorsData,
     orders: ordersData, charges: chargesData,
     works: worksData, payments: paymentsData,
@@ -1460,6 +1522,9 @@ async function createManyAndReturnBatched(model, rows, { retries = 3 } = {}) {
 // ─── РЕАЛЬНАЯ ЗАПИСЬ (только при --run) ──────────────────────────────────────
 
 async function runMigration(prisma, all) {
+  const responsiblesByName = Object.fromEntries(
+    (all.responsibles ?? []).map((r) => [normKey(r.fullName), r]),
+  );
   const t0 = Date.now();
   const step = (label, fn) => fn().then((n) => {
     const sec = ((Date.now() - t0) / 1000).toFixed(1);
@@ -1610,12 +1675,59 @@ async function runMigration(prisma, all) {
         accessRevokedAt: e.accessRevokedAt,
         oldEstimateUrl: e.oldEstimateUrl,
         userId,
+        isResponsible: false,
+        responsibleActive: true,
         defaultBankAccountId: e._bankName ? (bankIds[normKey(e._bankName)] ?? null) : null,
         responsibleUserId: e._responsibleName ? (userIds[normKey(e._responsibleName)] ?? null) : null,
       };
       })
     );
-    for (const r of created) executorIds[normKey(r.name)] = r.id;
+    const executorUserIds = {};
+    const executorIdByName = {};
+    for (const r of created) {
+      executorIds[normKey(r.name)] = r.id;
+      executorIdByName[normKey(r.name)] = r.id;
+      if (r.userId) executorUserIds[normKey(r.name)] = r.userId;
+    }
+
+    // Руководитель проекта = User исполнителя (не отдельный User из БД_Ответственные).
+    const pmCountByUserId = new Map();
+    let pmProjectsUpdated = 0;
+    for (const p of all.projects.projects) {
+      if (!p._responsibleName) continue;
+      const nameKey = normKey(p._responsibleName);
+      const pid = projectIds[normKey(p.name)];
+      if (!pid) continue;
+      const uid = executorUserIds[nameKey] ?? userIds[nameKey] ?? null;
+      if (!uid) continue;
+      pmCountByUserId.set(uid, (pmCountByUserId.get(uid) || 0) + 1);
+      if (executorUserIds[nameKey]) {
+        await prisma.project.update({ where: { id: pid }, data: { responsibleUserId: uid } });
+        pmProjectsUpdated++;
+      }
+    }
+    if (pmProjectsUpdated) console.log(`     ↳ project PM links: ${pmProjectsUpdated}`);
+
+    // isResponsible только если ≥1 проект как РП (по БД_Проекты).
+    let pmExecutors = 0;
+    for (const e of all.executors.executors) {
+      const nameKey = normKey(e.name);
+      const execId = executorIdByName[nameKey];
+      const uid = executorUserIds[nameKey];
+      if (!execId || !uid || e.type !== "permanent") continue;
+      const count = pmCountByUserId.get(uid) || 0;
+      if (count <= 0) continue;
+      const pm = responsiblesByName[nameKey];
+      await prisma.executor.update({
+        where: { id: execId },
+        data: {
+          isResponsible: true,
+          responsibleActive: pm?.isActive ?? true,
+        },
+      });
+      pmExecutors++;
+    }
+    if (pmExecutors) console.log(`     ↳ isResponsible: ${pmExecutors}`);
 
     const ewtRows = [];
     for (const lnk of all.executors.executorWorkTypes) {

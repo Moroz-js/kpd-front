@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import { WorkTypesMultiSelect } from "@/components/ui-custom/WorkTypesMultiSelect";
 import { RecipientTypesPicker } from "@/components/ui-custom/RecipientTypesPicker";
-import { EXECUTOR_COMPANY_STATUSES, EXECUTOR_TYPES, WORK_TYPE_SEGMENTS } from "@/lib/statuses";
+import { EXECUTOR_COMPANY_STATUSES, EXECUTOR_TYPES, WORK_TYPE_SEGMENTS, formatCompanyStatus } from "@/lib/statuses";
 import { parseRecipientTypes } from "@/lib/executor-recipient-type";
 import {
   canBeResponsible,
@@ -386,11 +386,7 @@ export function SettingsTab({
             >
               <SelectTrigger>
                 <SelectValue>
-                  {companyStatus
-                    ? (EXECUTOR_COMPANY_STATUSES[
-                        companyStatus as keyof typeof EXECUTOR_COMPANY_STATUSES
-                      ] ?? companyStatus)
-                    : "— Не задан —"}
+                  {companyStatus ? formatCompanyStatus(companyStatus) : "— Не задан —"}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>

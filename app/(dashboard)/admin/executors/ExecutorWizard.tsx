@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { EXECUTOR_COMPANY_STATUSES } from "@/lib/statuses";
+import { EXECUTOR_COMPANY_STATUSES, formatCompanyStatus } from "@/lib/statuses";
 import { RecipientTypesPicker } from "@/components/ui-custom/RecipientTypesPicker";
 import type { ExecutorType } from "@/lib/statuses";
 
@@ -205,9 +205,7 @@ export function ExecutorWizard({
                   >
                   <SelectTrigger id="companyStatus">
                     <SelectValue>
-                      {companyStatus
-                        ? (EXECUTOR_COMPANY_STATUSES[companyStatus as keyof typeof EXECUTOR_COMPANY_STATUSES] ?? companyStatus)
-                        : "— Не задан —"}
+                      {companyStatus ? formatCompanyStatus(companyStatus) : "— Не задан —"}
                     </SelectValue>
                   </SelectTrigger>
                     <SelectContent>
