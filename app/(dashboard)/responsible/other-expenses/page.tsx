@@ -1,4 +1,4 @@
-﻿import { redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { isAdmin, isResponsible } from "@/lib/permissions";
 import { prisma } from "@/lib/db";
@@ -20,18 +20,15 @@ export default async function Page() {
   ]);
 
   return (
-    <div className="p-6 space-y-4">
-      <h1 className="text-xl font-semibold">Прочие траты</h1>
-      <OtherExpensesClient
-        isAdmin={isAdmin(user)}
-        userId={user.id}
-        executorId={user.executorId ?? null}
-        projects={projects}
-        executors={executors}
-        workTypes={workTypes as { id: string; name: string; segment: string }[]}
-        permanentExecutors={permanentExecutors}
-        bankAccounts={bankAccounts}
-      />
-    </div>
+    <OtherExpensesClient
+      isAdmin={isAdmin(user)}
+      userId={user.id}
+      executorId={user.executorId ?? null}
+      projects={projects}
+      executors={executors}
+      workTypes={workTypes as { id: string; name: string; segment: string }[]}
+      permanentExecutors={permanentExecutors}
+      bankAccounts={bankAccounts}
+    />
   );
 }

@@ -79,6 +79,16 @@ const LS_FOLDER =
 
 /** Лист LS для синка (архив не участвует). */
 const LS_SHEET = "Текущий год";
+const LS_TASKS_SHEET = "Задачи";
+
+const TASK_STATUS_MAP = {
+  поставлена: "pending",
+  "в работе": "in_progress",
+  "на паузе": "paused",
+  "на проверке": "review",
+  выполнена: "done",
+  выполнено: "done",
+};
 
 const DRY_RUN    = !process.argv.includes("--run");
 const PRODUCTION = process.argv.includes("--production");
@@ -757,6 +767,76 @@ function lsLinkWorksToPayment(pending, payMonthKey, payAmount, payPaid, payPlann
   return [];
 }
 
+/** «Штанько (Слободина) Евгения Личная смета_.xlsx» → «Штанько Евгения» */
+function executorNameFromLsFile(filename) {
+  return String(filename)
+    .replace(/\.xlsx$/i, "")
+    .replace(/ Личная смета_.*$/i, "")
+    .replace(/\s*\([^)]*\)\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function mapTaskStatus(raw) {
+  const k = String(raw ?? "")
+    .trim()
+    .toLowerCase();
+  return TASK_STATUS_MAP[k] ?? "pending";
+}
+
+function excelSerialToDate(serial) {
+  if (serial == null) return null;
+  if (serial instanceof Date) return serial;
+  if (typeof serial === "number") {
+    return new Date(Math.round((serial - 25569) * 86400 * 1000));
+  }
+  const s = String(serial).trim();
+  if (!s) return null;
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * Задачи исполнителей из листа «Задачи» LS-файлов.
+ * @returns {Map<string, Array<{title:string,status:string,plannedDoneAt:Date|null,result:string|null,comment:string|null}>>}
+ */
+function buildTasksFromLS(lsFolder) {
+  const byExecutor = new Map();
+  let files = [];
+  try {
+    files = fs.readdirSync(lsFolder).filter((f) => f.toLowerCase().endsWith(".xlsx"));
+  } catch {
+    return byExecutor;
+  }
+
+  for (const f of files) {
+    const execName = executorNameFromLsFile(f);
+    if (!execName) continue;
+    const key = normKey(execName);
+    try {
+      const wb = XLSX.readFile(path.join(lsFolder, f));
+      if (!wb.SheetNames.includes(LS_TASKS_SHEET)) continue;
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[LS_TASKS_SHEET], { header: 1, defval: null });
+      const tasks = [];
+      for (const r of rows.slice(1)) {
+        const title = r[0] != null ? String(r[0]).trim() : "";
+        if (!title) continue;
+        tasks.push({
+          title,
+          status: mapTaskStatus(r[1]),
+          plannedDoneAt: excelSerialToDate(r[2]),
+          result: r[3] != null ? String(r[3]).trim() || null : null,
+          comment: r[4] != null ? String(r[4]).trim() || null : null,
+        });
+      }
+      if (tasks.length) byExecutor.set(key, tasks);
+    } catch (e) {
+      console.warn(`  ⚠ LS задачи: пропуск ${f}: ${e.message}`);
+    }
+  }
+  return byExecutor;
+}
+
 /**
  * Читает файлы личных смет из lsFolder (лист «Текущий год»)
  * и строит карту привязки work_srcUid → payment_srcUid (year → month → paid/plan).
@@ -1205,6 +1285,48 @@ function previewSpendingPlan({ lines, warnings }, works) {
   }
 }
 
+function previewTasks(lsTasksByExecutor, executorsData) {
+  section("14. ЗАДАЧИ  ←  LS «Задачи»");
+  const smeta = executorsData.executors.filter((e) => e._email && e.type !== "service");
+  let total = 0;
+  let withLs = 0;
+  const noLs = [];
+  for (const e of smeta) {
+    const tasks = lsTasksByExecutor.get(normKey(e.name));
+    if (tasks?.length) {
+      withLs++;
+      total += tasks.length;
+    } else {
+      noLs.push(e.name);
+    }
+  }
+  console.log(
+    `  → tasks: ${total} строк для ${withLs}/${smeta.length} исполнителей со сметой (onboardingSeeded=true у всех ${smeta.length})`,
+  );
+  if (noLs.length) {
+    console.log(`  ℹ️  Без LS-файла (пустая вкладка «Задачи»): ${noLs.join(", ")}`);
+  }
+  const sampleKey = [...lsTasksByExecutor.keys()][0];
+  if (sampleKey) {
+    const sample = lsTasksByExecutor.get(sampleKey)?.slice(0, PREVIEW_ROWS) ?? [];
+    printTable(
+      sample.map((t) => ({
+        _executor: sampleKey,
+        title: t.title.slice(0, 48),
+        status: t.status,
+        result: t.result?.slice(0, 24) ?? "",
+      })),
+      [
+        { key: "_executor", label: "executor →", max: 22 },
+        { key: "title", label: "задача", max: 40 },
+        { key: "status", label: "→ DB", max: 12 },
+        { key: "result", label: "результат", max: 24 },
+      ],
+      { title: "tasks (sample)", total },
+    );
+  }
+}
+
 function printSummary(all) {
   section("ИТОГО К ИМПОРТУ");
   const rows = [
@@ -1222,6 +1344,7 @@ function printSummary(all) {
     { e: "other_expenses",      n: all.works.otherExpenses.length,  note: "прочие траты" },
     { e: "payments",            n: all.payments.payments.length,    note: "выплаты" },
     { e: "spending_plan_lines", n: all.works.works.filter(w => w._week && w._week <= 25).length + all.spendingPlan.lines.filter(l => l.week && l.week > 25).length, note: "план расходов (работы нед. ≤ 25 + план нед. > 25)" },
+    { e: "tasks",             n: all.tasksCount ?? 0,            note: "задачи из LS (исполнители со сметой)" },
   ];
   printTable(rows, [
     { key: "e",    label: "Таблица",   max: 26 },
@@ -1379,11 +1502,18 @@ async function main() {
   const paymentsData  = extractPayments(wb, executorMap, bankMap);
   const spendingPlanData = extractSpendingPlan(wb, projectMap, executorMap, workTypeMap);
 
+  const lsTasksByExecutor = buildTasksFromLS(LS_FOLDER);
+  let tasksCount = 0;
+  for (const e of executorsData.executors) {
+    if (!e._email || e.type === "service") continue;
+    tasksCount += lsTasksByExecutor.get(normKey(e.name))?.length ?? 0;
+  }
+
   const all = { users, responsibles, bankAccounts, workTypes, clients,
     projects: projectsData, executors: executorsData,
     orders: ordersData, charges: chargesData,
     works: worksData, payments: paymentsData,
-    spendingPlan: spendingPlanData };
+    spendingPlan: spendingPlanData, tasksCount };
 
   // ── Preview ─────────────────────────────────────────────────────────────────
   previewUsers(users);
@@ -1397,6 +1527,7 @@ async function main() {
   previewWorks(worksData);
   previewPayments(paymentsData);
   previewSpendingPlan(spendingPlanData, all.works.works);
+  previewTasks(lsTasksByExecutor, executorsData);
   printSummary(all);
 
   // ── Реальная запись ──────────────────────────────────────────────────────────
@@ -1441,7 +1572,7 @@ async function main() {
 // ─── ОЧИСТКА БД (обратный порядок FK) ────────────────────────────────────────
 
 async function dropAll(prisma) {
-  console.log("  [0/13] Очистка БД...");
+  console.log("  [0/14] Очистка БД...");
   const dbUrl = process.env.DATABASE_URL ?? "";
   const isPg = dbUrl.startsWith("postgresql://") || dbUrl.startsWith("postgres://");
 
@@ -1473,7 +1604,7 @@ async function dropAll(prisma) {
     await prisma.bankAccount.deleteMany();
     await prisma.user.deleteMany();
   }
-  console.log("  [0/13] БД очищена ✓");
+  console.log("  [0/14] БД очищена ✓");
 }
 
 // ─── BATCH INSERT (после TRUNCATE — без upsert/findFirst) ───────────────────
@@ -1536,7 +1667,7 @@ async function runMigration(prisma, all) {
   // 1. users
   const userIds = {};
   const userIdsByEmail = {};
-  await step("[1/13] users", async () => {
+  await step("[1/14] users", async () => {
     const created = await createManyAndReturnBatched(
       prisma.user,
       all.users.map((u) => ({
@@ -1556,7 +1687,7 @@ async function runMigration(prisma, all) {
 
   // 2. bank_accounts
   const bankIds = {};
-  await step("[2/13] bank_accounts", async () => {
+  await step("[2/14] bank_accounts", async () => {
     const created = await createManyAndReturnBatched(
       prisma.bankAccount,
       all.bankAccounts.map((b) => ({ name: b.name, status: b.status }))
@@ -1567,7 +1698,7 @@ async function runMigration(prisma, all) {
 
   // 3. work_types
   const wtIds = {};
-  await step("[3/13] work_types", async () => {
+  await step("[3/14] work_types", async () => {
     const created = await createManyAndReturnBatched(
       prisma.workType,
       all.workTypes.map((w) => ({ name: w.name, segment: w.segment, status: w.status }))
@@ -1578,7 +1709,7 @@ async function runMigration(prisma, all) {
 
   // 4. clients
   const clientIds = {};
-  await step("[4/13] clients", async () => {
+  await step("[4/14] clients", async () => {
     const created = await createManyAndReturnBatched(
       prisma.client,
       all.clients.map((c) => ({
@@ -1594,7 +1725,7 @@ async function runMigration(prisma, all) {
 
   // 5. projects
   const projectIds = {};
-  await step("[5/13] projects", async () => {
+  await step("[5/14] projects", async () => {
     const rows = all.projects.projects.map((p) => ({
       name: p.name,
       shortName: p.shortName,
@@ -1613,7 +1744,7 @@ async function runMigration(prisma, all) {
   // 6. executors + links
   const executorIds = {};
   const credentialsLines = [];
-  await step("[6/13] executors + links", async () => {
+  await step("[6/14] executors + links", async () => {
     const bcrypt = await import("bcryptjs");
 
     // Аккаунты только для исполнителей с заполненным email (доступ к личной смете)
@@ -1748,7 +1879,7 @@ async function runMigration(prisma, all) {
 
   // 7. orders
   const orderIds = {};
-  await step("[7/13] orders", async () => {
+  await step("[7/14] orders", async () => {
     const rows = [];
     const keys = [];
     for (const o of all.orders.orders) {
@@ -1769,7 +1900,7 @@ async function runMigration(prisma, all) {
   });
 
   // 8. charges
-  await step("[8/13] charges", async () => {
+  await step("[8/14] charges", async () => {
     const seenCharge = new Set();
     const seenInvoice = new Set();
     const rows = [];
@@ -1814,7 +1945,7 @@ async function runMigration(prisma, all) {
   // paymentIds:        "nameKey|y|mo|dateStr" и "nameKey|y|mo" → id — запасной ключ по дате
   const paymentIdBySrcUid = {};
   const paymentIds = {};
-  await step("[9/13] payments", async () => {
+  await step("[9/14] payments", async () => {
     const rows = [];
     const meta = [];
     for (const p of all.payments.payments) {
@@ -1857,7 +1988,7 @@ async function runMigration(prisma, all) {
   });
 
   // 10. works
-  await step("[10/13] works", async () => {
+  await step("[10/14] works", async () => {
     // Ответственный по умолчанию = РП проекта (KPD-284): берём исполнителя
     // по имени руководителя проекта (РП — постоянный исполнитель).
     const projResponsibleName = {};
@@ -1928,7 +2059,7 @@ async function runMigration(prisma, all) {
 
   // 11. other_expenses
   const defaultUserId = Object.values(userIds)[0];
-  await step("[11/13] other_expenses", async () => {
+  await step("[11/14] other_expenses", async () => {
     // Ответственный = РП проекта (как у работ); счёт и способ оплаты — из исполнителя.
     const projResponsibleName = {};
     for (const p of all.projects.projects) {
@@ -1980,7 +2111,7 @@ async function runMigration(prisma, all) {
   });
 
   // 12. spending_plan_lines — нед. ≤ 25 из работ, нед. > 25 из БД_План_расходов_полный
-  await step("[12/13] spending_plan_lines", async () => {
+  await step("[12/14] spending_plan_lines", async () => {
     const rows = [];
 
     // Part A: из выставленных работ, недели 1–25
@@ -2028,8 +2159,50 @@ async function runMigration(prisma, all) {
     return createManyBatched(prisma.spendingPlanLine, rows);
   });
 
-  // 13. admin
-  await step("[13/13] admin user", async () => {
+  await step("[13/14] tasks ← LS", async () => {
+    const lsTasksByExecutor = buildTasksFromLS(LS_FOLDER);
+    const smetaExecutors = await prisma.executor.findMany({
+      where: { userId: { not: null }, type: { not: "service" } },
+      select: { id: true, name: true },
+    });
+
+    const taskRows = [];
+    let withTasks = 0;
+    const noLs = [];
+    for (const e of smetaExecutors) {
+      const tasks = lsTasksByExecutor.get(normKey(e.name));
+      if (tasks?.length) {
+        withTasks++;
+        for (const t of tasks) {
+          taskRows.push({
+            executorId: e.id,
+            title: t.title,
+            status: t.status,
+            plannedDoneAt: t.plannedDoneAt,
+            result: t.result,
+            comment: t.comment,
+            isOnboarding: false,
+          });
+        }
+      } else {
+        noLs.push(e.name);
+      }
+    }
+
+    const n = await createManyBatched(prisma.task, taskRows);
+    const seeded = await prisma.executor.updateMany({
+      where: { userId: { not: null }, type: { not: "service" } },
+      data: { onboardingSeeded: true },
+    });
+    console.log(
+      `     ↳ со сметой: ${smetaExecutors.length}, с задачами: ${withTasks}, задач: ${n}, onboardingSeeded: ${seeded.count}`,
+    );
+    if (noLs.length) console.log(`     ↳ без LS: ${noLs.join(", ")}`);
+    return n;
+  });
+
+  // 14. admin
+  await step("[14/14] admin user", async () => {
     const bcrypt = await import("bcryptjs");
     const adminHash = await bcrypt.hash("Password123!", 10);
     await prisma.user.upsert({

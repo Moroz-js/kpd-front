@@ -16,8 +16,9 @@ import {
 } from "@/components/ui/select";
 import { WorkTypesMultiSelect } from "@/components/ui-custom/WorkTypesMultiSelect";
 import { RecipientTypesPicker } from "@/components/ui-custom/RecipientTypesPicker";
-import { EXECUTOR_COMPANY_STATUSES, EXECUTOR_TYPES, WORK_TYPE_SEGMENTS, formatCompanyStatus } from "@/lib/statuses";
+import { EXECUTOR_TYPES, WORK_TYPE_SEGMENTS, parseCompanyStatus, serializeCompanyStatus } from "@/lib/statuses";
 import { parseRecipientTypes } from "@/lib/executor-recipient-type";
+import { CompanyStatusPicker } from "@/components/ui-custom/CompanyStatusPicker";
 import {
   canBeResponsible,
   EXECUTOR_TYPE_OPTIONS,
@@ -67,6 +68,8 @@ type Props = {
   isAdmin?: boolean;
   /** Владелец профиля (свой /me): может сменить свой пароль. */
   isOwner?: boolean;
+  /** Может редактировать поля профиля (false — только просмотр). */
+  canEdit?: boolean;
 };
 
 export function SettingsTab({
@@ -77,6 +80,7 @@ export function SettingsTab({
   onChanged,
   isAdmin = false,
   isOwner = false,
+  canEdit = true,
 }: Props) {
   const [executorType, setExecutorType] = useState<ExecutorType>(() =>
     normalizeExecutorType(executor.type)
@@ -88,7 +92,9 @@ export function SettingsTab({
   const [fullName, setFullName] = useState(executor.user?.fullName ?? executor.name);
   const [email, setEmail] = useState(executor.user?.email ?? "");
   const [password, setPassword] = useState(() => generatePassword());
-  const [companyStatus, setCompanyStatus] = useState(executor.companyStatus ?? "");
+  const [companyStatuses, setCompanyStatuses] = useState<string[]>(() =>
+    parseCompanyStatus(executor.companyStatus)
+  );
   const [contacts, setContacts] = useState(executor.contacts ?? "");
   const [requisites, setRequisites] = useState(executor.requisites ?? "");
   const [note, setNote] = useState(executor.note ?? "");
@@ -124,6 +130,10 @@ export function SettingsTab({
   const [newPassword, setNewPassword] = useState("");
   const [changingPassword, setChangingPassword] = useState(false);
 
+  // Сброс пароля администратором
+  const [adminNewPassword, setAdminNewPassword] = useState(() => generatePassword());
+  const [adminResettingPassword, setAdminResettingPassword] = useState(false);
+
   async function handleChangePassword() {
     if (newPassword.length < 6) return toast.error("Новый пароль не короче 6 символов");
     setChangingPassword(true);
@@ -147,11 +157,33 @@ export function SettingsTab({
     }
   }
 
+  async function handleAdminResetPassword() {
+    if (!executor.user || adminNewPassword.length < 6) return;
+    setAdminResettingPassword(true);
+    try {
+      const r = await fetch(`/api/users/${executor.user.id}/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: adminNewPassword }),
+      });
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error((body as { error?: string }).error ?? "Не удалось сбросить пароль");
+      }
+      toast.success("Пароль успешно изменён. Сообщите его пользователю.");
+      setAdminNewPassword(generatePassword());
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Ошибка");
+    } finally {
+      setAdminResettingPassword(false);
+    }
+  }
+
   useEffect(() => {
     setExecutorType(normalizeExecutorType(executor.type));
     setFullName(executor.user?.fullName ?? executor.name);
     setEmail(executor.user?.email ?? "");
-    setCompanyStatus(executor.companyStatus ?? "");
+    setCompanyStatuses(parseCompanyStatus(executor.companyStatus));
     setContacts(executor.contacts ?? "");
     setRequisites(executor.requisites ?? "");
     setNote(executor.note ?? "");
@@ -210,7 +242,7 @@ export function SettingsTab({
       const payload: Record<string, unknown> = {
         type: executorType,
         name: fullName.trim(),
-        companyStatus: isPermanent ? companyStatus || null : null,
+        companyStatus: isPermanent ? serializeCompanyStatus(companyStatuses) : null,
         contacts: contacts || null,
         requisites: requisites || null,
         note: note || null,
@@ -358,6 +390,39 @@ export function SettingsTab({
         </div>
       )}
 
+      {isAdmin && executor.user && executorType !== "service" && executorType !== "bank" && (
+        <div className="border rounded-lg p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-neutral-800">Сброс пароля</h3>
+          <p className="text-xs text-neutral-500">Введите новый пароль или сгенерируйте случайный. Сообщите пароль пользователю.</p>
+          <div className="space-y-1.5">
+            <Label>Новый пароль</Label>
+            <div className="flex gap-2">
+              <Input
+                value={adminNewPassword}
+                onChange={(e) => setAdminNewPassword(e.target.value)}
+                placeholder="Минимум 6 символов"
+                className="font-mono"
+              />
+              <Button type="button" variant="outline" size="icon" onClick={() => setAdminNewPassword(generatePassword())} title="Сгенерировать">
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
+            {adminNewPassword.length > 0 && adminNewPassword.length < 6 && (
+              <p className="text-xs text-red-600">Пароль слишком короткий</p>
+            )}
+          </div>
+          <div className="flex justify-end">
+            <Button
+              variant="outline"
+              onClick={handleAdminResetPassword}
+              disabled={adminResettingPassword || adminNewPassword.length < 6}
+            >
+              {adminResettingPassword ? "Сохранение..." : "Сохранить пароль"}
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="border rounded-lg p-4 space-y-3">
         <h3 className="text-sm font-semibold text-neutral-800">Профиль</h3>
         <div className="space-y-1.5">
@@ -367,8 +432,8 @@ export function SettingsTab({
               (ФИ, название компании, сервиса и т.д.)
             </span>
           </Label>
-          <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
-          {isService && fullName.trim() && (
+          <Input value={fullName} onChange={(e) => setFullName(e.target.value)} disabled={!canEdit} />
+          {isService && fullName.trim() && canEdit && (
             <p className="text-xs text-neutral-500">
               Сохранится как: <span className="font-medium">{fullName.trim().toUpperCase()}</span>
             </p>
@@ -383,24 +448,7 @@ export function SettingsTab({
         {isPermanent && (
           <div className="space-y-1.5">
             <Label>Статус в компании</Label>
-            <Select
-              value={companyStatus || "__none__"}
-              onValueChange={(v) => setCompanyStatus(v === "__none__" ? "" : (v ?? ""))}
-            >
-              <SelectTrigger>
-                <SelectValue>
-                  {companyStatus ? formatCompanyStatus(companyStatus) : "— Не задан —"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">— Не задан —</SelectItem>
-                {Object.entries(EXECUTOR_COMPANY_STATUSES).map(([v, l]) => (
-                  <SelectItem key={v} value={v}>
-                    {l}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <CompanyStatusPicker value={companyStatuses} onChange={setCompanyStatuses} />
           </div>
         )}
         <div className="space-y-1.5">
@@ -409,6 +457,7 @@ export function SettingsTab({
             value={contacts}
             onChange={(e) => setContacts(e.target.value)}
             placeholder="Телеграм, телефон и т.д."
+            disabled={!canEdit}
           />
         </div>
         {isAdmin && canBeResponsible(executorType) && (
@@ -452,11 +501,12 @@ export function SettingsTab({
             value={requisites}
             onChange={(e) => setRequisites(e.target.value)}
             placeholder="ИНН, расчётный счёт и т.д."
+            disabled={!canEdit}
           />
         </div>
         <div className="space-y-1.5">
           <Label>Источник оплаты по умолчанию</Label>
-          <Select value={defaultBankAccountId} onValueChange={(v) => setDefaultBankAccountId(v ?? "")}>
+          <Select value={defaultBankAccountId} onValueChange={(v) => setDefaultBankAccountId(v ?? "")} disabled={!canEdit}>
             <SelectTrigger>
               <SelectValue>
                 {defaultBankAccountId
@@ -476,7 +526,7 @@ export function SettingsTab({
         </div>
         <div className="space-y-1.5">
           <Label>Тип получателя</Label>
-          <RecipientTypesPicker value={recipientTypes} onChange={setRecipientTypes} />
+          <RecipientTypesPicker value={recipientTypes} onChange={setRecipientTypes} disabled={!canEdit} />
         </div>
       </div>
 
@@ -489,6 +539,7 @@ export function SettingsTab({
               value={contractFile}
               onChange={(e) => setContractFile(e.target.value)}
               placeholder="https://..."
+              disabled={!canEdit}
             />
           </div>
           <div className="space-y-1.5">
@@ -497,6 +548,7 @@ export function SettingsTab({
               value={ndaFile}
               onChange={(e) => setNdaFile(e.target.value)}
               placeholder="https://..."
+              disabled={!canEdit}
             />
           </div>
           <div className="flex items-center gap-2">
@@ -504,8 +556,9 @@ export function SettingsTab({
               id="inTgChat"
               checked={inTgChat}
               onCheckedChange={(v) => setInTgChat(Boolean(v))}
+              disabled={!canEdit}
             />
-            <Label htmlFor="inTgChat" className="cursor-pointer">
+            <Label htmlFor="inTgChat" className={canEdit ? "cursor-pointer" : "text-neutral-400"}>
               В чате Telegram
             </Label>
           </div>
@@ -519,6 +572,7 @@ export function SettingsTab({
           onChange={(e) => setNote(e.target.value)}
           rows={2}
           placeholder="Внутренние заметки"
+          disabled={!canEdit}
         />
       </div>
 
@@ -531,12 +585,13 @@ export function SettingsTab({
               <button
                 key={seg}
                 type="button"
-                onClick={() => toggleSpecialty(seg)}
+                onClick={() => canEdit && toggleSpecialty(seg)}
+                disabled={!canEdit}
                 className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
                   selected
                     ? "bg-violet-100 border-violet-300 text-violet-800"
                     : "bg-neutral-50 border-neutral-200 text-neutral-600 hover:bg-neutral-100"
-                }`}
+                } ${!canEdit ? "opacity-60 cursor-default pointer-events-none" : ""}`}
               >
                 {seg}
               </button>
@@ -558,30 +613,34 @@ export function SettingsTab({
                   className="inline-flex items-center gap-1 rounded-full bg-neutral-100 border border-neutral-200 px-2.5 py-0.5 text-xs font-medium text-neutral-700"
                 >
                   {wt.name}
-                  <button
-                    type="button"
-                    onClick={() => setSelectedWorkTypeIds(selectedWorkTypeIds.filter((x) => x !== id))}
-                    className="ml-0.5 rounded-full hover:bg-neutral-300 p-0.5"
-                  >
-                    <X className="h-2.5 w-2.5" />
-                  </button>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedWorkTypeIds(selectedWorkTypeIds.filter((x) => x !== id))}
+                      className="ml-0.5 rounded-full hover:bg-neutral-300 p-0.5"
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  )}
                 </span>
               );
             })}
           </div>
         )}
-        {allWorkTypes.length === 0 ? (
-          <span className="text-xs text-neutral-400">Нет доступных видов работ</span>
-        ) : (
-          <WorkTypesMultiSelect
-            options={allWorkTypes.map((wt) => ({
-              id: wt.id,
-              name: wt.name,
-              segment: wt.segment,
-            }))}
-            value={selectedWorkTypeIds}
-            onChange={setSelectedWorkTypeIds}
-          />
+        {canEdit && (
+          allWorkTypes.length === 0 ? (
+            <span className="text-xs text-neutral-400">Нет доступных видов работ</span>
+          ) : (
+            <WorkTypesMultiSelect
+              options={allWorkTypes.map((wt) => ({
+                id: wt.id,
+                name: wt.name,
+                segment: wt.segment,
+              }))}
+              value={selectedWorkTypeIds}
+              onChange={setSelectedWorkTypeIds}
+            />
+          )
         )}
       </div>
 
@@ -608,11 +667,13 @@ export function SettingsTab({
         )}
       </div>
 
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saving}>
-          {saving ? "Сохранение..." : "Сохранить настройки"}
-        </Button>
-      </div>
+      {canEdit && (
+        <div className="flex justify-end">
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? "Сохранение..." : "Сохранить настройки"}
+          </Button>
+        </div>
+      )}
 
       {isOwner && executor.user && (
         <div className="border rounded-lg p-4 space-y-3">

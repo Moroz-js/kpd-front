@@ -7,7 +7,7 @@ import {
   ENTITY_STATUSES,
   CHARGE_STATUSES,
   EXECUTOR_TYPES,
-  EXECUTOR_COMPANY_STATUSES,
+  formatCompanyStatus,
   PROJECT_TYPES,
 } from "@/lib/statuses";
 import { formatRecipientTypes, parseRecipientTypes } from "@/lib/executor-recipient-type";
@@ -161,8 +161,8 @@ export function formatChangeValue(value: unknown, field: string): string {
     }
   }
 
-  if (field === "companyStatus" && str in EXECUTOR_COMPANY_STATUSES) {
-    return EXECUTOR_COMPANY_STATUSES[str as keyof typeof EXECUTOR_COMPANY_STATUSES];
+  if (field === "companyStatus") {
+    return formatCompanyStatus(str);
   }
 
   if (field === "recipientType") {

@@ -51,6 +51,7 @@ type Props = {
   executorId: string;
   isAdmin: boolean;
   isOwner: boolean;
+  isPermanent?: boolean;
   onTaskCountChange?: (count: number) => void;
 };
 
@@ -72,7 +73,7 @@ function TaskStatusBadge({ status }: { status: string }) {
   );
 }
 
-export function TasksTab({ executorId, isAdmin, isOwner, onTaskCountChange }: Props) {
+export function TasksTab({ executorId, isAdmin, isOwner, isPermanent = true, onTaskCountChange }: Props) {
   const [subView, setSubView] = useState<"tasks" | "review">("tasks");
   const [tasks, setTasks] = useState<TaskRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -145,15 +146,17 @@ export function TasksTab({ executorId, isAdmin, isOwner, onTaskCountChange }: Pr
           >
             Задачи
           </button>
-          <button
-            className={cn(
-              "px-3 py-1 text-xs font-medium rounded transition-colors",
-              subView === "review" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-800"
-            )}
-            onClick={() => setSubView("review")}
-          >
-            Работы на проверку
-          </button>
+          {(isAdmin || isPermanent) && (
+            <button
+              className={cn(
+                "px-3 py-1 text-xs font-medium rounded transition-colors",
+                subView === "review" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-800"
+              )}
+              onClick={() => setSubView("review")}
+            >
+              Работы на проверку
+            </button>
+          )}
         </div>
         {subView === "tasks" && isAdmin && (
           <Button size="sm" onClick={() => setCreateOpen(true)}>
@@ -195,9 +198,6 @@ export function TasksTab({ executorId, isAdmin, isOwner, onTaskCountChange }: Pr
                 <tr key={task.id} className={`hover:bg-neutral-50 border-b border-neutral-100 ${task.status === "done" ? "opacity-60" : ""}`}>
                   <td className="px-3 py-1.5">
                     <div className="flex items-center gap-1.5">
-                      {task.isOnboarding && (
-                        <span className="text-[10px] text-neutral-400 border border-neutral-200 rounded px-1">онбординг</span>
-                      )}
                       <span>{task.title}</span>
                     </div>
                   </td>

@@ -67,11 +67,15 @@ const patchSchema = z.object({
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const me = await getSessionUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!canEditExecutorSettings(me)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { id } = await ctx.params;
 
-  // Постоянный исполнитель (не admin и не активный PM) может редактировать только себя
+  // Редактировать настройки может: admin, PM, любой executor (только свой профиль)
+  if (!canEditExecutorSettings(me)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // Не-admin и не-PM может редактировать только себя
   if (!isAdmin(me) && !isResponsible(me) && me.executorId !== id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

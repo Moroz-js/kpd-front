@@ -356,6 +356,14 @@ export async function updateExecutor(id: string, patch: UpdateExecutorInput, use
       data: {
         ...(linkedUserId && { userId: linkedUserId, accessRevokedAt: null }),
         ...(patch.type !== undefined && { type: nextType }),
+        // При смене типа с permanent/external на service/bank — отзываем доступ:
+        // service и bank не имеют личной сметы, логин им не нужен.
+        // external — может иметь личную смету (userId != null), доступ сохраняем.
+        ...(patch.type !== undefined &&
+          (nextType === "service" || nextType === "bank") &&
+          before.type !== "service" && before.type !== "bank" &&
+          before.userId &&
+          !linkedUserId && { accessRevokedAt: new Date() }),
         ...(resolvedName !== undefined && { name: resolvedName }),
         ...(patch.type !== undefined &&
           nextType !== "permanent" && { companyStatus: null }),

@@ -300,19 +300,19 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
                 Статус
               </SortableHead>
               <TableHead>Тип</TableHead>
-              <TableHead className={stickyActionsHead} />
+              {isAdmin && <TableHead className={stickyActionsHead} />}
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-neutral-500 py-8">
+                <TableCell colSpan={isAdmin ? 9 : 8} className="text-center text-neutral-500 py-8">
                   Загрузка...
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-neutral-500 py-8">
+                <TableCell colSpan={isAdmin ? 9 : 8} className="text-center text-neutral-500 py-8">
                   {scope === "mine"
                     ? "Вы пока не назначены руководителем ни на один проект."
                     : "Нет проектов"}
@@ -348,36 +348,34 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
                       label={PROJECT_TYPES[r.type as keyof typeof PROJECT_TYPES] ?? "—"}
                     />
                   </TableCell>
-                  <TableCell className={cn(stickyActionsCell, r.status === "archived" && "bg-neutral-100 text-neutral-400")}>
-                    <div className={stickyActionsInner}>
-                      {isAdmin && (
-                        <>
-                          <Button size="sm" variant="ghost" onClick={() => setEditing(r)} title="Редактировать">
-                            <Pencil className="h-3.5 w-3.5" />
+                  {isAdmin && (
+                    <TableCell className={cn(stickyActionsCell, r.status === "archived" && "bg-neutral-100 text-neutral-400")}>
+                      <div className={stickyActionsInner}>
+                        <Button size="sm" variant="ghost" onClick={() => setEditing(r)} title="Редактировать">
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        {r.status === "active" ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setArchiveTarget(r)}
+                            title="Архивировать"
+                          >
+                            <Archive className="h-3.5 w-3.5" />
                           </Button>
-                          {r.status === "active" ? (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => setArchiveTarget(r)}
-                              title="Архивировать"
-                            >
-                              <Archive className="h-3.5 w-3.5" />
-                            </Button>
-                          ) : (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => setUnarchiveTarget(r)}
-                              title="Вернуть из архива"
-                            >
-                              <ArchiveRestore className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </TableCell>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setUnarchiveTarget(r)}
+                            title="Вернуть из архива"
+                          >
+                            <ArchiveRestore className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))
             )}

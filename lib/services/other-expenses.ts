@@ -72,6 +72,12 @@ function assertCanChangeWorkStatus(existing: Existing, patch: UpdateOtherExpense
   if (hasOtherExpensePayment(existing.paymentStatus)) {
     throw new Error("Статус работы нельзя менять после создания выплаты");
   }
+  if (patch.workStatus === "checked") {
+    throw new Error("Статус «Проверено» устанавливается только через проверку работы");
+  }
+  if (patch.workStatus === "paid") {
+    throw new Error("Статус «Оплачено» устанавливается автоматически при оплате выплаты");
+  }
 }
 
 function applyPaymentCascade(

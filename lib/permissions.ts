@@ -129,11 +129,11 @@ export function canManageExecutors(user: SessionLike | null | undefined): boolea
 
 /**
  * Редактирует настройки исполнителя.
- * admin — всё; PM и постоянный исполнитель — да, но без admin-only полей
- * (генерация пароля другим, архив, выдача/отзыв доступа) — это ограничивается в API/UI.
+ * admin — всё; PM — всех; executor (permanent + external-person) — только себя.
+ * Admin-only поля (пароль, тип, роль ответственного) ограничены в API/UI.
  */
 export function canEditExecutorSettings(user: SessionLike | null | undefined): boolean {
-  return isAdmin(user) || isResponsible(user) || isPermanentExecutor(user);
+  return isAdmin(user) || isResponsible(user) || isExecutor(user);
 }
 
 /** Сброс/генерация пароля другому пользователю — только admin. */
@@ -173,18 +173,19 @@ export function canEditOtherExpense(
   row: {
     createdById: string;
     responsibleExecutorId?: string | null;
+    workStatus?: string | null;
     paymentStatus?: string | null;
   }
 ): boolean {
   if (isAdmin(user)) return true;
   if (!canAccessOtherExpenses(user)) return false;
+  if (row.workStatus === "paid") return false;
   if (row.paymentStatus === "sent" || row.paymentStatus === "paid") return false;
-  if (row.createdById === user.id) return true;
-  return (
-    !!user.executorId &&
-    !!row.responsibleExecutorId &&
-    row.responsibleExecutorId === user.executorId
-  );
+  // РП может редактировать в том числе при checked
+  if (user.executorId && row.responsibleExecutorId && row.responsibleExecutorId === user.executorId) return true;
+  // Создатель — только до проверки
+  if (row.workStatus === "checked") return false;
+  return row.createdById === user.id;
 }
 
 /** Удаление строки прочих трат — те же правила, что и редактирование. */
@@ -193,6 +194,7 @@ export function canDeleteOtherExpense(
   row: {
     createdById: string;
     responsibleExecutorId?: string | null;
+    workStatus?: string | null;
     paymentStatus?: string | null;
   }
 ): boolean {

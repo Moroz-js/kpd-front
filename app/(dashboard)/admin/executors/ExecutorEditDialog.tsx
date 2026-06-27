@@ -21,9 +21,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { WorkTypesMultiSelect } from "@/components/ui-custom/WorkTypesMultiSelect";
-import { EXECUTOR_COMPANY_STATUSES, EXECUTOR_TYPES, formatCompanyStatus } from "@/lib/statuses";
-import { normalizeExecutorType } from "@/lib/executor-type";
 import { RecipientTypesPicker } from "@/components/ui-custom/RecipientTypesPicker";
+import { CompanyStatusPicker } from "@/components/ui-custom/CompanyStatusPicker";
+import { EXECUTOR_TYPES, parseCompanyStatus, serializeCompanyStatus } from "@/lib/statuses";
+import { normalizeExecutorType } from "@/lib/executor-type";
 import type { ExecutorRow } from "./ExecutorsClient";
 
 type BankOption = { id: string; name: string; status: string };
@@ -46,7 +47,9 @@ export function ExecutorEditDialog({
   onSaved: () => void;
 }) {
   const [name, setName] = React.useState(row.name);
-  const [companyStatus, setCompanyStatus] = React.useState(row.companyStatus ?? "");
+  const [companyStatuses, setCompanyStatuses] = React.useState<string[]>(() =>
+    parseCompanyStatus(row.companyStatus)
+  );
   const [specialty, setSpecialty] = React.useState(row.specialty ?? "");
   const [contacts, setContacts] = React.useState(row.contacts ?? "");
   const [requisites, setRequisites] = React.useState(row.requisites ?? "");
@@ -80,7 +83,7 @@ export function ExecutorEditDialog({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: name.trim(),
-        companyStatus: companyStatus || null,
+        companyStatus: serializeCompanyStatus(companyStatuses),
         specialty: specialty || null,
         contacts: contacts || null,
         requisites: requisites || null,
@@ -124,25 +127,8 @@ export function ExecutorEditDialog({
             </div>
             {isPermanent && (
               <div className="space-y-1.5">
-                <Label htmlFor="companyStatus">Статус в компании</Label>
-                <Select
-                  value={companyStatus || "__none__"}
-                  onValueChange={(v) => setCompanyStatus(v === "__none__" ? "" : (v ?? ""))}
-                >
-                  <SelectTrigger id="companyStatus">
-                    <SelectValue>
-                      {companyStatus ? formatCompanyStatus(companyStatus) : "— Не задан —"}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">— Не задан —</SelectItem>
-                    {Object.entries(EXECUTOR_COMPANY_STATUSES).map(([v, l]) => (
-                      <SelectItem key={v} value={v}>
-                        {l}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>Статус в компании</Label>
+                <CompanyStatusPicker value={companyStatuses} onChange={setCompanyStatuses} />
               </div>
             )}
           </div>

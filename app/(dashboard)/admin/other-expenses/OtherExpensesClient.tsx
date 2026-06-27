@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, CheckCircle, X } from "lucide-react";
+import { Plus, Pencil, Trash2, CheckCircle, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -137,6 +137,7 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
   const [editTarget, setEditTarget] = useState<OtherExpense | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<OtherExpense | null>(null);
   const [checkTarget, setCheckTarget] = useState<OtherExpense | null>(null);
+  const [reworkTarget, setReworkTarget] = useState<OtherExpense | null>(null);
 
   // Bulk
   const [bulkWorkStatus, setBulkWorkStatus] = useState("");
@@ -177,10 +178,17 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
     if (isAdmin) return true;
     if (row.workStatus === "paid") return false;
     if (row.paymentStatus === "sent" || row.paymentStatus === "paid") return false;
-    return (
-      row.createdById === userId ||
-      (!!executorId && row.responsibleExecutorId === executorId)
-    );
+    // РП может редактировать в том числе при checked
+    if (!!executorId && row.responsibleExecutorId === executorId) return true;
+    // Создатель — только до проверки
+    if (row.workStatus === "checked") return false;
+    return row.createdById === userId;
+  }
+
+  /** Проверить / отклонить может admin или ответственный по строке. */
+  function canReview(row: OtherExpense) {
+    if (isAdmin) return true;
+    return !!executorId && row.responsibleExecutorId === executorId;
   }
 
   const allYears = [...new Set(rows.map(r => r.executionYear))].sort();
@@ -300,6 +308,25 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
       const updated = await readApiJson<OtherExpense>(res);
       setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, ...updated } : r)));
       toast.success("Работа проверена, выплата создана");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Ошибка");
+      silentLoad();
+    }
+  }
+
+  async function handleRework(row: OtherExpense) {
+    setReworkTarget(null);
+    setRows((prev) => prev.map((r) => r.id === row.id ? { ...r, workStatus: "rework" } : r));
+    try {
+      const res = await fetch(`/api/other-expenses/${row.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workStatus: "rework" }),
+      });
+      if (!res.ok) { const d = await readApiJson<{ error?: string }>(res); throw new Error(d.error ?? "Ошибка"); }
+      const updated = await readApiJson<OtherExpense>(res);
+      setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, ...updated } : r)));
+      toast.success("Работа отправлена на доработку");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Ошибка");
       silentLoad();
@@ -447,7 +474,8 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
               <SelectValue>{bulkWorkStatus ? (WORK_STATUSES[bulkWorkStatus as keyof typeof WORK_STATUSES]?.label ?? "Статус работы") : "Статус работы"}</SelectValue>
             </SelectTrigger>
             <SelectContent>
-              {Object.entries(WORK_STATUSES).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
+              <SelectItem value="submitted">{WORK_STATUSES.submitted.label}</SelectItem>
+              <SelectItem value="rework">{WORK_STATUSES.rework.label}</SelectItem>
             </SelectContent>
           </Select>
           <div className="flex items-center gap-1">
@@ -628,9 +656,14 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
                   )}
                 >
                   <div className="flex shrink-0 gap-0.5 items-center justify-end">
-                    {isAdmin && !row.paymentStatus && row.workStatus === "submitted" && (
+                    {canReview(row) && !row.paymentStatus && row.workStatus === "submitted" && (
                       <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Проверить" onClick={() => setCheckTarget(row)}>
                         <CheckCircle className="h-3.5 w-3.5 text-blue-600" />
+                      </Button>
+                    )}
+                    {canReview(row) && !row.paymentStatus && row.workStatus === "submitted" && (
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="На доработку" onClick={() => setReworkTarget(row)}>
+                        <RotateCcw className="h-3.5 w-3.5 text-amber-500" />
                       </Button>
                     )}
                     {canEdit(row) && (
@@ -664,6 +697,7 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
       {editTarget && (
         <OtherExpenseFormDialog
           isAdmin={isAdmin}
+          canRework={canReview(editTarget)}
           projects={projects} executors={executors} workTypes={workTypes}
           permanentExecutors={permanentExecutors} bankAccounts={bankAccounts}
           initial={editTarget}
@@ -683,6 +717,21 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
           <AlertDialogFooter>
             <AlertDialogCancel>Отмена</AlertDialogCancel>
             <AlertDialogAction onClick={() => checkTarget && handleCheck(checkTarget)}>Проверить</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!reworkTarget} onOpenChange={(o) => !o && setReworkTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Отправить на доработку?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Статус сменится на «Нужно доработать». Исполнитель сможет отредактировать строку.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction onClick={() => reworkTarget && handleRework(reworkTarget)}>На доработку</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -708,10 +757,11 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
 // ─── Форма создания / редактирования ─────────────────────────────────────────
 
 function OtherExpenseFormDialog({
-  isAdmin, projects, executors, workTypes, permanentExecutors, bankAccounts,
+  isAdmin, canRework = false, projects, executors, workTypes, permanentExecutors, bankAccounts,
   initial, onClose, onSaved,
 }: {
   isAdmin: boolean;
+  canRework?: boolean;
   projects: ProjectRef[]; executors: Ref[]; workTypes: Ref[]; permanentExecutors: Ref[]; bankAccounts: Ref[];
   initial?: OtherExpense;
   onClose: () => void;
@@ -780,7 +830,9 @@ function OtherExpenseFormDialog({
           amount: parseFloat(amount),
           preferredPayMethod: preferredPayMethod || null,
           ...(paymentCreated ? { plannedPayAt: plannedPayAt || null } : {}),
-          workStatus: paymentCreated ? undefined : (workStatus || "submitted"),
+          // При создании workStatus не передаём — бэк всегда ставит submitted.
+          // При редактировании без выплаты — только submitted/rework.
+          ...(!isEdit || paymentCreated ? {} : { workStatus: workStatus || "submitted" }),
           comment: comment || null,
         }),
       });
@@ -908,20 +960,22 @@ function OtherExpenseFormDialog({
           )}
           <div className="space-y-1.5 min-w-0">
             <Label>Статус работы</Label>
-            {paymentCreated ? (
+            {/* При создании — всегда «Выставлено» (не редактируется). */}
+            {/* При редактировании: если выплата создана — read-only; иначе только submitted/rework. */}
+            {(!isEdit || paymentCreated) ? (
               <Input
                 value={WORK_STATUSES[workStatus as keyof typeof WORK_STATUSES]?.label ?? workStatus}
                 disabled
                 className="h-9"
               />
             ) : (
-              <Select value={workStatus || "__none__"} onValueChange={(v) => setWorkStatus(v === "__none__" ? "" : (v ?? ""))}>
+              <Select value={workStatus} onValueChange={(v) => v && setWorkStatus(v)}>
                 <SelectTrigger>
-                  <SelectValue>{workStatus ? (WORK_STATUSES[workStatus as keyof typeof WORK_STATUSES]?.label ?? workStatus) : "— По умолчанию —"}</SelectValue>
+                  <SelectValue>{WORK_STATUSES[workStatus as keyof typeof WORK_STATUSES]?.label ?? workStatus}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none__">— По умолчанию —</SelectItem>
-                  {Object.entries(WORK_STATUSES).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
+                  <SelectItem value="submitted">{WORK_STATUSES.submitted.label}</SelectItem>
+                  {canRework && <SelectItem value="rework">{WORK_STATUSES.rework.label}</SelectItem>}
                 </SelectContent>
               </Select>
             )}

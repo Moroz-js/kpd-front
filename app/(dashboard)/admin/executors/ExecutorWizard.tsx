@@ -20,8 +20,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { EXECUTOR_COMPANY_STATUSES, formatCompanyStatus } from "@/lib/statuses";
+import { serializeCompanyStatus } from "@/lib/statuses";
 import { RecipientTypesPicker } from "@/components/ui-custom/RecipientTypesPicker";
+import { CompanyStatusPicker } from "@/components/ui-custom/CompanyStatusPicker";
 import type { ExecutorType } from "@/lib/statuses";
 
 function generatePassword(): string {
@@ -49,7 +50,7 @@ export function ExecutorWizard({
   const [firstName, setFirstName] = React.useState("");
   const [lastName, setLastName] = React.useState("");
   const [email, setEmail] = React.useState("");
-  const [companyStatus, setCompanyStatus] = React.useState("");
+  const [companyStatuses, setCompanyStatuses] = React.useState<string[]>([]);
   const [password, setPassword] = React.useState(() => generatePassword());
   const [name, setName] = React.useState("");
 
@@ -81,7 +82,8 @@ export function ExecutorWizard({
       payload.lastName = lastName.trim();
       payload.email = email.trim();
       payload.password = password;
-      if (companyStatus) payload.companyStatus = companyStatus;
+      const cs = serializeCompanyStatus(companyStatuses);
+      if (cs) payload.companyStatus = cs;
     } else {
       if (!name.trim()) return toast.error("Введите название");
       payload.name = name.trim();
@@ -198,25 +200,8 @@ export function ExecutorWizard({
                   </div>
                 </div>
                 <div className="space-y-1.5 min-w-0">
-                  <Label htmlFor="companyStatus">Статус в компании</Label>
-                  <Select
-                    value={companyStatus || "__none__"}
-                    onValueChange={(v) => setCompanyStatus(v === "__none__" ? "" : (v ?? ""))}
-                  >
-                  <SelectTrigger id="companyStatus">
-                    <SelectValue>
-                      {companyStatus ? formatCompanyStatus(companyStatus) : "— Не задан —"}
-                    </SelectValue>
-                  </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">— Не задан —</SelectItem>
-                      {Object.entries(EXECUTOR_COMPANY_STATUSES).map(([v, l]) => (
-                        <SelectItem key={v} value={v}>
-                          {l}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label>Статус в компании</Label>
+                  <CompanyStatusPicker value={companyStatuses} onChange={setCompanyStatuses} />
                 </div>
               </>
             ) : (

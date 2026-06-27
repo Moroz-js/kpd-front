@@ -569,7 +569,7 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
                             variant="ghost"
                             onClick={() => r.userId && setResetPasswordTarget(r)}
                             title="Сменить пароль"
-                            className={r.userId ? "" : "invisible pointer-events-none"}
+                            className={r.userId && r.type !== "service" && r.type !== "bank" ? "" : "invisible pointer-events-none"}
                           >
                             <KeyRound className="h-3.5 w-3.5" />
                           </Button>

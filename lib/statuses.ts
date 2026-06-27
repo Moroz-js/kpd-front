@@ -109,6 +109,19 @@ export function formatCompanyStatus(raw: string | null | undefined): string {
     .join(", ");
 }
 
+export function parseCompanyStatus(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s): s is keyof typeof EXECUTOR_COMPANY_STATUSES => s in EXECUTOR_COMPANY_STATUSES);
+}
+
+export function serializeCompanyStatus(values: string[]): string | null {
+  const unique = [...new Set(values.filter((v) => v in EXECUTOR_COMPANY_STATUSES))];
+  return unique.length ? unique.join(",") : null;
+}
+
 // «Тип получателя» (I) — 16 значений, см. TDNB-18 §Тип получателя.
 export const RECIPIENT_TYPES = [
   "Сервис заруб.",

@@ -80,21 +80,25 @@ type SummaryDef = {
   isEditable?: boolean;
   highlight?: boolean;
   signed?: boolean;
-  /** Подпись слева, цифры курсивом (строка «Баланс на начало») */
   balanceStartRow?: boolean;
+  labelAlign?: "left" | "center" | "right";
+  borderAfter?: boolean;
 };
 
+const ROW_BORDER = "border-b border-neutral-200";
+const ROW_BORDER_STRONG = "border-b border-neutral-600";
+
 const SUMMARY_DEFS: SummaryDef[] = [
-  { key: "balanceStart", label: "Баланс на начало", isEditable: true, balanceStartRow: true },
-  { key: "incomeFact", label: "Приход (факт)" },
-  { key: "incomePlanOnly", label: "Приход (план)" },
-  { key: "incomePlanFact", label: "Приход (план+факт)" },
-  { key: "expensePlanDP", label: "Расход (план из ДП)" },
-  { key: "balanceEndDP", label: "Баланс на конец (из ДП)" },
-  { key: "paidFromBudget", label: "Оплачено из смет" },
-  { key: "unpaidFromBudget", label: "Неоплачено из смет" },
-  { key: "totalExpenseBudget", label: "Общий расход из смет" },
-  { key: "balanceEndBudget", label: "Баланс на конец периода из смет" },
+  { key: "balanceStart", label: "Баланс на начало", isEditable: true, balanceStartRow: true, labelAlign: "left", borderAfter: true },
+  { key: "incomeFact", label: "Приход (факт)", labelAlign: "center" },
+  { key: "incomePlanOnly", label: "Приход (план)", labelAlign: "center" },
+  { key: "incomePlanFact", label: "Приход (план+факт)", labelAlign: "center", borderAfter: true },
+  { key: "expensePlanDP", label: "Расход (План из дп)", labelAlign: "center", borderAfter: true },
+  { key: "balanceEndDP", label: "Баланс из ДП", signed: true, labelAlign: "right" },
+  { key: "balanceEndBudget", label: "Баланс из смет", signed: true, labelAlign: "right", borderAfter: true },
+  { key: "paidFromBudget", label: "Оплачено из смет", labelAlign: "right" },
+  { key: "unpaidFromBudget", label: "Неплачено из смет", labelAlign: "right" },
+  { key: "totalExpenseBudget", label: "Общий расход из смет", labelAlign: "right", borderAfter: true },
 ];
 
 type AggregateDef = { key: keyof Aggregates; label: string; bold: boolean };
@@ -427,14 +431,20 @@ export function CashflowClient() {
                   <tr
                     key={def.key}
                     className={cn(
-                      "border-b border-neutral-100 hover:bg-neutral-50",
+                      def.borderAfter ? ROW_BORDER_STRONG : ROW_BORDER,
+                      "hover:bg-neutral-50",
                       def.highlight ? "bg-neutral-50/50" : ""
                     )}
                   >
                     <td
                       className={cn(
                         compactLbl,
-                        def.balanceStartRow ? "text-left font-normal italic text-neutral-600" : "text-right",
+                        def.labelAlign === "center"
+                          ? "text-center"
+                          : def.labelAlign === "left" || def.balanceStartRow
+                            ? "text-left"
+                            : "text-right",
+                        def.balanceStartRow && "font-normal italic text-neutral-600",
                         def.highlight ? "font-medium bg-neutral-50 text-neutral-800" : "font-normal italic text-neutral-500"
                       )}
                     >
@@ -491,7 +501,7 @@ export function CashflowClient() {
               {/* Helper: render project block with external/internal separator */}
               {(["plan", "iw", "charges", "cf"] as const).map((blockKey) => {
                 const blockLabels = {
-                  plan: "План расходов из ДП",
+                  plan: "План расходов из дашбордов проектов",
                   iw: "План-факт расходов из работ",
                   charges: "План доходов",
                   cf: "Кэшфлоу по проектам",

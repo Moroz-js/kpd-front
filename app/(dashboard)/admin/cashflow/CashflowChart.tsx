@@ -42,7 +42,7 @@ type Props = {
 const ALL_PROJECTS = "_all";
 
 const SERIES_ALL = [
-  { key: "Баланс (из ДП)", color: "#2563eb", dash: undefined as string | undefined },
+  { key: "Баланс из ДП", color: "#2563eb", dash: undefined as string | undefined },
   { key: "Баланс из смет", color: "#16a34a", dash: "4 2" },
 ] as const;
 
@@ -91,7 +91,7 @@ export function CashflowChart({
       if (projectId === ALL_PROJECTS) {
         return {
           ...base,
-          "Баланс (из ДП)": balanceEndDP[i] ?? 0,
+          "Баланс из ДП": balanceEndDP[i] ?? 0,
           "Баланс из смет": balanceEndBudget[i] ?? 0,
         };
       }

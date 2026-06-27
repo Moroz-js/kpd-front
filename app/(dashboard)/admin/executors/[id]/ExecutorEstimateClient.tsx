@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { WorksTab } from "./WorksTab";
@@ -69,6 +70,7 @@ export function ExecutorEstimateClient({
   initialTab,
   view = "full",
 }: Props) {
+  const router = useRouter();
   const isAdmin = viewerRole === "admin";
   const isOwner = viewerExecutorId != null && viewerExecutorId === executorId;
   const settingsOnlyView = view === "settings-only" && !isOwner && !isAdmin;
@@ -132,13 +134,19 @@ export function ExecutorEstimateClient({
       const wt = d.executorWorkTypes.map((ewt) => ewt.workType);
       setWorkTypes(wt);
     }
-  }, [executorId, loadExecutor]);
+    // Обновляем layout (сайдбар), чтобы имя отразилось сразу.
+    router.refresh();
+  }, [executorId, loadExecutor, router]);
 
   const hasPersonalSmeta =
     !settingsOnlyView &&
     executor != null &&
     hasEstimateTabs(executor.type, executor.user?.id ?? null);
   const settingsOnly = !hasPersonalSmeta;
+
+  const isPermanentType = executor != null && normalizeExecutorType(executor.type) === "permanent";
+  // Внешний владелец не видит вкладку отпусков и "работы на проверку"
+  const isExternalOwner = isOwner && !isAdmin && !isPermanentType;
 
   useEffect(() => {
     if (!executor) return;
@@ -169,7 +177,10 @@ export function ExecutorEstimateClient({
     ? canSeeSettings
       ? [{ id: "settings" as TabId, label: "Настройки" }]
       : []
-    : [...TABS, ...(canSeeSettings ? [{ id: "settings" as TabId, label: "Настройки" }] : [])];
+    : [
+        ...TABS.filter((t) => !(t.id === "vacations" && isExternalOwner)),
+        ...(canSeeSettings ? [{ id: "settings" as TabId, label: "Настройки" }] : []),
+      ];
 
   return (
     <div className="flex flex-col h-[calc(100vh-3rem)] min-h-0 gap-3">
@@ -254,6 +265,7 @@ export function ExecutorEstimateClient({
             executorId={executorId}
             isAdmin={isAdmin}
             isOwner={isOwner}
+            isPermanent={isPermanentType}
             onTaskCountChange={setOpenTaskCount}
           />
         )}
@@ -267,6 +279,7 @@ export function ExecutorEstimateClient({
               onChanged={reload}
               isAdmin={isAdmin}
               isOwner={isOwner}
+              canEdit={isAdmin || isPermanentType}
             />
           </div>
         )}

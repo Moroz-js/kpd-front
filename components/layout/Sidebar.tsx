@@ -102,8 +102,8 @@ function buildNavGroups({
     items.push({ label: "Прочие траты", href: "/executor/other-expenses", icon: Receipt });
   }
 
-  // Исполнители: PM и постоянный исполнитель
-  if (isPm || isPermanentExecutor) {
+  // Исполнители: только PM
+  if (isPm) {
     items.push({ label: "Исполнители", href: "/executor/executors", icon: Users });
   }
 

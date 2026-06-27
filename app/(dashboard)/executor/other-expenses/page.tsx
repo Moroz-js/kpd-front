@@ -20,18 +20,15 @@ export default async function Page() {
   ]);
 
   return (
-    <div className="p-6 space-y-4">
-      <h1 className="text-xl font-semibold">Прочие траты</h1>
-      <OtherExpensesClient
-        isAdmin={false}
-        userId={user.id}
-        executorId={user.executorId ?? null}
-        projects={projects}
-        executors={executors}
-        workTypes={workTypes as { id: string; name: string; segment: string }[]}
-        permanentExecutors={permanentExecutors}
-        bankAccounts={bankAccounts}
-      />
-    </div>
+    <OtherExpensesClient
+      isAdmin={false}
+      userId={user.id}
+      executorId={user.executorId ?? null}
+      projects={projects}
+      executors={executors}
+      workTypes={workTypes as { id: string; name: string; segment: string }[]}
+      permanentExecutors={permanentExecutors}
+      bankAccounts={bankAccounts}
+    />
   );
 }
