@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, CheckCircle, RotateCcw } from "lucide-react";
+import { Plus, Pencil, Trash2, CheckCircle, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
