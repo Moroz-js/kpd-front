@@ -188,6 +188,23 @@ export function canEditOtherExpense(
   return row.createdById === user.id;
 }
 
+/**
+ * Откат статуса «Проверено» → «Выставлено»/«На доработку» + удаление выплаты.
+ * admin — всегда; ответственный по строке — если выплата ещё не отправлена/оплачена.
+ */
+export function canRevertOtherExpenseCheck(
+  user: SessionLike,
+  row: {
+    responsibleExecutorId?: string | null;
+    paymentStatus?: string | null;
+  }
+): boolean {
+  if (isAdmin(user)) return true;
+  if (row.paymentStatus === "sent" || row.paymentStatus === "paid") return false;
+  if (!canAccessOtherExpenses(user)) return false;
+  return !!(user.executorId && row.responsibleExecutorId && row.responsibleExecutorId === user.executorId);
+}
+
 /** Удаление строки прочих трат — те же правила, что и редактирование. */
 export function canDeleteOtherExpense(
   user: SessionLike,

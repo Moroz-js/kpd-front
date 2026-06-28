@@ -21,7 +21,7 @@ type Row = {
   email: string;
   isActive: boolean;
   projectCount: number;
-  projects: { id: string; name: string }[];
+  projects: { id: string; name: string; status: string }[];
   createdAt: string;
 };
 
@@ -151,7 +151,10 @@ export function ResponsiblesClient() {
                             href={`/admin/projects/${p.id}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="block hover:underline text-blue-600"
+                            className={cn(
+                              "block hover:underline",
+                              p.status === "archived" ? "text-neutral-400" : "text-blue-600"
+                            )}
                           >
                             {p.name}
                           </Link>

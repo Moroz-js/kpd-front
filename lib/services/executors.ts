@@ -252,6 +252,7 @@ export async function createExecutor(input: CreateExecutorInput, userId: string)
 
 export type UpdateExecutorInput = {
   type?: ExecutorType;
+  status?: "active" | "archived";
   name?: string;
   email?: string;
   password?: string;
@@ -282,7 +283,9 @@ export async function updateExecutor(id: string, patch: UpdateExecutorInput, use
 
   const nextType = patch.type ?? normalizeExecutorType(before.type);
 
-  if (patch.isResponsible === true && before.status === "archived") {
+  const nextStatus = patch.status ?? before.status;
+
+  if (patch.isResponsible === true && (nextStatus === "archived" || before.status === "archived")) {
     throw new Error("Нельзя назначить руководителем проекта архивного исполнителя");
   }
 
@@ -355,6 +358,9 @@ export async function updateExecutor(id: string, patch: UpdateExecutorInput, use
       where: { id },
       data: {
         ...(linkedUserId && { userId: linkedUserId, accessRevokedAt: null }),
+        ...(patch.status !== undefined && { status: patch.status }),
+        // При архивировании — отзываем доступ к системе
+        ...(patch.status === "archived" && before.userId && { accessRevokedAt: new Date() }),
         ...(patch.type !== undefined && { type: nextType }),
         // При смене типа с permanent/external на service/bank — отзываем доступ:
         // service и bank не имеют личной сметы, логин им не нужен.

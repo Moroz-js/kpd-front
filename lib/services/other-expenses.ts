@@ -69,14 +69,22 @@ type Existing = Awaited<ReturnType<typeof prisma.otherExpense.findUniqueOrThrow>
 
 function assertCanChangeWorkStatus(existing: Existing, patch: UpdateOtherExpenseInput) {
   if (patch.workStatus === undefined) return;
-  if (hasOtherExpensePayment(existing.paymentStatus)) {
-    throw new Error("Статус работы нельзя менять после создания выплаты");
-  }
   if (patch.workStatus === "checked") {
     throw new Error("Статус «Проверено» устанавливается только через проверку работы");
   }
   if (patch.workStatus === "paid") {
     throw new Error("Статус «Оплачено» устанавливается автоматически при оплате выплаты");
+  }
+  if (hasOtherExpensePayment(existing.paymentStatus)) {
+    // Откат «Проверено» → «Выставлено»/«На доработку» разрешён только если одновременно
+    // удаляется выплата (paymentStatus: null) и выплата ещё не отправлена/оплачена.
+    const isRevert =
+      (patch.workStatus === "submitted" || patch.workStatus === "rework") &&
+      existing.paymentStatus === "planned" &&
+      patch.paymentStatus === null;
+    if (!isRevert) {
+      throw new Error("Статус работы нельзя менять после создания выплаты");
+    }
   }
 }
 
@@ -107,14 +115,21 @@ function applyPaymentCascade(
   if (patch.paymentStatus !== undefined) {
     state.paymentStatus = patch.paymentStatus;
     if (patch.paymentStatus === null) {
-      return;
-    }
-    state.workStatus = workStatusFromPaymentStatus(patch.paymentStatus);
-    if (patch.paymentStatus === "planned" && existing.paymentStatus === "paid") {
+      // Удаление выплаты — очищаем все платёжные поля; workStatus ставится ниже из patch.workStatus
+      state.paymentAmount = null;
+      state.plannedPayAt = null;
       state.paidAt = null;
-    }
-    if (patch.paymentStatus === "paid" && !state.paidAt) {
-      state.paidAt = existing.paidAt ?? new Date();
+      state.checkedAt = null;
+      // Не возвращаемся, чтобы patch.workStatus мог применяться дальше
+    } else {
+      state.workStatus = workStatusFromPaymentStatus(patch.paymentStatus);
+      if (patch.paymentStatus === "planned") {
+        // Откат на «Запланировано» — убираем дату оплаты (из «Отправлено» или «Оплачено»)
+        state.paidAt = null;
+      }
+      if (patch.paymentStatus === "paid" && !state.paidAt) {
+        state.paidAt = existing.paidAt ?? new Date();
+      }
     }
   }
 
@@ -280,6 +295,50 @@ export async function checkOtherExpense(id: string, userId: string) {
     changes: {
       workStatus: { from: existing.workStatus, to: "checked" },
       paymentStatus: { from: existing.paymentStatus, to: "planned" },
+    },
+  });
+
+  return updated;
+}
+
+// ─── Revert check (откат с «Проверено» + удаление выплаты) ───────────────────
+
+export async function revertOtherExpenseCheck(
+  id: string,
+  targetStatus: "submitted" | "rework",
+  userId: string
+) {
+  const existing = await prisma.otherExpense.findUniqueOrThrow({ where: { id } });
+
+  if (existing.workStatus !== "checked") {
+    throw new Error("Откат возможен только для работы со статусом «Проверено»");
+  }
+  if (existing.paymentStatus === "sent" || existing.paymentStatus === "paid") {
+    throw new Error("Нельзя откатить: выплата уже отправлена или оплачена");
+  }
+
+  const updated = await prisma.otherExpense.update({
+    where: { id },
+    include: otherExpenseInclude,
+    data: {
+      workStatus: targetStatus,
+      checkedAt: null,
+      paymentStatus: null,
+      paymentAmount: null,
+      plannedPayAt: null,
+      paidAt: null,
+    },
+  });
+
+  await logActivity({
+    userId,
+    action: "status_change",
+    entityType: "OtherExpense",
+    entityId: id,
+    entityLabel: existing.description,
+    changes: {
+      workStatus: { from: existing.workStatus, to: targetStatus },
+      paymentStatus: { from: existing.paymentStatus, to: null },
     },
   });
 

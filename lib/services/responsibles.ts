@@ -17,7 +17,7 @@ export type ResponsibleListRow = {
   isActive: boolean;
   executorId: string | null;
   projectCount: number;
-  projects: { id: string; name: string }[];
+  projects: { id: string; name: string; status: string }[];
   createdAt: Date;
 };
 
@@ -25,7 +25,7 @@ export async function listResponsibles(): Promise<ResponsibleListRow[]> {
   // Берём все проекты с назначенным руководителем
   const projects = await prisma.project.findMany({
     where: { responsibleUserId: { not: null } },
-    select: { id: true, name: true, responsibleUserId: true },
+    select: { id: true, name: true, status: true, responsibleUserId: true },
     orderBy: { name: "asc" },
   });
 
@@ -35,7 +35,7 @@ export async function listResponsibles(): Promise<ResponsibleListRow[]> {
     if (!p.responsibleUserId) continue;
     userIdsWithProjects.add(p.responsibleUserId);
     const list = projectsByUser.get(p.responsibleUserId) ?? [];
-    list.push({ id: p.id, name: p.name });
+    list.push({ id: p.id, name: p.name, status: p.status });
     projectsByUser.set(p.responsibleUserId, list);
   }
 

@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, CheckCircle, RotateCcw, X } from "lucide-react";
+import { Plus, Pencil, Trash2, CheckCircle, RotateCcw, X, CircleDollarSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -138,6 +138,8 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
   const [deleteTarget, setDeleteTarget] = useState<OtherExpense | null>(null);
   const [checkTarget, setCheckTarget] = useState<OtherExpense | null>(null);
   const [reworkTarget, setReworkTarget] = useState<OtherExpense | null>(null);
+  const [payTarget, setPayTarget] = useState<OtherExpense | null>(null);
+  const [payDate, setPayDate] = useState("");
 
   // Bulk
   const [bulkWorkStatus, setBulkWorkStatus] = useState("");
@@ -327,6 +329,19 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
       const updated = await readApiJson<OtherExpense>(res);
       setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, ...updated } : r)));
       toast.success("Работа отправлена на доработку");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Ошибка");
+      silentLoad();
+    }
+  }
+
+  async function handlePay(row: OtherExpense, date: string) {
+    setPayTarget(null);
+    const isoDate = new Date(date).toISOString();
+    setRows((prev) => prev.map((r) => r.id === row.id ? { ...r, paymentStatus: "paid", paidAt: isoDate, workStatus: "paid" } : r));
+    try {
+      await patchRow(row.id, { paymentStatus: "paid", paidAt: isoDate });
+      toast.success("Выплата оплачена");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Ошибка");
       silentLoad();
@@ -666,6 +681,17 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
                         <RotateCcw className="h-3.5 w-3.5 text-amber-500" />
                       </Button>
                     )}
+                    {isAdmin && (row.paymentStatus === "planned" || row.paymentStatus === "sent") && (
+                      <Button
+                        size="sm" variant="ghost" className="h-7 w-7 p-0" title="Оплатить"
+                        onClick={() => {
+                          setPayDate(toLocalDateString(new Date()));
+                          setPayTarget(row);
+                        }}
+                      >
+                        <CircleDollarSign className="h-3.5 w-3.5 text-green-600" />
+                      </Button>
+                    )}
                     {canEdit(row) && (
                       <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Редактировать" onClick={() => setEditTarget(row)}>
                         <Pencil className="h-3.5 w-3.5" />
@@ -750,6 +776,34 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={!!payTarget} onOpenChange={(o) => !o && setPayTarget(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Оплатить выплату</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-1">
+            <p className="text-sm text-neutral-600">
+              {payTarget?.description}
+            </p>
+            <div className="space-y-1.5">
+              <Label>Дата оплаты</Label>
+              <DateInput
+                className="h-9"
+                value={payDate}
+                onChange={(e) => setPayDate(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPayTarget(null)}>Отмена</Button>
+            <Button
+              onClick={() => payTarget && payDate && handlePay(payTarget, payDate)}
+              disabled={!payDate}
+            >
+              Оплатить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -800,12 +854,18 @@ function OtherExpenseFormDialog({
   const [preferredPayMethod, setPreferredPayMethod] = useState(initial?.preferredPayMethod ?? "");
   const [plannedPayAt, setPlannedPayAt] = useState(initial?.plannedPayAt ? toLocalDateString(new Date(initial.plannedPayAt)) : "");
   const [workStatus, setWorkStatus] = useState(initial?.workStatus ?? "submitted");
+  // Откат «Проверено» → «Выставлено»/«На доработку» + удаление выплаты
+  const [revertStatus, setRevertStatus] = useState<string | null>(null);
+  // Смена статуса выплаты (только admin: sent/paid → planned)
+  const [editPaymentStatus, setEditPaymentStatus] = useState<string>(initial?.paymentStatus ?? "");
   const [comment, setComment] = useState(initial?.comment ?? "");
   const [saving, setSaving] = useState(false);
 
   const years = [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1];
   const isEdit = !!initial;
   const paymentCreated = !!initial?.paymentStatus;
+  // Откат разрешён только если выплата ещё «Запланирована» (не отправлена/оплачена)
+  const canRevert = canRework && isEdit && initial?.workStatus === "checked" && initial?.paymentStatus === "planned";
 
   async function handleSave() {
     if (!projectId || !executorId || !workTypeId || !responsibleExecutorId || !description || !amount) {
@@ -816,25 +876,46 @@ function OtherExpenseFormDialog({
     try {
       const url = isEdit ? `/api/other-expenses/${initial!.id}` : "/api/other-expenses";
       const method = isEdit ? "PATCH" : "POST";
+
+      const body: Record<string, unknown> = {
+        projectId,
+        executorId,
+        workTypeId,
+        responsibleExecutorId,
+        executionYear: parseInt(year),
+        executionMonth: parseInt(month),
+        description,
+        amount: parseFloat(amount),
+        preferredPayMethod: preferredPayMethod || null,
+        comment: comment || null,
+      };
+
+      if (isEdit) {
+        body.bankAccountId = bankAccountId || null;
+      }
+
+      if (revertStatus) {
+        // Откат «Проверено»: меняем workStatus + удаляем выплату атомарно
+        body.workStatus = revertStatus;
+        body.paymentStatus = null;
+      } else if (!isEdit) {
+        // Создание: бэк сам ставит workStatus=submitted
+      } else if (!paymentCreated) {
+        // Редактирование без выплаты: можно менять submitted/rework
+        body.workStatus = workStatus || "submitted";
+      } else {
+        // Редактирование с выплатой: только дата плана
+        body.plannedPayAt = plannedPayAt || null;
+        // Admin может изменить статус выплаты
+        if (isAdmin && editPaymentStatus !== (initial?.paymentStatus ?? "")) {
+          body.paymentStatus = editPaymentStatus || null;
+        }
+      }
+
       const r = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId,
-          executorId,
-          workTypeId, responsibleExecutorId,
-          ...(isEdit ? { bankAccountId: bankAccountId || null } : {}),
-          executionYear: parseInt(year),
-          executionMonth: parseInt(month),
-          description,
-          amount: parseFloat(amount),
-          preferredPayMethod: preferredPayMethod || null,
-          ...(paymentCreated ? { plannedPayAt: plannedPayAt || null } : {}),
-          // При создании workStatus не передаём — бэк всегда ставит submitted.
-          // При редактировании без выплаты — только submitted/rework.
-          ...(!isEdit || paymentCreated ? {} : { workStatus: workStatus || "submitted" }),
-          comment: comment || null,
-        }),
+        body: JSON.stringify(body),
       });
       if (!r.ok) {
         const d = await readApiJson<{ error?: string }>(r);
@@ -960,15 +1041,34 @@ function OtherExpenseFormDialog({
           )}
           <div className="space-y-1.5 min-w-0">
             <Label>Статус работы</Label>
-            {/* При создании — всегда «Выставлено» (не редактируется). */}
-            {/* При редактировании: если выплата создана — read-only; иначе только submitted/rework. */}
-            {(!isEdit || paymentCreated) ? (
+            {canRevert ? (
+              // Откат «Проверено» → «Выставлено»/«На доработку» (только если выплата=«Запланировано»)
+              <div className="space-y-1">
+                <Select value={revertStatus ?? "checked"} onValueChange={(v) => setRevertStatus(v === "checked" ? null : v)}>
+                  <SelectTrigger>
+                    <SelectValue>{WORK_STATUSES[(revertStatus ?? "checked") as keyof typeof WORK_STATUSES]?.label ?? (revertStatus ?? "checked")}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="checked">{WORK_STATUSES.checked.label}</SelectItem>
+                    <SelectItem value="submitted">{WORK_STATUSES.submitted.label}</SelectItem>
+                    <SelectItem value="rework">{WORK_STATUSES.rework.label}</SelectItem>
+                  </SelectContent>
+                </Select>
+                {revertStatus && (
+                  <p className="text-xs text-amber-600">
+                    Выплата будет удалена при сохранении
+                  </p>
+                )}
+              </div>
+            ) : !isEdit || paymentCreated ? (
+              // Создание или выплата отправлена/оплачена — только read-only
               <Input
-                value={WORK_STATUSES[workStatus as keyof typeof WORK_STATUSES]?.label ?? workStatus}
+                value={WORK_STATUSES[(revertStatus ?? workStatus) as keyof typeof WORK_STATUSES]?.label ?? workStatus}
                 disabled
                 className="h-9"
               />
             ) : (
+              // Редактирование без выплаты: submitted/rework
               <Select value={workStatus} onValueChange={(v) => v && setWorkStatus(v)}>
                 <SelectTrigger>
                   <SelectValue>{WORK_STATUSES[workStatus as keyof typeof WORK_STATUSES]?.label ?? workStatus}</SelectValue>
@@ -980,6 +1080,26 @@ function OtherExpenseFormDialog({
               </Select>
             )}
           </div>
+          {/* Статус выплаты — только admin, только при редактировании с выплатой */}
+          {isAdmin && isEdit && paymentCreated && (
+            <div className="space-y-1.5 min-w-0">
+              <Label>Статус выплаты</Label>
+              {initial?.paymentStatus === "planned" ? (
+                <Input value={PAYMENT_STATUSES.planned.label} disabled className="h-9" />
+              ) : (
+                <Select value={editPaymentStatus} onValueChange={(v) => v && setEditPaymentStatus(v)}>
+                  <SelectTrigger>
+                    <SelectValue>{PAYMENT_STATUSES[editPaymentStatus as keyof typeof PAYMENT_STATUSES]?.label ?? editPaymentStatus}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sent">{PAYMENT_STATUSES.sent.label}</SelectItem>
+                    <SelectItem value="paid">{PAYMENT_STATUSES.paid.label}</SelectItem>
+                    <SelectItem value="planned">{PAYMENT_STATUSES.planned.label}</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          )}
           {isEdit && (
             <div className="space-y-1.5 min-w-0">
               <Label>Источник перевода</Label>

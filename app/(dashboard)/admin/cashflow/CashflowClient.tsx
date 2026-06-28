@@ -240,7 +240,9 @@ export function CashflowClient() {
     );
   }
 
-  const { summary, projects, weeksInYear, externalProjects, internalProjects, aggregates } = data;
+  const { summary, projects, weeksInYear, aggregates } = data;
+  const externalProjects = [...(data.externalProjects ?? data.projects ?? [])].sort((a, b) => a.name.localeCompare(b.name, "ru"));
+  const internalProjects = [...(data.internalProjects ?? [])].sort((a, b) => a.name.localeCompare(b.name, "ru"));
 
   const numCls = "px-2 py-1 text-right text-xs tabular-nums whitespace-nowrap border-r border-neutral-100 last:border-0";
   const tdCls = numCls;
@@ -499,15 +501,14 @@ export function CashflowClient() {
               })}
 
               {/* Helper: render project block with external/internal separator */}
-              {(["plan", "iw", "charges", "cf"] as const).map((blockKey) => {
+              {(["plan", "iw", "charges"] as const).map((blockKey) => {
                 const blockLabels = {
                   plan: "План расходов из дашбордов проектов",
                   iw: "План-факт расходов из работ",
                   charges: "План доходов",
-                  cf: "Кэшфлоу по проектам",
                 };
-                const extProjects = externalProjects ?? projects;
-                const intProjects = internalProjects ?? [];
+                const extProjects = externalProjects;
+                const intProjects = internalProjects;
                 const allInBlock = [...extProjects, ...intProjects];
                 const hasInternal = intProjects.length > 0;
 
@@ -522,21 +523,20 @@ export function CashflowClient() {
                       <td colSpan={visibleWeeks.length} className="bg-neutral-50" />
                     </tr>
                     {extProjects.map(p => {
-                      const arr = blockKey === "plan" ? p.plan : blockKey === "iw" ? p.iw : blockKey === "charges" ? p.charges : p.cashflow;
-                      const last = arr[arr.length - 1] ?? 0;
+                      const arr = blockKey === "plan" ? p.plan : blockKey === "iw" ? p.iw : p.charges;
                       return (
                         <tr key={`${blockKey}-${p.id}`} className="border-b border-neutral-100 hover:bg-neutral-50">
                           <td className={cn(stickyLbl, "font-normal")} title={p.name}>
                             <span className="block truncate">{p.name}</span>
                           </td>
                           <td className={cn(stickyTotal, "font-medium")}>
-                            {blockKey === "cf" ? fmtSign(last) : fmt(rowTotal(arr))}
+                            {fmt(rowTotal(arr))}
                           </td>
                           {visibleWeekIndices.map((idx) =>
                             renderWeekCell(
                               `project:${p.id}:${blockKey}`,
                               idx,
-                              blockKey === "cf" ? fmtSign(arr[idx] ?? 0) : fmt(arr[idx] ?? 0)
+                              fmt(arr[idx] ?? 0)
                             )
                           )}
                         </tr>
@@ -548,21 +548,20 @@ export function CashflowClient() {
                       </tr>
                     )}
                     {intProjects.map(p => {
-                      const arr = blockKey === "plan" ? p.plan : blockKey === "iw" ? p.iw : blockKey === "charges" ? p.charges : p.cashflow;
-                      const last = arr[arr.length - 1] ?? 0;
+                      const arr = blockKey === "plan" ? p.plan : blockKey === "iw" ? p.iw : p.charges;
                       return (
                         <tr key={`${blockKey}-${p.id}`} className="border-b border-neutral-100 hover:bg-neutral-50">
                           <td className={cn(stickyLbl, "font-normal text-neutral-500")} title={p.name}>
                             <span className="block truncate">{p.name}</span>
                           </td>
                           <td className={cn(stickyTotal, "font-medium text-neutral-500")}>
-                            {blockKey === "cf" ? fmtSign(last) : fmt(rowTotal(arr))}
+                            {fmt(rowTotal(arr))}
                           </td>
                           {visibleWeekIndices.map((idx) =>
                             renderWeekCell(
                               `project:${p.id}:${blockKey}`,
                               idx,
-                              blockKey === "cf" ? fmtSign(arr[idx] ?? 0) : fmt(arr[idx] ?? 0),
+                              fmt(arr[idx] ?? 0),
                               "text-neutral-500"
                             )
                           )}

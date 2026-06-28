@@ -2,18 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
 import { prisma } from "@/lib/db";
-import { getISOWeek, getISOWeekYear, getISOWeeksInYear, isoWeekStart } from "@/lib/iso-weeks";
+import { getISOWeek, getISOWeeksInYear, isoWeekStart } from "@/lib/iso-weeks";
 
 function chargeWeekPF(c: { paidAt: Date | null; paidPlanAt: Date | null }) {
   const d = c.paidAt ?? c.paidPlanAt;
   if (!d) return null;
-  return { week: getISOWeek(d), year: getISOWeekYear(d) };
+  return { week: getISOWeek(d), year: d.getFullYear() };
 }
 
 function issuedWeekPF(r: { paidAt: Date | null; plannedPayAt: Date | null }) {
   const d = r.paidAt ?? r.plannedPayAt;
   if (!d) return null;
-  return { week: getISOWeek(d), year: getISOWeekYear(d) };
+  return { week: getISOWeek(d), year: d.getFullYear() };
 }
 
 export async function GET(req: NextRequest) {

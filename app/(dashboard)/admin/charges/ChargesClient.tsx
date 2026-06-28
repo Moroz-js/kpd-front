@@ -312,7 +312,7 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
       const w = payWeekPF(r);
       const y = payYearPF(r);
       if (w !== null && y !== null) {
-        const key = `${y}-${w}`;
+        const key = `${y}-${String(w).padStart(2, "0")}`;
         if (!map.has(key)) map.set(key, `${weekLabel(w)} ${y}`);
       }
     }

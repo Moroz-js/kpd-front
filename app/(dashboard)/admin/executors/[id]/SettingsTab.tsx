@@ -118,7 +118,10 @@ export function SettingsTab({
     executor.executorWorkTypes.map((ewt) => ewt.workType.id)
   );
   const [isResponsible, setIsResponsible] = useState(executor.isResponsible ?? false);
-  const executorArchived = executor.status === "archived";
+  const [executorStatus, setExecutorStatus] = useState<"active" | "archived">(
+    executor.status === "archived" ? "archived" : "active"
+  );
+  const executorArchived = executorStatus === "archived";
   const [planProjects, setPlanProjects] = useState<PlanProject[]>([]);
   const [loadingPlanProjects, setLoadingPlanProjects] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -192,6 +195,7 @@ export function SettingsTab({
     setInTgChat(executor.inTgChat);
     setRecipientTypes(parseRecipientTypes(executor.recipientType));
     setDefaultBankAccountId(executor.defaultBankAccountId ?? "");
+    setExecutorStatus(executor.status === "archived" ? "archived" : "active");
     setIsResponsible(executor.isResponsible ?? false);
     setSelectedWorkTypeIds(executor.executorWorkTypes.map((ewt) => ewt.workType.id));
     try {
@@ -241,6 +245,7 @@ export function SettingsTab({
     try {
       const payload: Record<string, unknown> = {
         type: executorType,
+        status: executorStatus,
         name: fullName.trim(),
         companyStatus: isPermanent ? serializeCompanyStatus(companyStatuses) : null,
         contacts: contacts || null,
@@ -303,22 +308,49 @@ export function SettingsTab({
     <div className="space-y-6 max-w-xl">
       {isAdmin && (
         <div className="border rounded-lg p-4 space-y-3">
-          <h3 className="text-sm font-semibold text-neutral-800">Тип исполнителя</h3>
-          <Select
-            value={executorType}
-            onValueChange={(v) => v && handleTypeChange(v as ExecutorType)}
-          >
-            <SelectTrigger>
-              <SelectValue>{EXECUTOR_TYPES[executorType]}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {EXECUTOR_TYPE_OPTIONS.map(([value, label]) => (
-                <SelectItem key={value} value={value}>
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <h3 className="text-sm font-semibold text-neutral-800">Тип и статус</h3>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Тип исполнителя</Label>
+              <Select
+                value={executorType}
+                onValueChange={(v) => v && handleTypeChange(v as ExecutorType)}
+              >
+                <SelectTrigger>
+                  <SelectValue>{EXECUTOR_TYPES[executorType]}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {EXECUTOR_TYPE_OPTIONS.map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Статус</Label>
+              <Select
+                value={executorStatus}
+                onValueChange={(v) => v && setExecutorStatus(v as "active" | "archived")}
+              >
+                <SelectTrigger>
+                  <SelectValue>
+                    {executorStatus === "active" ? "Активный" : "Архивный"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Активный</SelectItem>
+                  <SelectItem value="archived">Архивный</SelectItem>
+                </SelectContent>
+              </Select>
+              {executorStatus === "archived" && executor.status === "active" && (
+                <p className="text-xs text-amber-600">
+                  При сохранении доступ к системе будет отозван
+                </p>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

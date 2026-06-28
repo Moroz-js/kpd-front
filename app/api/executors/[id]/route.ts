@@ -57,6 +57,7 @@ const patchSchema = z.object({
   defaultBankAccountId: z.string().nullable().optional(),
   oldEstimateUrl: z.string().nullable().optional(),
   type: z.enum(["permanent", "external", "service", "bank"]).optional(),
+  status: z.enum(["active", "archived"]).optional(),
   email: z.string().email().optional(),
   password: z.string().min(6).optional(),
   specialties: z.string().nullable().optional(),
@@ -91,8 +92,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   // ролью ответственного — это admin-only поля.
   let data = parsed.data;
   if (!isAdmin(me)) {
-    const { password: _p, email: _e, type: _t, isResponsible: _r, ...rest } = data;
-    void _p; void _e; void _t; void _r;
+    const { password: _p, email: _e, type: _t, isResponsible: _r, status: _s, ...rest } = data;
+    void _p; void _e; void _t; void _r; void _s;
     data = rest;
   }
   try {

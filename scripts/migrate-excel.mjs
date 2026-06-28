@@ -432,7 +432,7 @@ function extractBankAccounts(wb) {
     }));
 }
 
-function extractProjects(wb, userMap, clientMap) {
+function extractProjects(wb, userMap, clientMap, knownExecutorNames = new Set()) {
   const rows = readSheet(wb, "БД_Проекты", { identifyBy: "Проект" });
   const projects = [];
   const warnings = [];
@@ -452,7 +452,8 @@ function extractProjects(wb, userMap, clientMap) {
 
     const responsibleName = str(r["Руководитель проекта"]);
     const responsibleUserId = responsibleName ? (userMap[normKey(responsibleName)] ?? null) : null;
-    if (responsibleName && !responsibleUserId)
+    // Не предупреждаем если руководитель — исполнитель с email (ссылка фиксируется в шаге [6/14])
+    if (responsibleName && !responsibleUserId && !knownExecutorNames.has(normKey(responsibleName)))
       warnings.push(`Проект "${name}": руководитель "${responsibleName}" не найден`);
 
     projects.push({
@@ -693,9 +694,9 @@ function extractSpendingPlan(wb, projectMap, executorMap, workTypeMap) {
     if (week > 25) {
       if (!projectMap[normKey(projectName)])
         warnings.push(`План расходов: проект "${projectName}" не найден`);
-      if (workTypeName && !workTypeMap[normKey(workTypeName)])
+      if (workTypeName && normKey(workTypeName) !== "пока не известен" && !workTypeMap[normKey(workTypeName)])
         warnings.push(`План расходов: вид работ "${workTypeName}" не найден`);
-      if (executorName && !executorMap[normKey(executorName)])
+      if (executorName && normKey(executorName) !== "пока не известен" && !executorMap[normKey(executorName)])
         warnings.push(`План расходов: исполнитель "${executorName}" не найден`);
     }
 
@@ -1255,11 +1256,12 @@ function previewPayments({ payments, warnings }) {
   if (warnings.length > 5) console.log(`     ⋯ ещё ${warnings.length-5} предупреждений`);
 }
 
-function previewSpendingPlan({ lines, warnings }, works) {
-  const fromWorks = works.filter(w => w._week && w._week <= 25).length;
+function previewSpendingPlan({ lines, warnings }, worksData) {
+  const fromWorks = worksData.works.filter(w => w._week && w._week <= 25).length;
+  const fromOther = worksData.otherExpenses.filter(o => o._week && o._week <= 25).length;
   const fromSheet = lines.filter(l => l.week && l.week > 25).length;
-  section("11. ПЛАН РАСХОДОВ  ←  работы (нед. ≤ 25) + БД_План_расходов_полный (нед. > 25)");
-  console.log(`  ℹ️  Нед. 1–25: из выставленных работ (${fromWorks} строк).`);
+  section("11. ПЛАН РАСХОДОВ  ←  работы + прочие траты (нед. ≤ 25) + БД_План_расходов_полный (нед. > 25)");
+  console.log(`  ℹ️  Нед. 1–25: из выставленных работ (${fromWorks} строк) + прочие траты (${fromOther} строк).`);
   console.log(`  ℹ️  Нед. 26+:  из БД_План_расходов_полный (${fromSheet} строк).`);
   const total = lines.filter(l => l.week > 25).reduce((s, l) => s + l.amount, 0);
   console.log(`  (из листа БД_План_расходов_полный нед. > 25: ${fromSheet} строк, ${total.toLocaleString("ru-RU")} ₽)`);
@@ -1343,7 +1345,7 @@ function printSummary(all) {
     { e: "works",               n: all.works.works.length,          note: "выставленные работы" },
     { e: "other_expenses",      n: all.works.otherExpenses.length,  note: "прочие траты" },
     { e: "payments",            n: all.payments.payments.length,    note: "выплаты" },
-    { e: "spending_plan_lines", n: all.works.works.filter(w => w._week && w._week <= 25).length + all.spendingPlan.lines.filter(l => l.week && l.week > 25).length, note: "план расходов (работы нед. ≤ 25 + план нед. > 25)" },
+    { e: "spending_plan_lines", n: all.works.works.filter(w => w._week && w._week <= 25).length + all.works.otherExpenses.filter(o => o._week && o._week <= 25).length + all.spendingPlan.lines.filter(l => l.week && l.week > 25).length, note: "план расходов (работы+прочие трат нед. ≤ 25 + план нед. > 25)" },
     { e: "tasks",             n: all.tasksCount ?? 0,            note: "задачи из LS (исполнители со сметой)" },
   ];
   printTable(rows, [
@@ -1476,7 +1478,7 @@ async function main() {
 
   const executorsData = extractExecutors(wb, userMap, bankMap, workTypeMap);
 
-  const projectsData  = extractProjects(wb, userMap, clientMap);
+  const projectsData  = extractProjects(wb, userMap, clientMap, executorNamesWithEmail);
   const pmProjectCountByName = {};
   for (const p of projectsData.projects) {
     if (!p._responsibleName) continue;
@@ -1526,7 +1528,7 @@ async function main() {
   previewCharges(chargesData);
   previewWorks(worksData);
   previewPayments(paymentsData);
-  previewSpendingPlan(spendingPlanData, all.works.works);
+  previewSpendingPlan(spendingPlanData, all.works);
   previewTasks(lsTasksByExecutor, executorsData);
   printSummary(all);
 
@@ -1698,12 +1700,25 @@ async function runMigration(prisma, all) {
 
   // 3. work_types
   const wtIds = {};
+  const UNKNOWN_WT_NAME = "Пока не известен";
   await step("[3/14] work_types", async () => {
     const created = await createManyAndReturnBatched(
       prisma.workType,
       all.workTypes.map((w) => ({ name: w.name, segment: w.segment, status: w.status }))
     );
     for (const r of created) wtIds[normKey(r.name)] = r.id;
+
+    // Создаём «Пока не известен» только если ещё нет (нужен для плана расходов)
+    if (!wtIds[normKey(UNKNOWN_WT_NAME)]) {
+      const wt = await prisma.workType.upsert({
+        where: { name: UNKNOWN_WT_NAME },
+        update: {},
+        create: { name: UNKNOWN_WT_NAME, segment: "Прочее", status: "active" },
+      });
+      wtIds[normKey(UNKNOWN_WT_NAME)] = wt.id;
+      console.log(`     ↳ создан вид работ "${UNKNOWN_WT_NAME}" (id: ${wt.id})`);
+    }
+
     return created.length;
   });
 
@@ -2114,7 +2129,7 @@ async function runMigration(prisma, all) {
   await step("[12/14] spending_plan_lines", async () => {
     const rows = [];
 
-    // Part A: из выставленных работ, недели 1–25
+    // Part A: из выставленных работ и прочих трат, недели 1–25
     for (const w of all.works.works) {
       const week = w._week;
       if (!week || week > 25) continue;
@@ -2122,7 +2137,9 @@ async function runMigration(prisma, all) {
       const projectId = w._projectName ? (projectIds[normKey(w._projectName)] ?? null) : null;
       const workTypeId = w._workTypeName ? (wtIds[normKey(w._workTypeName)] ?? null) : null;
       if (!executorId || !projectId || !workTypeId) continue;
-      const payYear = isoWeekYear(w.plannedPayAt ?? w.paidAt) ?? w.executionYear;
+      // Используем календарный год (не ISO), чтобы 31.12 не уходил в следующий год
+      const d = w.plannedPayAt ?? w.paidAt;
+      const payYear = d ? d.getFullYear() : w.executionYear;
       rows.push({
         projectId,
         executorId,
@@ -2133,20 +2150,60 @@ async function runMigration(prisma, all) {
         createdById: defaultUserId,
       });
     }
-    console.log(`     ↳ из выставленных работ (≤ нед. 25): ${rows.length}`);
+    const fromWorks = rows.length;
 
-    // Part B: из БД_План_расходов_полный, недели > 25
-    let fromPlan = 0;
-    for (const l of all.spendingPlan.lines) {
-      if (!l.week || l.week <= 25) continue;
-      const executorId = l._executorName ? (executorIds[normKey(l._executorName)] ?? null) : null;
-      const projectId  = l._projectName  ? (projectIds[normKey(l._projectName)]  ?? null) : null;
-      const workTypeId = l._workTypeName ? (wtIds[normKey(l._workTypeName)]       ?? null) : null;
+    // Part A2: прочие траты, недели 1–25
+    for (const o of all.works.otherExpenses) {
+      const week = o._week;
+      if (!week || week > 25) continue;
+      const executorId = o._executorName ? (executorIds[normKey(o._executorName)] ?? null) : null;
+      const projectId = o._projectName ? (projectIds[normKey(o._projectName)] ?? null) : null;
+      const workTypeId = o._workTypeName ? (wtIds[normKey(o._workTypeName)] ?? null) : null;
       if (!executorId || !projectId || !workTypeId) continue;
+      const d = o.plannedPayAt ?? o.paidAt;
+      const payYear = d ? d.getFullYear() : o.executionYear;
       rows.push({
         projectId,
         executorId,
         workTypeId,
+        year:        payYear,
+        week,
+        amount:      o.amount,
+        createdById: defaultUserId,
+      });
+    }
+    const fromOtherExpenses = rows.length - fromWorks;
+    console.log(`     ↳ из выставленных работ (≤ нед. 25): ${fromWorks}`);
+    console.log(`     ↳ из прочих трат (≤ нед. 25): ${fromOtherExpenses}`);
+
+    // Part B: из БД_План_расходов_полный, недели > 25
+    const unknownExecutorId = executorIds[normKey("пока не известен")] ?? null;
+    const unknownWorkTypeId = wtIds[normKey(UNKNOWN_WT_NAME)] ?? null;
+    let fromPlan = 0;
+    let fromPlanUnknown = 0;
+    for (const l of all.spendingPlan.lines) {
+      if (!l.week || l.week <= 25) continue;
+      const projectId = l._projectName ? (projectIds[normKey(l._projectName)] ?? null) : null;
+      if (!projectId) continue; // проект обязателен
+
+      // Исполнитель: резолвим или fallback на «Пока не известен»
+      const resolvedExecutorId = l._executorName
+        ? (executorIds[normKey(l._executorName)] ?? unknownExecutorId)
+        : unknownExecutorId;
+      // Вид работ: резолвим или fallback на «Пока не известен»
+      const resolvedWorkTypeId = l._workTypeName
+        ? (wtIds[normKey(l._workTypeName)] ?? unknownWorkTypeId)
+        : unknownWorkTypeId;
+
+      if (!resolvedExecutorId || !resolvedWorkTypeId) continue;
+
+      const isUnknown = resolvedExecutorId === unknownExecutorId || resolvedWorkTypeId === unknownWorkTypeId;
+      if (isUnknown) fromPlanUnknown++;
+
+      rows.push({
+        projectId,
+        executorId: resolvedExecutorId,
+        workTypeId: resolvedWorkTypeId,
         year:        l.year,
         week:        l.week,
         amount:      l.amount,
@@ -2154,7 +2211,7 @@ async function runMigration(prisma, all) {
       });
       fromPlan++;
     }
-    console.log(`     ↳ из БД_План_расходов_полный (> нед. 25): ${fromPlan}`);
+    console.log(`     ↳ из БД_План_расходов_полный (> нед. 25): ${fromPlan} (из них с «Пока не известен»: ${fromPlanUnknown})`);
 
     return createManyBatched(prisma.spendingPlanLine, rows);
   });

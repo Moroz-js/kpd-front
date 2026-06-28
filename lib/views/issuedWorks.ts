@@ -7,7 +7,7 @@
  */
 
 import { prisma } from "@/lib/db";
-import { getISOWeek, getISOWeekYear } from "@/lib/iso-weeks";
+import { getISOWeek } from "@/lib/iso-weeks";
 
 export type IssuedWorkSource = "personal" | "other-expense";
 
@@ -62,7 +62,8 @@ export type IssuedWorksFilter = {
 function planFactWeek(plannedPayAt: Date | null, paidAt: Date | null): { week: number | null; year: number | null } {
   const d = paidAt ?? plannedPayAt;
   if (!d) return { week: null, year: null };
-  return { week: getISOWeek(d), year: getISOWeekYear(d) };
+  // Используем календарный год (getFullYear), а не ISO-год — иначе 31.12 попадает в следующий год
+  return { week: getISOWeek(d), year: d.getFullYear() };
 }
 
 export async function listIssuedWorks(filter: IssuedWorksFilter = {}): Promise<IssuedWorkRow[]> {
