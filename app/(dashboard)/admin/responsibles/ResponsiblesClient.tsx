@@ -21,7 +21,7 @@ type Row = {
   email: string;
   isActive: boolean;
   projectCount: number;
-  projects: { id: string; name: string; status: string }[];
+  projects: { id: string; name: string; status: string | null }[];
   createdAt: string;
 };
 

@@ -17,7 +17,7 @@ export type ResponsibleListRow = {
   isActive: boolean;
   executorId: string | null;
   projectCount: number;
-  projects: { id: string; name: string; status: string }[];
+  projects: { id: string; name: string; status: string | null }[];
   createdAt: Date;
 };
 
@@ -29,7 +29,7 @@ export async function listResponsibles(): Promise<ResponsibleListRow[]> {
     orderBy: { name: "asc" },
   });
 
-  const projectsByUser = new Map<string, { id: string; name: string }[]>();
+  const projectsByUser = new Map<string, { id: string; name: string; status: string | null }[]>();
   const userIdsWithProjects = new Set<string>();
   for (const p of projects) {
     if (!p.responsibleUserId) continue;
