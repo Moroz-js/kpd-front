@@ -189,6 +189,26 @@ export function canEditOtherExpense(
 }
 
 /**
+ * Проверка строки прочих трат («Проверить» → «Проверено» + создание выплаты).
+ * admin — всегда; ответственный по строке (РП своих исполнителей) — пока работа
+ * не проверена/оплачена и выплата ещё не создана.
+ */
+export function canCheckOtherExpense(
+  user: SessionLike,
+  row: {
+    responsibleExecutorId?: string | null;
+    workStatus?: string | null;
+    paymentStatus?: string | null;
+  }
+): boolean {
+  if (isAdmin(user)) return true;
+  if (!canAccessOtherExpenses(user)) return false;
+  if (row.workStatus === "checked" || row.workStatus === "paid") return false;
+  if (row.paymentStatus === "sent" || row.paymentStatus === "paid") return false;
+  return !!(user.executorId && row.responsibleExecutorId && row.responsibleExecutorId === user.executorId);
+}
+
+/**
  * Откат статуса «Проверено» → «Выставлено»/«На доработку» + удаление выплаты.
  * admin — всегда; ответственный по строке — если выплата ещё не отправлена/оплачена.
  */
