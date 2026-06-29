@@ -40,10 +40,15 @@ const EXCEL_EPOCH = Date.UTC(1899, 11, 30);
 export async function patchWorkbookTemplate(
   templateBuffer: Buffer,
   patches: SheetPatch[],
+  keepSheets?: string[],
 ): Promise<Buffer> {
   const zip = await JSZip.loadAsync(templateBuffer);
   const sharedStrings = await readSharedStrings(zip);
   const sheetPaths = await readWorkbookSheetPaths(zip);
+
+  if (keepSheets && keepSheets.length > 0) {
+    await removeUnneededSheets(zip, sheetPaths, keepSheets);
+  }
 
   for (const patch of patches) {
     const sheetPath = sheetPaths.get(patch.meta.sheet);
@@ -76,6 +81,98 @@ export async function patchWorkbookTemplate(
   });
 
   return Buffer.from(output);
+}
+
+/** Удаляет из zip все листы, не входящие в keepSheets, и обновляет workbook.xml / rels / [Content_Types]. */
+async function removeUnneededSheets(
+  zip: JSZip,
+  sheetPaths: Map<string, string>,
+  keepSheets: string[],
+): Promise<void> {
+  const keepSet = new Set(keepSheets);
+
+  // Листы для удаления
+  const toRemove: { name: string; sheetPath: string }[] = [];
+  for (const [name, sheetPath] of sheetPaths.entries()) {
+    if (!keepSet.has(name)) toRemove.push({ name, sheetPath });
+  }
+  if (toRemove.length === 0) return;
+
+  const removedPaths = new Set<string>();
+
+  for (const { sheetPath } of toRemove) {
+    removedPaths.add(sheetPath);
+
+    // Удаляем связанные файлы через _rels листа
+    const relPath = `${path.posix.dirname(sheetPath)}/_rels/${path.posix.basename(sheetPath)}.rels`;
+    const relFile = zip.file(relPath);
+    if (relFile) {
+      const relXml = await relFile.async("string");
+      for (const rel of relXml.matchAll(/<Relationship\b([^>]*)\/>/g)) {
+        const attrs = parseAttrs(rel[1]);
+        if (attrs.Target) {
+          const absPath = normalizeXlsxPath(path.posix.dirname(sheetPath), attrs.Target);
+          removedPaths.add(absPath);
+          // Удаляем и _rels связанного файла
+          const nestedRel = `${path.posix.dirname(absPath)}/_rels/${path.posix.basename(absPath)}.rels`;
+          removedPaths.add(nestedRel);
+        }
+      }
+      removedPaths.add(relPath);
+    }
+  }
+
+  for (const p of removedPaths) {
+    zip.remove(p);
+  }
+
+  // Обновляем workbook.xml — убираем <sheet> элементы удалённых листов
+  const workbookPath = "xl/workbook.xml";
+  const workbookXml = await requiredText(zip, workbookPath);
+  const relsPath = "xl/_rels/workbook.xml.rels";
+  const relsXml = await requiredText(zip, relsPath);
+
+  // Строим карту rId → sheetPath
+  const rIdToPath = new Map<string, string>();
+  for (const rel of relsXml.matchAll(/<Relationship\b([^>]*)\/>/g)) {
+    const attrs = parseAttrs(rel[1]);
+    if (attrs.Id && attrs.Target) {
+      rIdToPath.set(attrs.Id, normalizeXlsxPath("xl", attrs.Target));
+    }
+  }
+
+  // Определяем rId удалённых листов
+  const removedRIds = new Set<string>();
+  for (const [rId, p] of rIdToPath.entries()) {
+    if (removedPaths.has(p)) removedRIds.add(rId);
+  }
+
+  // Удаляем <sheet .../> из workbook.xml
+  const cleanedWorkbook = workbookXml.replace(/<sheet\b([^>]*)\/>/g, (match) => {
+    const attrs = parseAttrs(match.slice(6));
+    return removedRIds.has(attrs["r:id"]) ? "" : match;
+  });
+  zip.file(workbookPath, cleanedWorkbook);
+
+  // Удаляем <Relationship .../> из workbook.xml.rels
+  const cleanedRels = relsXml.replace(/<Relationship\b([^>]*)\/>/g, (match) => {
+    const attrs = parseAttrs(match.slice(14));
+    return removedRIds.has(attrs.Id) ? "" : match;
+  });
+  zip.file(relsPath, cleanedRels);
+
+  // Удаляем Override из [Content_Types].xml
+  const ctPath = "[Content_Types].xml";
+  const ctFile = zip.file(ctPath);
+  if (ctFile) {
+    const ctXml = await ctFile.async("string");
+    const cleanedCt = ctXml.replace(/<Override\b([^>]*)\/>/g, (match) => {
+      const attrs = parseAttrs(match.slice(9));
+      const partName = attrs.PartName?.replace(/^\//, "") ?? "";
+      return removedPaths.has(partName) ? "" : match;
+    });
+    zip.file(ctPath, cleanedCt);
+  }
 }
 
 async function readSharedStrings(zip: JSZip): Promise<string[]> {

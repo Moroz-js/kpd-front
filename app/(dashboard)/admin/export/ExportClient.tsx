@@ -7,17 +7,18 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
 
 const EXPORTED_SHEETS = [
-  "Ответственные",
-  "Банковские счета",
-  "Виды работ",
-  "Клиенты",
-  "Проекты",
-  "Исполнители",
-  "Заказы",
-  "Начисления",
-  "Выставленные работы и прочие траты",
-  "Выплаты",
-  "План расходов (полный)",
+  "Кэшфлоу проектов",
+  "График кешфлоу",
+  "БД_План_расходов_полный",
+  "БД_Проекты",
+  "БД_Банковские счета",
+  "БД_Исполнители",
+  "БД_Начисления",
+  "БД_Клиенты",
+  "БД_Виды_работ",
+  "БД_Заказы",
+  "БД_Выплаты",
+  "БД_Выставленные_работы",
 ];
 
 export function ExportClient() {
@@ -60,14 +61,12 @@ export function ExportClient() {
 
       <div className="max-w-2xl space-y-4 rounded-lg border bg-white p-6">
         <p className="text-sm text-neutral-600">
-          Выгрузка актуальных данных в формат исходной сметы. Заполняются листы базы данных
-          актуальными значениями из системы, остальные листы со сводками и формулами остаются
-          без изменений.
+          Выгрузка актуальных данных из системы в формат исходной сметы.
         </p>
 
         <div>
           <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-400">
-            Что выгружается
+            Вкладки в файле
           </p>
           <ul className="grid grid-cols-1 gap-1 text-sm text-neutral-700 sm:grid-cols-2">
             {EXPORTED_SHEETS.map((s) => (
@@ -78,11 +77,6 @@ export function ExportClient() {
             ))}
           </ul>
         </div>
-
-        <p className="text-xs text-neutral-400">
-          Допустимы небольшие потери: один счёт из мультиселекта, отсутствие технических колонок
-          и пустые номера счетов.
-        </p>
 
         <Button onClick={handleDownload} disabled={loading}>
           {loading ? (

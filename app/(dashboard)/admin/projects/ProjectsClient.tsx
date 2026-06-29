@@ -557,7 +557,7 @@ function ProjectEditDialog({
                 <SelectTrigger id="responsibleUserId">
                   <SelectValue>
                     {responsibleUserId
-                      ? (activeResponsibles.find((r) => r.id === responsibleUserId)?.fullName ?? responsibleUserId)
+                      ? (activeResponsibles.find((r) => r.id === responsibleUserId)?.fullName ?? row?.responsibleName ?? "— Выберите руководителя —")
                       : "— Выберите руководителя —"}
                   </SelectValue>
                 </SelectTrigger>

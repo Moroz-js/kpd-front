@@ -283,7 +283,6 @@ export async function buildExportWorkbook(): Promise<Buffer> {
   const templateBuffer = fs.readFileSync(TEMPLATE_PATH);
 
   const [
-    users,
     bankAccounts,
     workTypes,
     clients,
@@ -295,7 +294,6 @@ export async function buildExportWorkbook(): Promise<Buffer> {
     payments,
     spendingPlan,
   ] = await Promise.all([
-    serializeUsers(),
     serializeBankAccounts(),
     serializeWorkTypes(),
     serializeClients(),
@@ -309,7 +307,6 @@ export async function buildExportWorkbook(): Promise<Buffer> {
   ]);
 
   const patches: SheetPatch[] = [
-    { meta: SHEET_META.users, rows: users },
     { meta: SHEET_META.bankAccounts, rows: bankAccounts },
     { meta: SHEET_META.workTypes, rows: workTypes },
     { meta: SHEET_META.clients, rows: clients },
@@ -322,5 +319,20 @@ export async function buildExportWorkbook(): Promise<Buffer> {
     { meta: SHEET_META.spendingPlan, rows: spendingPlan },
   ];
 
-  return patchWorkbookTemplate(templateBuffer, patches);
+  const keepSheets = [
+    "Кэшфлоу проектов",
+    "График кешфлоу",
+    "БД_Выставленные_работы",
+    "БД_Выплаты",
+    "БД_Заказы",
+    "БД_Начисления",
+    "БД_Клиенты",
+    "БД_Виды_работ",
+    "БД_Исполнители",
+    "БД_Банковские счета",
+    "БД_Проекты",
+    "БД_План_расходов_полный",
+  ];
+
+  return patchWorkbookTemplate(templateBuffer, patches, keepSheets);
 }

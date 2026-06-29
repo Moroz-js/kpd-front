@@ -117,9 +117,9 @@ export async function canViewExecutorEstimate(
 
 // ────────────────────── Исполнители (раздел/настройки) ───────
 
-/** Видит раздел «Исполнители»: admin, PM, постоянный исполнитель. */
+/** Видит раздел «Исполнители»: только admin и PM (соответствует навигации). */
 export function canViewExecutorsList(user: SessionLike | null | undefined): boolean {
-  return isAdmin(user) || isResponsible(user) || isPermanentExecutor(user);
+  return isAdmin(user) || isResponsible(user);
 }
 
 /** Создаёт исполнителей: только admin и PM. */

@@ -671,7 +671,7 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
                   )}
                 >
                   <div className="flex shrink-0 gap-0.5 items-center justify-end">
-                    {canReview(row) && !row.paymentStatus && row.workStatus === "submitted" && (
+                    {isAdmin && !row.paymentStatus && row.workStatus === "submitted" && (
                       <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Проверить" onClick={() => setCheckTarget(row)}>
                         <CheckCircle className="h-3.5 w-3.5 text-blue-600" />
                       </Button>

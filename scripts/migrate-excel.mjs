@@ -729,9 +729,12 @@ function extractSpendingPlan(wb, projectMap, executorMap, workTypeMap) {
 
     if (!yearRaw || !projectName || !amount) continue;
 
-    const year = parseInt(String(yearRaw));
+    let year = parseInt(String(yearRaw));
     const week = weekRaw ? parseInt(weekRaw.replace(/\D/g, "")) : 0;
     if (!year || !week) continue;
+    // Коррекция: неделя не может быть больше последней недели года (напр. нед.53 в 2027,
+    // хотя 2027 имеет только 52 недели — значит имеется в виду 2026).
+    if (week > lastISOWeekOfYear(year)) year -= 1;
 
     // Лист читается только для справки в preview — в БД не записывается
     // Недели ≤ 25 берутся из работ, поэтому предупреждения для них не нужны
@@ -2181,7 +2184,7 @@ async function runMigration(prisma, all) {
       const projectId = w._projectName ? (projectIds[normKey(w._projectName)] ?? null) : null;
       const workTypeId = w._workTypeName ? (wtIds[normKey(w._workTypeName)] ?? null) : null;
       if (!executorId || !projectId || !workTypeId) continue;
-      const d = w.plannedPayAt ?? w.paidAt;
+      const d = w.paidAt ?? w.plannedPayAt;
       const { year, week } = planLineWeekYear(d, rawWeek, w.executionYear, w.executionMonth);
       rows.push({
         projectId,
@@ -2203,7 +2206,7 @@ async function runMigration(prisma, all) {
       const projectId = o._projectName ? (projectIds[normKey(o._projectName)] ?? null) : null;
       const workTypeId = o._workTypeName ? (wtIds[normKey(o._workTypeName)] ?? null) : null;
       if (!executorId || !projectId || !workTypeId) continue;
-      const d = o.plannedPayAt ?? o.paidAt;
+      const d = o.paidAt ?? o.plannedPayAt;
       const { year, week } = planLineWeekYear(d, rawWeek, o.executionYear, o.executionMonth);
       rows.push({
         projectId,
