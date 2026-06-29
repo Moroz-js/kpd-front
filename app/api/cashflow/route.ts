@@ -4,16 +4,34 @@ import { isAdmin } from "@/lib/permissions";
 import { prisma } from "@/lib/db";
 import { getISOWeek, getISOWeeksInYear, isoWeekStart } from "@/lib/iso-weeks";
 
+/**
+ * Определяет неделю/год для кэшфлоу по календарному году.
+ * Граничные случаи:
+ *   31 дек — ISO-неделя 1 следующего года → зажимаем на последнюю неделю этого года
+ *   1-3 янв  — ISO-неделя 52/53 прошлого года → зажимаем на неделю 1 этого года
+ */
+function cashflowWeekYear(d: Date): { week: number; year: number } {
+  const year = d.getFullYear();
+  const isoWeek = getISOWeek(d);
+  let week = isoWeek;
+  if (isoWeek === 1 && d.getMonth() === 11) {
+    week = getISOWeeksInYear(year);
+  } else if (isoWeek >= 52 && d.getMonth() === 0) {
+    week = 1;
+  }
+  return { week, year };
+}
+
 function chargeWeekPF(c: { paidAt: Date | null; paidPlanAt: Date | null }) {
   const d = c.paidAt ?? c.paidPlanAt;
   if (!d) return null;
-  return { week: getISOWeek(d), year: d.getFullYear() };
+  return cashflowWeekYear(d);
 }
 
 function issuedWeekPF(r: { paidAt: Date | null; plannedPayAt: Date | null }) {
   const d = r.paidAt ?? r.plannedPayAt;
   if (!d) return null;
-  return { week: getISOWeek(d), year: d.getFullYear() };
+  return cashflowWeekYear(d);
 }
 
 export async function GET(req: NextRequest) {

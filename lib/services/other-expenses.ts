@@ -115,9 +115,8 @@ function applyPaymentCascade(
   if (patch.paymentStatus !== undefined) {
     state.paymentStatus = patch.paymentStatus;
     if (patch.paymentStatus === null) {
-      // Удаление выплаты — очищаем все платёжные поля; workStatus ставится ниже из patch.workStatus
+      // Удаление выплаты — очищаем платёжные поля; plannedPayAt сохраняем намеренно
       state.paymentAmount = null;
-      state.plannedPayAt = null;
       state.paidAt = null;
       state.checkedAt = null;
       // Не возвращаемся, чтобы patch.workStatus мог применяться дальше
@@ -325,7 +324,6 @@ export async function revertOtherExpenseCheck(
       checkedAt: null,
       paymentStatus: null,
       paymentAmount: null,
-      plannedPayAt: null,
       paidAt: null,
     },
   });

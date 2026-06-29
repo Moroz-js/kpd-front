@@ -312,6 +312,45 @@ function isoWeekYear(date) {
   return d.getFullYear();
 }
 
+/** Количество ISO-недель в году (52 или 53). Использует Dec 28 — всегда в последней неделе. */
+function lastISOWeekOfYear(year) {
+  const dec28 = new Date(Date.UTC(year, 11, 28));
+  const day = dec28.getUTCDay() || 7;
+  const thu = new Date(dec28);
+  thu.setUTCDate(dec28.getUTCDate() + 4 - day);
+  const jan1 = new Date(Date.UTC(thu.getUTCFullYear(), 0, 1));
+  return Math.ceil((((thu - jan1) / 86400000) + 1) / 7);
+}
+
+/**
+ * Вычисляет {year, week} для строки SpendingPlanLine по дате и exec-периоду.
+ * Правило:
+ *   – Если дата есть: year = getFullYear(d). Если дата в декабре и ISO-неделя = 1 →
+ *     work clamp: week = lastISOWeekOfYear(year).
+ *   – Если даты нет: year из executionYear, но если execution = декабрь и week <= 4 →
+ *     payment скорее всего в следующем году.
+ */
+function planLineWeekYear(d, rawWeek, executionYear, executionMonth) {
+  let year, week;
+  if (d) {
+    year = d.getFullYear();
+    week = rawWeek;
+    // 31.12 → ISO неделя 1 следующего года; кладём в последнюю неделю этого года
+    if (week === 1 && d.getUTCMonth() === 11) {
+      week = lastISOWeekOfYear(year);
+    }
+  } else {
+    // Нет даты — определяем год по месяцу выполнения + неделе
+    year = executionYear;
+    week = rawWeek;
+    // Декабрьская работа + ранняя неделя оплаты → выплата в следующем году
+    if (executionMonth === 12 && week <= 4) {
+      year = executionYear + 1;
+    }
+  }
+  return { year, week };
+}
+
 /** Нормализует дату в строку YYYY-MM-DD по московскому времени (UTC+3),
  *  чтобы избежать ±1 день из-за timezone при сравнении ключей выплат. */
 function toMoscowDateKey(date) {
@@ -335,6 +374,11 @@ function parseDate(val) {
     return new Date(Date.UTC(val.getFullYear(), val.getMonth(), val.getDate()));
   }
   if (typeof val === "string" && val.trim() !== "") {
+    // Поддержка формата ДД.ММ.ГГГГ (из Google Sheets / некоторых Excel ячеек)
+    const m = val.trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+    if (m) {
+      return new Date(Date.UTC(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1])));
+    }
     const d = new Date(val);
     return isNaN(d.getTime()) ? null : d;
   }
@@ -965,7 +1009,7 @@ function extractWorks(wb, executorMap, projectMap, workTypeMap) {
       comment:     str(r["Комментарий"]),
       checkedAt:   parseDate(r["Дата проверки"]),
       paidAt:      parseDate(r["Дата оплаты"]),
-      plannedPayAt: parseDate(r["Дата оплаты - план"]),
+      plannedPayAt: parseDate(r["Дата оплаты план"] ?? r["Дата оплаты - план"]),
       _executorName: executorName,
       _projectName:  projectName,
       _workTypeName: workTypeName,
@@ -2131,20 +2175,19 @@ async function runMigration(prisma, all) {
 
     // Part A: из выставленных работ и прочих трат, недели 1–25
     for (const w of all.works.works) {
-      const week = w._week;
-      if (!week || week > 25) continue;
+      const rawWeek = w._week;
+      if (!rawWeek || rawWeek > 25) continue;
       const executorId = w._executorName ? (executorIds[normKey(w._executorName)] ?? null) : null;
       const projectId = w._projectName ? (projectIds[normKey(w._projectName)] ?? null) : null;
       const workTypeId = w._workTypeName ? (wtIds[normKey(w._workTypeName)] ?? null) : null;
       if (!executorId || !projectId || !workTypeId) continue;
-      // Используем календарный год (не ISO), чтобы 31.12 не уходил в следующий год
       const d = w.plannedPayAt ?? w.paidAt;
-      const payYear = d ? d.getFullYear() : w.executionYear;
+      const { year, week } = planLineWeekYear(d, rawWeek, w.executionYear, w.executionMonth);
       rows.push({
         projectId,
         executorId,
         workTypeId,
-        year:        payYear,
+        year,
         week,
         amount:      w.amount,
         createdById: defaultUserId,
@@ -2154,19 +2197,19 @@ async function runMigration(prisma, all) {
 
     // Part A2: прочие траты, недели 1–25
     for (const o of all.works.otherExpenses) {
-      const week = o._week;
-      if (!week || week > 25) continue;
+      const rawWeek = o._week;
+      if (!rawWeek || rawWeek > 25) continue;
       const executorId = o._executorName ? (executorIds[normKey(o._executorName)] ?? null) : null;
       const projectId = o._projectName ? (projectIds[normKey(o._projectName)] ?? null) : null;
       const workTypeId = o._workTypeName ? (wtIds[normKey(o._workTypeName)] ?? null) : null;
       if (!executorId || !projectId || !workTypeId) continue;
       const d = o.plannedPayAt ?? o.paidAt;
-      const payYear = d ? d.getFullYear() : o.executionYear;
+      const { year, week } = planLineWeekYear(d, rawWeek, o.executionYear, o.executionMonth);
       rows.push({
         projectId,
         executorId,
         workTypeId,
-        year:        payYear,
+        year,
         week,
         amount:      o.amount,
         createdById: defaultUserId,
