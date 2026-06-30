@@ -14,6 +14,7 @@ import { normalizeExecutorType } from "@/lib/executor-type";
 export type SessionLike = {
   id: string;
   role: string;
+  isSuperAdmin?: boolean;
   executorId?: string | null;
   executorType?: string | null;
   isResponsible?: boolean;
@@ -27,6 +28,15 @@ export type WorkLike = { executorId: string; projectId: string };
 
 export function isAdmin(user: SessionLike | null | undefined): boolean {
   return user?.role === "admin";
+}
+
+export function isSuperAdmin(user: SessionLike | null | undefined): boolean {
+  return user?.role === "admin" && user?.isSuperAdmin === true;
+}
+
+/** Назначать/снимать роль admin — только супер-админ. */
+export function canManageAdmins(user: SessionLike | null | undefined): boolean {
+  return isSuperAdmin(user);
 }
 
 export function isResponsible(user: SessionLike | null | undefined): boolean {

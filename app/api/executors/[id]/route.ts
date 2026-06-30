@@ -25,7 +25,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const executor = await prisma.executor.findUnique({
     where: { id },
     include: {
-      user: { select: { id: true, email: true, fullName: true, isActive: true } },
+      user: { select: { id: true, email: true, fullName: true, role: true, isActive: true } },
       responsibleUser: { select: { id: true, fullName: true } },
       defaultBankAccount: { select: { id: true, name: true } },
       executorWorkTypes: { include: { workType: { select: { id: true, name: true, segment: true } } } },

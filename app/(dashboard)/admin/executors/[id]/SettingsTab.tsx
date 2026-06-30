@@ -54,7 +54,7 @@ type ExecutorDetail = {
   inTgChat: boolean;
   isResponsible: boolean;
   responsibleActive: boolean;
-  user: { id: string; email: string; fullName: string; isActive: boolean } | null;
+  user: { id: string; email: string; fullName: string; role: string; isActive: boolean } | null;
   executorWorkTypes: { workType: WorkType }[];
 };
 
@@ -66,8 +66,8 @@ type Props = {
   onChanged: () => void;
   /** Полный доступ: смена типа, учётка, доступ, роль ответственного. */
   isAdmin?: boolean;
-  /** Владелец профиля (свой /me): может сменить свой пароль. */
-  isOwner?: boolean;
+  /** Может назначать/снимать роль admin (только супер-админ). */
+  viewerIsSuperAdmin?: boolean;
   /** Может редактировать поля профиля (false — только просмотр). */
   canEdit?: boolean;
 };
@@ -79,7 +79,7 @@ export function SettingsTab({
   allWorkTypes,
   onChanged,
   isAdmin = false,
-  isOwner = false,
+  viewerIsSuperAdmin = false,
   canEdit = true,
 }: Props) {
   const [executorType, setExecutorType] = useState<ExecutorType>(() =>
@@ -128,53 +128,27 @@ export function SettingsTab({
   const [togglingAccess, setTogglingAccess] = useState(false);
   const hasAccess = !executor.accessRevokedAt;
 
-  // Смена собственного пароля (только владелец профиля)
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [changingPassword, setChangingPassword] = useState(false);
-
   // Сброс пароля администратором
-  const [adminNewPassword, setAdminNewPassword] = useState(() => generatePassword());
   const [adminResettingPassword, setAdminResettingPassword] = useState(false);
-
-  async function handleChangePassword() {
-    if (newPassword.length < 6) return toast.error("Новый пароль не короче 6 символов");
-    setChangingPassword(true);
-    try {
-      const r = await fetch("/api/users/me/password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ currentPassword, newPassword }),
-      });
-      if (!r.ok) {
-        const body = await r.json().catch(() => ({}));
-        throw new Error((body as { error?: string }).error ?? "Не удалось сменить пароль");
-      }
-      toast.success("Пароль изменён");
-      setCurrentPassword("");
-      setNewPassword("");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Ошибка");
-    } finally {
-      setChangingPassword(false);
-    }
-  }
+  // Флаг роли пользователя (для чекбокса «Администратор»)
+  const [isUserAdmin, setIsUserAdmin] = useState(executor.user ? executor.user.role === "admin" : false);
 
   async function handleAdminResetPassword() {
-    if (!executor.user || adminNewPassword.length < 6) return;
+    if (!executor.user) return;
     setAdminResettingPassword(true);
     try {
+      const newPwd = generatePassword();
       const r = await fetch(`/api/users/${executor.user.id}/reset-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: adminNewPassword }),
+        body: JSON.stringify({ password: newPwd }),
       });
       if (!r.ok) {
         const body = await r.json().catch(() => ({}));
         throw new Error((body as { error?: string }).error ?? "Не удалось сбросить пароль");
       }
-      toast.success("Пароль успешно изменён. Сообщите его пользователю.");
-      setAdminNewPassword(generatePassword());
+      await navigator.clipboard.writeText(newPwd);
+      toast.success("Пароль сброшен и скопирован в буфер обмена");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Ошибка");
     } finally {
@@ -197,6 +171,7 @@ export function SettingsTab({
     setDefaultBankAccountId(executor.defaultBankAccountId ?? "");
     setExecutorStatus(executor.status === "archived" ? "archived" : "active");
     setIsResponsible(executor.isResponsible ?? false);
+    setIsUserAdmin(executor.user ? executor.user.role === "admin" : false);
     setSelectedWorkTypeIds(executor.executorWorkTypes.map((ewt) => ewt.workType.id));
     try {
       setSelectedSpecialties(JSON.parse(executor.specialties ?? "[]"));
@@ -276,13 +251,17 @@ export function SettingsTab({
       }
 
       if (isAdmin && executor.user) {
+        const userPatch: Record<string, unknown> = {
+          fullName: fullName || undefined,
+          email: email.trim().toLowerCase() || undefined,
+        };
+        if (viewerIsSuperAdmin) {
+          userPatch.role = isUserAdmin ? "admin" : "executor";
+        }
         const ur = await fetch(`/api/users/${executor.user.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fullName: fullName || undefined,
-            email: email.trim().toLowerCase() || undefined,
-          }),
+          body: JSON.stringify(userPatch),
         });
         if (!ur.ok) throw new Error("Ошибка обновления пользователя");
       }
@@ -425,31 +404,19 @@ export function SettingsTab({
       {isAdmin && executor.user && executorType !== "service" && executorType !== "bank" && (
         <div className="border rounded-lg p-4 space-y-3">
           <h3 className="text-sm font-semibold text-neutral-800">Сброс пароля</h3>
-          <p className="text-xs text-neutral-500">Введите новый пароль или сгенерируйте случайный. Сообщите пароль пользователю.</p>
-          <div className="space-y-1.5">
-            <Label>Новый пароль</Label>
-            <div className="flex gap-2">
-              <Input
-                value={adminNewPassword}
-                onChange={(e) => setAdminNewPassword(e.target.value)}
-                placeholder="Минимум 6 символов"
-                className="font-mono"
-              />
-              <Button type="button" variant="outline" size="icon" onClick={() => setAdminNewPassword(generatePassword())} title="Сгенерировать">
-                <RefreshCw className="h-4 w-4" />
-              </Button>
-            </div>
-            {adminNewPassword.length > 0 && adminNewPassword.length < 6 && (
-              <p className="text-xs text-red-600">Пароль слишком короткий</p>
-            )}
-          </div>
+          <p className="text-xs text-neutral-500">
+            Будет сгенерирован случайный пароль и автоматически скопирован в буфер обмена — сообщите его пользователю.
+          </p>
+          <p className="text-xs text-amber-700">
+            Текущий пароль посмотреть невозможно по соображениям безопасности.
+          </p>
           <div className="flex justify-end">
             <Button
               variant="outline"
               onClick={handleAdminResetPassword}
-              disabled={adminResettingPassword || adminNewPassword.length < 6}
+              disabled={adminResettingPassword}
             >
-              {adminResettingPassword ? "Сохранение..." : "Сохранить пароль"}
+              {adminResettingPassword ? "Сброс..." : "Сбросить"}
             </Button>
           </div>
         </div>
@@ -521,6 +488,23 @@ export function SettingsTab({
                   Роль руководителя проекта в архиве — исполнитель при этом может оставаться активным.
                 </p>
               )}
+          </div>
+        )}
+        {viewerIsSuperAdmin && executor.user && (
+          <div className="flex flex-col gap-1 pt-1">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="isUserAdmin"
+                checked={isUserAdmin}
+                onCheckedChange={(v) => setIsUserAdmin(Boolean(v))}
+              />
+              <Label htmlFor="isUserAdmin" className="cursor-pointer">
+                Администратор
+              </Label>
+            </div>
+            <p className="text-xs text-neutral-500 pl-6">
+              Назначить пользователю полный доступ администратора.
+            </p>
           </div>
         )}
       </div>
@@ -707,39 +691,6 @@ export function SettingsTab({
         </div>
       )}
 
-      {isOwner && executor.user && (
-        <div className="border rounded-lg p-4 space-y-3">
-          <h3 className="text-sm font-semibold text-neutral-800">Сменить пароль</h3>
-          <div className="space-y-1.5">
-            <Label>Текущий пароль</Label>
-            <Input
-              type="password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              autoComplete="current-password"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Новый пароль</Label>
-            <Input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              autoComplete="new-password"
-              placeholder="Не короче 6 символов"
-            />
-          </div>
-          <div className="flex justify-end">
-            <Button
-              variant="outline"
-              onClick={handleChangePassword}
-              disabled={changingPassword || !currentPassword || newPassword.length < 6}
-            >
-              {changingPassword ? "Сохранение..." : "Изменить пароль"}
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

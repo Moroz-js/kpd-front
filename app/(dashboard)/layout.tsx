@@ -11,7 +11,7 @@ export default async function DashboardLayout({
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect("/login");
 
-  const { role, fullName, id: userId, executorId, executorType, isResponsible: isResponsibleFlag, responsibleActive } = sessionUser;
+  const { role, fullName, id: userId, isSuperAdmin, executorId, executorType, isResponsible: isResponsibleFlag, responsibleActive } = sessionUser;
 
   const isPm =
     role === "responsible" ||
@@ -30,6 +30,8 @@ export default async function DashboardLayout({
       <Sidebar
         role={role}
         fullName={fullName}
+        userId={userId}
+        isSuperAdmin={isSuperAdmin ?? false}
         hasProjects={hasProjects}
         isPm={isPm}
         isPermanentExecutor={isPermanentExecutor}

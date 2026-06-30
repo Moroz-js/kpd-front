@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
-import { isAdmin } from "@/lib/permissions";
+import { isAdmin, isSuperAdmin } from "@/lib/permissions";
 import { prisma } from "@/lib/db";
 import { logActivity } from "@/lib/audit/log";
 
@@ -9,6 +9,7 @@ const patchSchema = z.object({
   fullName: z.string().min(1).optional(),
   email: z.string().email("Некорректный email").optional(),
   isActive: z.boolean().optional(),
+  role: z.enum(["admin", "executor", "responsible"]).optional(),
 });
 
 export async function PATCH(
@@ -44,12 +45,21 @@ export async function PATCH(
     }
   }
 
+  // Смена роли — только супер-админ; и нельзя снять флаг у самого себя
+  if (parsed.data.role !== undefined && !isSuperAdmin(me)) {
+    return NextResponse.json({ error: "Forbidden: only super-admin can change roles" }, { status: 403 });
+  }
+  if (parsed.data.role !== undefined && id === me.id) {
+    return NextResponse.json({ error: "Нельзя изменить свою собственную роль" }, { status: 400 });
+  }
+
   const updated = await prisma.user.update({
     where: { id },
     data: {
       ...(parsed.data.fullName !== undefined && { fullName: parsed.data.fullName }),
       ...(parsed.data.email !== undefined && { email: parsed.data.email.trim().toLowerCase() }),
       ...(parsed.data.isActive !== undefined && { isActive: parsed.data.isActive }),
+      ...(parsed.data.role !== undefined && isSuperAdmin(me) && { role: parsed.data.role }),
     },
   });
 

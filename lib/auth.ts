@@ -44,6 +44,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           email: user.email,
           name: user.fullName,
           role: user.role,
+          isSuperAdmin: user.isSuperAdmin,
           fullName: user.fullName,
           executorId: exec?.id ?? null,
           executorType: exec?.type ?? null,
@@ -63,6 +64,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const u = user as {
           id: string;
           role: string;
+          isSuperAdmin?: boolean;
           fullName: string;
           executorId: string | null;
           executorType?: string | null;
@@ -72,6 +74,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         };
         token.sub = u.id;
         token.role = u.role;
+        token.isSuperAdmin = u.isSuperAdmin ?? false;
         token.fullName = u.fullName;
         token.executorId = u.executorId;
         token.executorType = u.executorType ?? null;
@@ -85,6 +88,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (session.user) {
         const u = session.user as unknown as Record<string, unknown>;
         u.role = token.role;
+        u.isSuperAdmin = token.isSuperAdmin;
         u.fullName = token.fullName;
         u.executorId = token.executorId;
         u.executorType = token.executorType;
@@ -101,6 +105,7 @@ export type SessionUser = {
   id: string;
   email: string;
   role: string;
+  isSuperAdmin?: boolean;
   fullName: string;
   executorId: string | null;
   /** Тип привязанного исполнителя (permanent | external | service | bank). */
@@ -130,6 +135,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       id: true,
       email: true,
       role: true,
+      isSuperAdmin: true,
       fullName: true,
       isActive: true,
       executor: {
@@ -163,6 +169,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     id: dbUser.id,
     email: dbUser.email,
     role: dbUser.role,
+    isSuperAdmin: dbUser.isSuperAdmin,
     fullName: dbUser.fullName,
     executorId: exec?.id ?? null,
     executorType: exec?.type ?? null,

@@ -26,6 +26,7 @@ export default async function Page() {
       executorId={user.executorId}
       viewerRole={user.role}
       viewerExecutorId={user.executorId}
+      viewerIsSuperAdmin={user.isSuperAdmin ?? false}
     />
   );
 }

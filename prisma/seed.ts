@@ -104,12 +104,13 @@ async function seedMonths(
 async function seedUsers(hash: string) {
   await prisma.user.upsert({
     where: { email: "admin@kpd.local" },
-    update: { fullName: "Админ Админов", role: "admin", isActive: true },
+    update: { fullName: "Админ Админов", role: "admin", isSuperAdmin: true, isActive: true },
     create: {
       email: "admin@kpd.local",
       password: hash,
       fullName: "Админ Админов",
       role: "admin",
+      isSuperAdmin: true,
       isActive: true,
     },
   });

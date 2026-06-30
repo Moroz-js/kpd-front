@@ -4,14 +4,13 @@ import * as React from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import { toast } from "sonner" ;
-import { Plus, Pencil, Archive, ArchiveRestore, Check, X, KeyRound, RefreshCw, ExternalLink, Search } from "lucide-react";
+import { Plus, Pencil, Archive, ArchiveRestore, Check, X, KeyRound, ExternalLink, Search } from "lucide-react";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import { ConfirmDialog } from "@/components/ui-custom/ConfirmDialog";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   ENTITY_STATUSES,
   EXECUTOR_TYPES,
@@ -668,63 +667,49 @@ function ResetPasswordDialog({
   target: Row;
   onClose: () => void;
 }) {
-  const [password, setPassword] = React.useState(() => generatePassword());
   const [saving, setSaving] = React.useState(false);
 
-  async function handleSave() {
-    if (!password || password.length < 6) {
-      toast.error("Пароль не короче 6 символов");
-      return;
-    }
+  async function handleReset() {
+    if (!target.userId) return;
     setSaving(true);
-    const res = await fetch(`/api/users/${target.userId}/reset-password`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
-    });
-    setSaving(false);
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      toast.error(err.error ?? "Не удалось изменить пароль");
-      return;
+    try {
+      const newPwd = generatePassword();
+      const res = await fetch(`/api/users/${target.userId}/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: newPwd }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error((err as { error?: string }).error ?? "Не удалось сбросить пароль");
+        return;
+      }
+      await navigator.clipboard.writeText(newPwd);
+      toast.success("Пароль сброшен и скопирован в буфер обмена");
+      onClose();
+    } finally {
+      setSaving(false);
     }
-    toast.success("Пароль успешно изменён");
-    onClose();
   }
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Сменить пароль — {target.name}</DialogTitle>
+          <DialogTitle>Сброс пароля — {target.name}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <p className="text-sm text-neutral-500">
-            Введите новый пароль или сгенерируйте случайный. Сообщите пароль пользователю.
+            Будет сгенерирован случайный пароль и автоматически скопирован в буфер обмена — сообщите его пользователю.
           </p>
-          <div className="space-y-1.5">
-            <Label htmlFor="newPwd">Новый пароль</Label>
-            <div className="flex gap-2">
-              <Input
-                id="newPwd"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Минимум 6 символов"
-                className="font-mono"
-              />
-              <Button type="button" variant="outline" size="icon" onClick={() => setPassword(generatePassword())} title="Сгенерировать">
-                <RefreshCw className="h-4 w-4" />
-              </Button>
-            </div>
-            {password.length > 0 && password.length < 6 && (
-              <p className="text-xs text-red-600">Пароль слишком короткий</p>
-            )}
-          </div>
+          <p className="text-xs text-amber-700">
+            Текущий пароль посмотреть невозможно по соображениям безопасности.
+          </p>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose} disabled={saving}>Отмена</Button>
-          <Button onClick={handleSave} disabled={saving || password.length < 6}>
-            {saving ? "Сохранение..." : "Сохранить пароль"}
+          <Button onClick={handleReset} disabled={saving}>
+            {saving ? "Сброс..." : "Сбросить"}
           </Button>
         </DialogFooter>
       </DialogContent>

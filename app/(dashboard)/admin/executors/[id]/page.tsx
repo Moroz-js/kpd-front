@@ -31,6 +31,7 @@ export default async function Page({
       executorId={id}
       viewerRole={user.role}
       viewerExecutorId={user.executorId}
+      viewerIsSuperAdmin={user.isSuperAdmin ?? false}
       backHref={backHref}
       initialTab={tab}
     />

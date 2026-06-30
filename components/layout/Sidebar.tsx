@@ -22,10 +22,13 @@ import {
   CheckSquare,
   User,
   Download,
+  KeyRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
+import { useState } from "react";
+import { toast } from "sonner";
 
 type NavItem = {
   label: string;
@@ -73,6 +76,8 @@ const ROLE_LABELS: Record<string, string> = {
 type SidebarProps = {
   role: string;
   fullName: string;
+  userId?: string;
+  isSuperAdmin?: boolean;
   hasProjects?: boolean;
   isPm?: boolean;
   isPermanentExecutor?: boolean;
@@ -115,15 +120,23 @@ function buildNavGroups({
   return items.length > 0 ? [{ items }] : [];
 }
 
+function generatePassword(): string {
+  const chars = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789!@#$%";
+  return Array.from({ length: 12 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+}
+
 export function Sidebar({
   role,
   fullName,
+  userId,
+  isSuperAdmin = false,
   hasProjects = true,
   isPm = false,
   isPermanentExecutor = false,
   hasProfile = false,
 }: SidebarProps) {
   const pathname = usePathname();
+  const [resettingPwd, setResettingPwd] = useState(false);
   const navGroups = buildNavGroups({
     role,
     hasProjects,
@@ -132,6 +145,28 @@ export function Sidebar({
     hasProfile,
   });
   const displayRole = isPm ? ROLE_LABELS.responsible : (ROLE_LABELS[role] ?? role);
+
+  async function handleSelfReset() {
+    if (!userId) return;
+    setResettingPwd(true);
+    try {
+      const newPwd = generatePassword();
+      const res = await fetch(`/api/users/${userId}/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: newPwd }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error((err as { error?: string }).error ?? "Не удалось сбросить пароль");
+        return;
+      }
+      await navigator.clipboard.writeText(newPwd);
+      toast.success("Пароль сброшен и скопирован в буфер обмена");
+    } finally {
+      setResettingPwd(false);
+    }
+  }
 
   return (
     <aside className="flex-shrink-0 w-60 h-full bg-white border-r border-neutral-200 flex flex-col z-10 overflow-y-auto">
@@ -181,6 +216,19 @@ export function Sidebar({
           <p className="text-sm font-medium text-neutral-800 truncate">{fullName}</p>
           <p className="text-xs text-neutral-500">{displayRole}</p>
         </div>
+        {isSuperAdmin && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={resettingPwd}
+            onClick={handleSelfReset}
+            className="w-full justify-start text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 mb-1"
+          >
+            <KeyRound className="h-4 w-4 mr-2" />
+            {resettingPwd ? "Сброс..." : "Сбросить пароль"}
+          </Button>
+        )}
         <form action={signOutAction}>
           <Button
             type="submit"

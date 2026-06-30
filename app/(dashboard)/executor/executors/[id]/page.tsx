@@ -18,6 +18,7 @@ export default async function Page({
       executorId={id}
       viewerRole={user.role}
       viewerExecutorId={user.executorId}
+      viewerIsSuperAdmin={user.isSuperAdmin ?? false}
       backHref="/executor/executors"
       view="settings-only"
     />

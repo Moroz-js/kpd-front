@@ -37,7 +37,7 @@ type ExecutorDetail = {
   isResponsible: boolean;
   responsibleActive: boolean;
   onboardingSeeded: boolean;
-  user: { id: string; email: string; fullName: string; isActive: boolean } | null;
+  user: { id: string; email: string; fullName: string; role: string; isActive: boolean } | null;
   executorWorkTypes: { workType: WorkType }[];
   projectExecutors: { project: Project }[];
 };
@@ -56,6 +56,7 @@ type Props = {
   executorId: string;
   viewerRole: string; // admin | responsible | executor
   viewerExecutorId: string | null;
+  viewerIsSuperAdmin?: boolean;
   backHref?: string;
   initialTab?: string;
   /** full — смета + настройки; settings-only — только настройки чужого исполнителя. */
@@ -66,6 +67,7 @@ export function ExecutorEstimateClient({
   executorId,
   viewerRole,
   viewerExecutorId,
+  viewerIsSuperAdmin = false,
   backHref,
   initialTab,
   view = "full",
@@ -278,7 +280,7 @@ export function ExecutorEstimateClient({
               allWorkTypes={allWorkTypes}
               onChanged={reload}
               isAdmin={isAdmin}
-              isOwner={isOwner}
+              viewerIsSuperAdmin={viewerIsSuperAdmin}
               canEdit={isAdmin || isPermanentType}
             />
           </div>
