@@ -90,7 +90,7 @@ function buildNavGroups({
   isPm,
   isPermanentExecutor,
   hasProfile,
-}: Required<Omit<SidebarProps, "fullName">>): NavGroup[] {
+}: Required<Omit<SidebarProps, "fullName" | "userId" | "isSuperAdmin">>): NavGroup[] {
   if (role === "admin") return ADMIN_NAV;
 
   const items: NavItem[] = [];
