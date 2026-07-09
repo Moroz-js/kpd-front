@@ -23,7 +23,7 @@ function displayExecutorName(name: string, type: string) {
   return normalizeExecutorType(type) === "service" ? name.toUpperCase() : name;
 }
 import { formatDate } from "@/lib/format";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -35,7 +35,7 @@ import {
 import { SortableHead } from "@/components/ui-custom/SortableHead";
 import { ExpandableListCell } from "@/components/ui-custom/ExpandableListCell";
 import { cn } from "@/lib/utils";
-import { stickyActionsHead, stickyActionsCell, stickyActionsInner } from "@/lib/table-styles";
+import { stickyActionsHead, stickyActionsCell, stickyActionsInner, compactTable, compactHead, compactCell, compactCellClip } from "@/lib/table-styles";
 import { ExecutorWizard } from "./ExecutorWizard";
 import { hasPersonalSmeta } from "@/lib/executor-personal-estimate";
 import { EXECUTOR_COMPANY_STATUSES } from "@/lib/statuses";
@@ -392,47 +392,49 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
       </div>
 
       <Table
-        className="min-w-[1600px]"
+        className={cn(compactTable, "min-w-[1520px]")}
         containerClassName="rounded-md border bg-white flex-1 min-h-0 overflow-auto"
       >
           <TableHeader>
             <TableRow>
-              <SortableHead field="name" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
+              <SortableHead field="name" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort} className={cn(compactHead, "w-[160px] max-w-[160px]")}>
                 Исполнитель
               </SortableHead>
-              <TableHead className="w-20 min-w-20 px-1 leading-tight align-bottom !whitespace-normal">
+              <TableHead className={cn(compactHead, "w-20 min-w-20 px-1")}>
                 <span className="block text-left">
                   Статус
                   <br />
                   <span className="whitespace-nowrap">в компании</span>
                 </span>
               </TableHead>
-              <TableHead>Тип</TableHead>
-              <TableHead className="w-40 max-w-40">Виды работ</TableHead>
-              <TableHead>Специальность</TableHead>
-              <TableHead>Проекты</TableHead>
+              <TableHead className={cn(compactHead, "w-24")}>Тип</TableHead>
+              <TableHead className={cn(compactHead, "w-40 max-w-40")}>Виды работ</TableHead>
+              <TableHead className={cn(compactHead, "w-28 max-w-28")}>Специальность</TableHead>
+              <TableHead className={cn(compactHead, "w-44 max-w-44")}>Проекты</TableHead>
               <SortableHead
                 field="responsibleName"
                 sortBy={sort.field}
                 sortDir={sort.dir}
                 onSort={handleSort}
+                className={cn(compactHead, "w-32 max-w-32")}
               >
                 Ответственный
               </SortableHead>
-              <TableHead>Источник оплаты</TableHead>
-              <TableHead>Тип получателя</TableHead>
-              <TableHead>В чате ТГ</TableHead>
-              <TableHead>Доступ</TableHead>
-              <TableHead>Статус</TableHead>
+              <TableHead className={cn(compactHead, "w-32 max-w-32")}>Источник оплаты</TableHead>
+              <TableHead className={cn(compactHead, "w-36 max-w-36")}>Тип получателя</TableHead>
+              <TableHead className={cn(compactHead, "w-20")}>В чате ТГ</TableHead>
+              <TableHead className={cn(compactHead, "w-24")}>Доступ</TableHead>
+              <TableHead className={cn(compactHead, "w-24")}>Статус</TableHead>
               <SortableHead
                 field="lastPaidAt"
                 sortBy={sort.field}
                 sortDir={sort.dir}
                 onSort={handleSort}
+                className={cn(compactHead, "w-28")}
               >
                 Последняя выплата
               </SortableHead>
-              <TableHead className={cn("w-24", stickyActionsHead)} />
+              <TableHead className={cn("w-28", stickyActionsHead)} />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -451,7 +453,7 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
             ) : (
               rows.map((r) => (
                 <TableRow key={r.id} className={r.status === "archived" ? "bg-neutral-100 text-neutral-400" : ""}>
-                  <TableCell className="font-medium">
+                  <TableCell className={cn(compactCell, compactCellClip, "font-medium whitespace-normal")}>
                     <div className="flex items-center gap-1 min-w-0">
                       {isManage ? (
                         <Link
@@ -472,56 +474,56 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="h-6 w-6 p-0 shrink-0"
+                            className="h-5 w-5 p-0 shrink-0"
                             title="Открыть смету в новом окне"
                             onClick={() => window.open(`/admin/executors/${r.id}`, "_blank")}
                           >
-                            <ExternalLink className="h-3.5 w-3.5 text-neutral-500" />
+                            <ExternalLink className="h-3 w-3 text-neutral-500" />
                           </Button>
                         </>
                       ) : (
                         <span className="truncate">{displayExecutorName(r.name, r.type)}</span>
                       )}
                     </div>
-                    {r.email && <div className="text-xs text-neutral-500">{r.email}</div>}
+                    {r.email && <div className="text-xs text-neutral-500 truncate">{r.email}</div>}
                   </TableCell>
-                  <TableCell className="w-20 min-w-20 px-1">
+                  <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>
                     {r.companyStatus
                       ? r.companyStatus.split(",").map((s) => EXECUTOR_COMPANY_STATUSES[s.trim() as keyof typeof EXECUTOR_COMPANY_STATUSES] ?? s).join(", ")
                       : "—"}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>
                     {EXECUTOR_TYPES[normalizeExecutorType(r.type)] ?? r.type}
                   </TableCell>
-                  <TableCell className="w-40 max-w-40" style={{ maxWidth: "10rem", width: "10rem" }}>
+                  <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>
                     <ExpandableListCell items={r.workTypeNames} className="max-w-full" />
                   </TableCell>
-                  <TableCell className="max-w-32 truncate">
+                  <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>
                     {r.specialty ?? "—"}
                   </TableCell>
-                  <TableCell>
-                    <ExpandableListCell items={r.projectNames} className="max-w-64" />
+                  <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>
+                    <ExpandableListCell items={r.projectNames} className="max-w-full" />
                   </TableCell>
-                  <TableCell>{r.responsibleName ?? "—"}</TableCell>
-                  <TableCell>{r.defaultBankAccountName ?? "—"}</TableCell>
-                  <TableCell>
-                    <ExpandableListCell items={r.recipientTypes} className="max-w-56" />
+                  <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>{r.responsibleName ?? "—"}</TableCell>
+                  <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>{r.defaultBankAccountName ?? "—"}</TableCell>
+                  <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>
+                    <ExpandableListCell items={r.recipientTypes} className="max-w-full" />
                   </TableCell>
-                  <TableCell className="text-center">
+                  <TableCell className={cn(compactCell, "text-center")}>
                     {r.inTgChat ? (
                       <Check className="h-4 w-4 text-green-600 inline" />
                     ) : (
                       <X className="h-4 w-4 text-neutral-300 inline" />
                     )}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className={compactCell}>
                     {r.email && r.type !== "service" ? (
                       <button
                         type="button"
                         onClick={() => !isManage && toggleAccess(r)}
                         disabled={isManage}
                         title={isManage ? undefined : "Переключить доступ"}
-                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium border transition-colors ${
+                        className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0 text-xs font-medium border transition-colors ${
                           r.hasAccess
                             ? "bg-green-50 border-green-300 text-green-800"
                             : "bg-neutral-100 border-neutral-300 text-neutral-600"
@@ -543,24 +545,21 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
                       <span className="text-xs text-neutral-400">—</span>
                     )}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className={compactCell}>
                     <StatusBadge dict={ENTITY_STATUSES} value={r.status} />
                   </TableCell>
-                  <TableCell>
+                  <TableCell className={compactCell}>
                     {r.lastPaidAt ? formatDate(r.lastPaidAt) : "—"}
                   </TableCell>
                   <TableCell className={cn(stickyActionsCell, r.status === "archived" && "bg-neutral-100")}>
                     <div className={stickyActionsInner}>
-                      <Button
-                        size="sm"
-                        variant="ghost"
+                      <Link
+                        href={`${detailBase}/${r.id}?tab=settings`}
+                        className={buttonVariants({ variant: "ghost", size: "sm" })}
                         title="Настройки"
-                        render={
-                          <Link href={`${detailBase}/${r.id}?tab=settings`}>
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Link>
-                        }
-                      />
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Link>
                       {!isManage && (
                         <>
                           <Button

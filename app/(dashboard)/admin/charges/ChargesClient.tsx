@@ -26,12 +26,55 @@ import {
   Table, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { stickyActionsHead, stickyActionsCell, stickyActionsInner } from "@/lib/table-styles";
+import { stickyActionsHead, stickyActionsCell, stickyActionsInner, compactTable, compactHead, compactCell, compactCellClip } from "@/lib/table-styles";
 import { BulkSelectTableBody } from "@/components/ui-custom/BulkSelectTableBody";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
 import { useTableRowSelection } from "@/lib/useTableRowSelection";
+
+const ACTIONS_COL_WIDTH = 96;
+/** table-fixed: фиксированные ширины, иначе текст залезает под sticky-действия */
+const CHARGES_COL_WIDTHS = [
+  36, 140, 100, 128, 148, 168, 84, 84, 84, 84, 72, 60, 84, 192, 100, 100, 168, ACTIONS_COL_WIDTH,
+] as const;
+const CHARGES_TABLE_MIN_WIDTH = CHARGES_COL_WIDTHS.reduce((s, w) => s + w, 0);
+
+const [COL_CHECKBOX, COL_BANK, COL_AMOUNT] = CHARGES_COL_WIDTHS;
+
+const stickyColStyle = (left: number, width: number): React.CSSProperties => ({
+  left,
+  width,
+  minWidth: width,
+  maxWidth: width,
+});
+
+const stickyCheckboxHead =
+  "sticky z-30 box-border bg-neutral-100 px-0 [&:has([role=checkbox])]:pr-0";
+const stickyCheckboxCell =
+  "sticky z-10 box-border bg-white px-0 [&:has([role=checkbox])]:pr-0";
+const stickyBankHead = "sticky z-[31] box-border bg-neutral-100";
+const stickyBankCell = "sticky z-[11] box-border bg-white";
+const stickyAmountHead =
+  "sticky z-[32] box-border bg-neutral-100 border-r border-neutral-200 -ml-px";
+const stickyAmountCell =
+  "sticky z-[12] box-border bg-white border-r border-neutral-200 -ml-px";
+
+function chargeCountLabel(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return `${n} начисление`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return `${n} начисления`;
+  return `${n} начислений`;
+}
+
+function clipText(text: string, title?: string) {
+  return (
+    <div className="truncate" title={title ?? (text !== "—" ? text : undefined)}>
+      {text}
+    </div>
+  );
+}
 
 // ─── Типы ─────────────────────────────────────────────────────────────────────
 
@@ -119,9 +162,9 @@ function isMissingM(charge: Charge): boolean {
 
 function ChargeStatusBadge({ status }: { status: string }) {
   const entry = CHARGE_STATUSES[status as keyof typeof CHARGE_STATUSES];
-  if (!entry) return <span className="text-[10px] text-neutral-400">—</span>;
+  if (!entry) return <span className="text-xs text-neutral-400">—</span>;
   return (
-    <span className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-medium whitespace-nowrap ${BADGE_TONE_CLASS[entry.tone]}`}>
+    <span className={`inline-flex items-center rounded-full border px-2 py-0 text-xs font-medium whitespace-nowrap ${BADGE_TONE_CLASS[entry.tone]}`}>
       {entry.label}
     </span>
   );
@@ -135,7 +178,7 @@ function InlineDateCell({ value, onSave, highlight }: { value: string; onSave: (
   if (!editing) {
     return (
       <span
-        className="inline-flex cursor-pointer hover:bg-neutral-100 rounded px-1 py-0.5 text-neutral-600"
+        className="inline-flex cursor-pointer hover:bg-neutral-100 rounded px-1 py-0.5 text-xs text-neutral-600"
         onClick={() => { setEditing(true); setTimeout(() => { try { ref.current?.showPicker(); } catch { /**/ } }, 50); }}
       >
         {v ? v.slice(5).split("-").reverse().join(".") : <span className={highlight ? "font-medium" : "text-neutral-300"}>—</span>}
@@ -175,7 +218,7 @@ function InlinePurposeCell({ value, onSave }: { value: string; onSave: (v: strin
         render={
           <button
             type="button"
-            className="inline-flex max-w-[220px] rounded px-1 py-0.5 text-left text-xs text-neutral-600 hover:bg-neutral-100"
+            className="inline-flex max-w-full rounded px-1 py-0.5 text-left text-xs text-neutral-600 hover:bg-neutral-100"
           />
         }
       >
@@ -238,6 +281,7 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
   const [fClient, setFClient] = useState<string[]>([]);
   const [fProject, setFProject] = useState<string[]>([]);
   const [fWeek, setFWeek] = useState<string[]>([]);
+  const [hidePaid, setHidePaid] = useState(false);
 
   const [bulkStatus, setBulkStatus] = useState("");
 
@@ -278,7 +322,12 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
     return true;
   });
 
-  const orderedRowIds = React.useMemo(() => filtered.map((r) => r.id), [filtered]);
+  const visible = React.useMemo(
+    () => (hidePaid ? filtered.filter((r) => r.status !== "paid") : filtered),
+    [filtered, hidePaid]
+  );
+
+  const orderedRowIds = React.useMemo(() => visible.map((r) => r.id), [visible]);
   const { selectedIds, handleRowSelect, toggleAll, clearSelection } = useTableRowSelection(orderedRowIds);
 
   const selectedSum = React.useMemo(
@@ -428,14 +477,19 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
             value={fWeek}
             onChange={setFWeek}
           />
+          <label className="flex items-center gap-2 rounded-md border border-neutral-200 bg-white px-2.5 py-1.5 text-xs text-neutral-700 cursor-pointer select-none">
+            <Checkbox checked={hidePaid} onCheckedChange={(v) => setHidePaid(v === true)} />
+            Свернуть оплаченные
+          </label>
         </div>
       </div>
 
       {/* Bulk toolbar */}
       {selectedIds.size > 0 && (
         <div className="flex items-center gap-2 rounded-md border bg-blue-50 border-blue-200 px-3 py-2">
-          <span className="text-xs text-blue-700 font-medium">Выбрано: {selectedIds.size}</span>
-          <span className="text-xs font-medium tabular-nums text-blue-900">{formatMoneyRub(selectedSum)}</span>
+          <span className="text-xs text-blue-700 font-medium tabular-nums">
+            {chargeCountLabel(selectedIds.size)} на {formatMoneyRub(selectedSum)}
+          </span>
           <Select value={bulkStatus} onValueChange={(v) => setBulkStatus(v ?? "")}>
             <SelectTrigger className="h-7 text-xs w-40 bg-white">
               <SelectValue>{bulkStatus ? (CHARGE_STATUSES[bulkStatus as keyof typeof CHARGE_STATUSES]?.label ?? bulkStatus) : "— статус —"}</SelectValue>
@@ -458,81 +512,124 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
       <div className="flex-1 min-h-0 min-w-0 flex flex-col">
       {loading ? (
         <div className="text-xs text-neutral-400 py-8 text-center">Загрузка...</div>
-      ) : filtered.length === 0 ? (
+      ) : visible.length === 0 ? (
         <div className="text-xs text-neutral-400 py-8 text-center">Нет данных</div>
       ) : (
         <Table
-          className="min-w-[1400px]"
+          className={cn(compactTable, "w-full border-separate border-spacing-0")}
+          style={{ minWidth: CHARGES_TABLE_MIN_WIDTH }}
           containerClassName="rounded-md border bg-white flex-1 min-h-0 min-w-0 overflow-auto"
         >
+            <colgroup>
+              {CHARGES_COL_WIDTHS.map((w, i) => (
+                <col key={i} style={{ width: w }} />
+              ))}
+            </colgroup>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-8">
+                <TableHead className={cn(stickyCheckboxHead)} style={stickyColStyle(0, COL_CHECKBOX)}>
                   <Checkbox
-                    checked={filtered.length > 0 && selectedIds.size === filtered.length}
+                    checked={visible.length > 0 && selectedIds.size === visible.length}
                     onCheckedChange={() => toggleAll(orderedRowIds)}
                   />
                 </TableHead>
-                <TableHead>Счёт получения</TableHead>
-                <TableHead className="text-right">Сумма</TableHead>
-                <TableHead>
+                <TableHead className={cn(compactHead, stickyBankHead)} style={stickyColStyle(COL_CHECKBOX, COL_BANK)}>
+                  Счёт получения
+                </TableHead>
+                <TableHead
+                  className={cn(compactHead, stickyAmountHead, "text-right")}
+                  style={stickyColStyle(COL_CHECKBOX + COL_BANK, COL_AMOUNT)}
+                >
+                  Сумма
+                </TableHead>
+                <TableHead className={compactHead}>
                   <span className="flex items-center gap-1">
                     Статус
                     <Pencil className="h-3 w-3 text-neutral-400" />
                   </span>
                 </TableHead>
-                <TableHead>Клиент</TableHead>
-                <TableHead>Проект</TableHead>
-                <TableHead>Выст. план</TableHead>
-                <TableHead>Выст. факт</TableHead>
-                <TableHead>Опл. план</TableHead>
-                <TableHead>Месяц</TableHead>
-                <TableHead>Неделя</TableHead>
-                <TableHead>Год</TableHead>
-                <TableHead>
+                <TableHead className={compactHead}>Клиент</TableHead>
+                <TableHead className={compactHead}>Проект</TableHead>
+                <TableHead className={compactHead}>Выст. план</TableHead>
+                <TableHead className={compactHead}>Выст. факт</TableHead>
+                <TableHead className={compactHead}>Опл. план</TableHead>
+                <TableHead className={compactHead}>Месяц</TableHead>
+                <TableHead className={compactHead}>Неделя</TableHead>
+                <TableHead className={compactHead}>Год</TableHead>
+                <TableHead className={compactHead}>
                   <span className="flex items-center gap-1">
                     Опл. факт
                     <Pencil className="h-3 w-3 text-neutral-400" />
                   </span>
                 </TableHead>
-                <TableHead className="min-w-[220px]">
+                <TableHead className={compactHead}>
                   <span className="flex items-center gap-1">
                     Назначение
                     <Pencil className="h-3 w-3 text-neutral-400" />
                   </span>
                 </TableHead>
-                <TableHead>Номер заказа</TableHead>
-                <TableHead>Номер начисления</TableHead>
-                <TableHead>Номер счёта</TableHead>
+                <TableHead className={compactHead}>Номер заказа</TableHead>
+                <TableHead className={compactHead}>Номер начисления</TableHead>
+                <TableHead className={compactHead}>Номер счёта</TableHead>
                 <TableHead className={stickyActionsHead} />
               </TableRow>
             </TableHeader>
             <BulkSelectTableBody>
-              {filtered.map((row, rowIndex) => {
+              {visible.map((row, rowIndex) => {
                 const pd = planDate(row);
                 const weekPF = payWeekPF(row);
                 const yearPF = payYearPF(row);
                 const overdueH = isOverdueH(row);
                 const missingM = isMissingM(row);
+                const isSelected = selectedIds.has(row.id);
+                const bankEmpty = cellEmpty(row.bankAccount?.name);
 
                 return (
-                  <TableRow key={row.id} className={selectedIds.has(row.id) ? "bg-blue-50/50" : ""}>
-                    <TableCell>
+                  <TableRow key={row.id} className={isSelected ? "bg-blue-50/50" : ""}>
+                    <TableCell
+                      className={cn(stickyCheckboxCell, isSelected && "bg-blue-50/50")}
+                      style={stickyColStyle(0, COL_CHECKBOX)}
+                    >
                       <RowSelectCheckbox
-                        checked={selectedIds.has(row.id)}
+                        checked={isSelected}
                         rowIndex={rowIndex}
                         rowId={row.id}
                         onSelect={handleRowSelect}
                       />
                     </TableCell>
-                    <TableCell className={cellRed(cellEmpty(row.bankAccount?.name))}>{row.bankAccount?.name ?? "—"}</TableCell>
-                    <TableCell className={`text-right tabular-nums font-semibold text-sm ${cellRed(cellEmpty(row.amount))}`}>{row.amount ? formatMoney(row.amount) : "—"}</TableCell>
-                    <TableCell>
+                    <TableCell
+                      className={cn(
+                        compactCell,
+                        compactCellClip,
+                        stickyBankCell,
+                        cellRed(bankEmpty),
+                        "whitespace-normal",
+                        isSelected && "bg-blue-50/50",
+                        bankEmpty && isSelected && "bg-red-100",
+                      )}
+                      style={stickyColStyle(COL_CHECKBOX, COL_BANK)}
+                    >
+                      {clipText(row.bankAccount?.name ?? "—", row.bankAccount?.name ?? undefined)}
+                    </TableCell>
+                    <TableCell
+                      className={cn(
+                        compactCell,
+                        stickyAmountCell,
+                        "text-right tabular-nums font-semibold",
+                        cellRed(cellEmpty(row.amount)),
+                        isSelected && "bg-blue-50/50",
+                        cellEmpty(row.amount) && isSelected && "bg-red-100",
+                      )}
+                      style={stickyColStyle(COL_CHECKBOX + COL_BANK, COL_AMOUNT)}
+                    >
+                      {row.amount ? formatMoney(row.amount) : "—"}
+                    </TableCell>
+                    <TableCell className={compactCell}>
                       <Select
                         value={row.status}
                         onValueChange={(v) => v && patchInlineStatus(row.id, v)}
                       >
-                        <SelectTrigger className="h-6 w-auto min-w-[110px] border-0 bg-transparent shadow-none p-0 focus:ring-0 [&>svg]:hidden">
+                        <SelectTrigger className="h-6 w-auto min-w-[104px] border-0 bg-transparent shadow-none p-0 focus:ring-0 [&>svg]:hidden">
                           <SelectValue>
                             <ChargeStatusBadge status={row.status} />
                           </SelectValue>
@@ -544,31 +641,41 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
                         </SelectContent>
                       </Select>
                     </TableCell>
-                    <TableCell>{row.order?.project?.client?.name ?? "—"}</TableCell>
-                    <TableCell className={cellRed(cellEmpty(row.order?.project?.name))}>{row.order?.project?.name ?? "—"}</TableCell>
-                    <TableCell>{formatDateShort(row.issuedPlanAt)}</TableCell>
-                    <TableCell>{formatDateShort(row.issuedAt)}</TableCell>
-                    <TableCell className={cellRed(overdueH)}>{formatDateShort(row.paidPlanAt)}</TableCell>
-                    <TableCell>{pd ? MONTH_LABELS[pd.getMonth()] : "—"}</TableCell>
-                    <TableCell>{pd ? weekLabel(getISOWeek(pd)) : "—"}</TableCell>
-                    <TableCell>{pd ? pd.getFullYear() : "—"}</TableCell>
-                    <TableCell className={cellRed(missingM)}>
+                    <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>
+                      {clipText(row.order?.project?.client?.name ?? "—", row.order?.project?.client?.name ?? undefined)}
+                    </TableCell>
+                    <TableCell className={cn(compactCell, compactCellClip, cellRed(cellEmpty(row.order?.project?.name)), "whitespace-normal")}>
+                      {clipText(row.order?.project?.name ?? "—", row.order?.project?.name ?? undefined)}
+                    </TableCell>
+                    <TableCell className={compactCell}>{formatDateShort(row.issuedPlanAt)}</TableCell>
+                    <TableCell className={compactCell}>{formatDateShort(row.issuedAt)}</TableCell>
+                    <TableCell className={cn(compactCell, cellRed(overdueH))}>{formatDateShort(row.paidPlanAt)}</TableCell>
+                    <TableCell className={compactCell}>{pd ? MONTH_LABELS[pd.getMonth()] : "—"}</TableCell>
+                    <TableCell className={compactCell}>{pd ? weekLabel(getISOWeek(pd)) : "—"}</TableCell>
+                    <TableCell className={compactCell}>{pd ? pd.getFullYear() : "—"}</TableCell>
+                    <TableCell className={cn(compactCell, cellRed(missingM))}>
                       <InlineDateCell
                         value={row.paidAt ? row.paidAt.slice(0, 10) : ""}
                         onSave={(v) => patchInlinePaidAt(row.id, v)}
                         highlight={missingM}
                       />
                     </TableCell>
-                    <TableCell className="align-top max-w-[280px]">
+                    <TableCell className={cn(compactCell, compactCellClip, "align-top whitespace-normal")}>
                       <InlinePurposeCell
                         value={row.paymentPurpose ?? ""}
                         onSave={(v) => patchInlinePurpose(row.id, v)}
                       />
                     </TableCell>
-                    <TableCell className={`tabular-nums ${cellRed(cellEmpty(row.order?.orderNumber))}`}>{row.order ? row.order.orderNumber : "—"}</TableCell>
-                    <TableCell className="tabular-nums">{row.chargeNumber}</TableCell>
-                    <TableCell className={cellRed(cellEmpty(row.invoiceNumber))}>{row.invoiceNumber || "—"}</TableCell>
-                    <TableCell className={cn(stickyActionsCell, selectedIds.has(row.id) && "bg-blue-50/50")}>
+                    <TableCell className={cn(compactCell, compactCellClip, `tabular-nums whitespace-normal ${cellRed(cellEmpty(row.order?.orderNumber))}`)}>
+                      {clipText(row.order ? row.order.orderNumber : "—", row.order?.orderNumber)}
+                    </TableCell>
+                    <TableCell className={cn(compactCell, compactCellClip, "tabular-nums whitespace-normal")}>
+                      {clipText(row.chargeNumber, row.chargeNumber)}
+                    </TableCell>
+                    <TableCell className={cn(compactCell, compactCellClip, cellRed(cellEmpty(row.invoiceNumber)), "whitespace-normal")}>
+                      {clipText(row.invoiceNumber || "—", row.invoiceNumber || undefined)}
+                    </TableCell>
+                    <TableCell className={cn(stickyActionsCell, "w-[96px] min-w-[96px] max-w-[96px]", isSelected && "bg-blue-50/50")}>
                       <div className={stickyActionsInner}>
                         <button title="Редактировать" className="p-0.5 text-neutral-500 hover:text-neutral-800" onClick={() => setEditTarget(row)}>
                           <Pencil className="h-3.5 w-3.5" />

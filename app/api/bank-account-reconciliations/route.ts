@@ -3,9 +3,15 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
 import { prisma } from "@/lib/db";
+import { getISOWeek, getISOWeekYear } from "@/lib/iso-weeks";
+import { weekLabel } from "@/lib/format";
 
-function isAmountFilled(amount: number | null): boolean {
-  return amount !== null && Number.isFinite(amount);
+function isResultFilled(r: { foreignAmount: number | null; exchangeRate: number | null; amount: number | null; bankAccountCurrency: string }): boolean {
+  if (r.bankAccountCurrency === "RUB") {
+    return r.foreignAmount !== null && Number.isFinite(r.foreignAmount);
+  }
+  return r.foreignAmount !== null && Number.isFinite(r.foreignAmount) &&
+    r.exchangeRate !== null && Number.isFinite(r.exchangeRate);
 }
 
 export async function GET(_req: NextRequest) {
@@ -17,7 +23,7 @@ export async function GET(_req: NextRequest) {
     orderBy: { date: "desc" },
     include: {
       results: {
-        include: { bankAccount: { select: { id: true, name: true } } },
+        include: { bankAccount: { select: { id: true, name: true, currency: true } } },
         orderBy: { bankAccount: { name: "asc" } },
       },
     },
@@ -25,11 +31,18 @@ export async function GET(_req: NextRequest) {
 
   return NextResponse.json(
     reconciliations.map((v) => {
+      const resultsWithCurrency = v.results.map((r) => ({
+        ...r,
+        bankAccountCurrency: r.bankAccount.currency,
+      }));
       const total = v.results.length;
-      const filled = v.results.filter((r) => isAmountFilled(r.amount)).length;
+      const filled = resultsWithCurrency.filter(isResultFilled).length;
       return {
         id: v.id,
         date: v.date.toISOString(),
+        isoWeek: v.isoWeek,
+        isoWeekYear: v.isoWeekYear,
+        weekLabel: weekLabel(v.isoWeek),
         createdAt: v.createdAt.toISOString(),
         totalAccounts: total,
         filledAccounts: filled,
@@ -37,7 +50,10 @@ export async function GET(_req: NextRequest) {
         results: v.results.map((r) => ({
           bankAccountId: r.bankAccountId,
           bankAccountName: r.bankAccount.name,
-          amount: r.amount,
+          bankAccountCurrency: r.bankAccount.currency,
+          foreignAmount: r.foreignAmount ?? null,
+          exchangeRate: r.exchangeRate ?? null,
+          amount: r.amount ?? null,
           comment: r.comment ?? null,
         })),
       };
@@ -58,6 +74,20 @@ export async function POST(req: NextRequest) {
   const parsed = createSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Validation" }, { status: 422 });
 
+  const date = new Date(parsed.data.date);
+  const isoWeek = getISOWeek(date);
+  const isoWeekYear = getISOWeekYear(date);
+
+  const existing = await prisma.bankAccountReconciliation.findFirst({
+    where: { isoWeek, isoWeekYear },
+  });
+  if (existing) {
+    return NextResponse.json(
+      { error: `Остаток за ${weekLabel(isoWeek)} ${isoWeekYear} уже существует. Выберите другую дату.` },
+      { status: 409 }
+    );
+  }
+
   const activeAccounts = await prisma.bankAccount.findMany({
     where: { status: "active" },
     select: { id: true },
@@ -65,10 +95,12 @@ export async function POST(req: NextRequest) {
 
   const reconciliation = await prisma.bankAccountReconciliation.create({
     data: {
-      date: new Date(parsed.data.date),
+      date,
+      isoWeek,
+      isoWeekYear,
       createdBy: user.id,
       results: {
-        create: activeAccounts.map((a) => ({ bankAccountId: a.id, amount: null })),
+        create: activeAccounts.map((a) => ({ bankAccountId: a.id })),
       },
     },
   });

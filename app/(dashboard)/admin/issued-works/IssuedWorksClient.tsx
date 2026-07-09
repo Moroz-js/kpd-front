@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import useSWR from "swr";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Pencil, CheckCircle2, X } from "lucide-react";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
@@ -26,14 +27,11 @@ import { SortableHead } from "@/components/ui-custom/SortableHead";
 import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
 import { useTableRowSelection } from "@/lib/useTableRowSelection";
 import { cn } from "@/lib/utils";
-import { stickyActionsHead, stickyActionsCell, stickyActionsInner } from "@/lib/table-styles";
+import { stickyActionsHead, stickyActionsCell, stickyActionsInner, compactTable, compactHead, compactPeriodHead, compactCell, compactCellClip } from "@/lib/table-styles";
 import { IssuedWorkEditDialog, type SmetaType } from "./IssuedWorkEditDialog";
 
-const compactPeriodHead =
-  "text-[10px] leading-tight font-medium whitespace-normal normal-case align-bottom !whitespace-normal";
-
-const periodYearMonthClass = "w-24 max-w-24 px-1";
-const weekPayClass = "w-18 max-w-18 px-1";
+const periodYearMonthClass = "w-20 max-w-20 px-1";
+const weekPayClass = "w-20 max-w-20 px-1";
 
 type Row = {
   sourceType: "personal" | "other-expense";
@@ -51,6 +49,8 @@ type Row = {
   workTypeId: string;
   workTypeName: string;
   workTypeSegment: string;
+  responsibleExecutorId: string | null;
+  responsibleExecutorName: string | null;
   amount: number;
   workStatus: string;
   checkedAt: string | null;
@@ -84,6 +84,23 @@ const SMETA_LABEL: Record<SmetaType, string> = {
   personal: "Личная смета",
   "other-expense": "Прочие траты",
 };
+
+function smetaTypeCell(row: Row) {
+  if (row.sourceType === "personal") {
+    return (
+      <Link
+        href={`/admin/executors/${row.executorId}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-blue-600 hover:underline"
+        title="Открыть личную смету"
+      >
+        {SMETA_LABEL.personal}
+      </Link>
+    );
+  }
+  return SMETA_LABEL["other-expense"];
+}
 
 export function IssuedWorksClient() {
   const { data, isLoading, mutate } = useSWR<Row[]>("/api/issued-works", fetcher);
@@ -365,7 +382,7 @@ export function IssuedWorksClient() {
       )}
 
       <Table
-        className="min-w-[1200px]"
+        className={cn(compactTable, "min-w-[1380px]")}
         containerClassName="rounded-md border bg-white flex-1 min-h-0 overflow-auto"
       >
           <TableHeader>
@@ -378,9 +395,9 @@ export function IssuedWorksClient() {
                 sortBy={activeSortField()}
                 sortDir={activeSortDir()}
                 onSort={handleSort}
-                className={cn(periodYearMonthClass, "text-left !whitespace-normal")}
+                className={cn(periodYearMonthClass, compactPeriodHead, "text-left")}
               >
-                <span className="block text-[10px] leading-tight font-medium tracking-tight normal-case text-left">
+                <span className="block text-left">
                   Год
                   <br />
                   выполнения
@@ -417,14 +434,17 @@ export function IssuedWorksClient() {
                 sortBy={activeSortField()}
                 sortDir={activeSortDir()}
                 onSort={handleSort}
+                className={cn(compactHead, "w-32 max-w-32")}
               >
                 Исполнитель
               </SortableHead>
+              <TableHead className={cn(compactHead, "w-32 max-w-32")}>Ответственный</TableHead>
               <SortableHead
                 field="projectName"
                 sortBy={activeSortField()}
                 sortDir={activeSortDir()}
                 onSort={handleSort}
+                className={cn(compactHead, "w-44 max-w-44")}
               >
                 Проект
               </SortableHead>
@@ -433,6 +453,7 @@ export function IssuedWorksClient() {
                 sortBy={activeSortField()}
                 sortDir={activeSortDir()}
                 onSort={handleSort}
+                className={cn(compactHead, "w-32 max-w-32")}
               >
                 Вид работ
               </SortableHead>
@@ -441,7 +462,7 @@ export function IssuedWorksClient() {
                 sortBy={activeSortField()}
                 sortDir={activeSortDir()}
                 onSort={handleSort}
-                className="text-right"
+                className={cn(compactHead, "text-right w-28")}
               >
                 Сумма
               </SortableHead>
@@ -450,26 +471,27 @@ export function IssuedWorksClient() {
                 sortBy={activeSortField()}
                 sortDir={activeSortDir()}
                 onSort={handleSort}
+                className={cn(compactHead, "w-32")}
               >
                 Статус
               </SortableHead>
-              <TableHead>Дата проверки</TableHead>
-              <TableHead>Дата оплаты план</TableHead>
-              <TableHead>Дата оплаты факт</TableHead>
-              <TableHead>Тип сметы</TableHead>
+              <TableHead className={cn(compactHead, "w-28")}>Дата проверки</TableHead>
+              <TableHead className={cn(compactHead, "w-28")}>Дата оплаты план</TableHead>
+              <TableHead className={cn(compactHead, "w-28")}>Дата оплаты факт</TableHead>
+              <TableHead className={cn(compactHead, "w-32")}>Тип сметы</TableHead>
               <TableHead className={stickyActionsHead} />
             </TableRow>
           </TableHeader>
           <BulkSelectTableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={14} className="text-center text-neutral-500 py-8">
+                <TableCell colSpan={15} className="text-center text-neutral-500 py-8">
                   Загрузка...
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={14} className="text-center text-neutral-500 py-12">
+                <TableCell colSpan={15} className="text-center text-neutral-500 py-12">
                   Пока нет ни одной работы. Они появятся после создания строк в Личных сметах
                   и Прочих тратах (Phase 3).
                 </TableCell>
@@ -485,26 +507,29 @@ export function IssuedWorksClient() {
                       onSelect={handleRowSelect}
                     />
                   </TableCell>
-                  <TableCell className={cn("text-xs tabular-nums text-left", periodYearMonthClass)}>
+                  <TableCell className={cn(compactCell, "tabular-nums text-left", periodYearMonthClass)}>
                     {r.executionYear}
                   </TableCell>
-                  <TableCell className={cn("text-xs whitespace-nowrap", periodYearMonthClass)}>
+                  <TableCell className={cn(compactCell, "whitespace-nowrap", periodYearMonthClass)}>
                     {monthLabel(r.executionMonth)}
                   </TableCell>
-                  <TableCell className={cn("text-xs whitespace-nowrap", weekPayClass)}>
+                  <TableCell className={cn(compactCell, "whitespace-nowrap", weekPayClass)}>
                     {r.weekPlanFact != null ? weekLabel(r.weekPlanFact) : "—"}
                   </TableCell>
-                  <TableCell>{r.executorName}</TableCell>
-                  <TableCell>{r.projectName}</TableCell>
-                  <TableCell>{r.workTypeName}</TableCell>
-                  <TableCell className="text-right tabular-nums font-semibold text-sm">{formatMoney(r.amount)}</TableCell>
-                  <TableCell>
+                  <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>{r.executorName}</TableCell>
+                  <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>
+                    {r.responsibleExecutorName ?? "—"}
+                  </TableCell>
+                  <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>{r.projectName}</TableCell>
+                  <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>{r.workTypeName}</TableCell>
+                  <TableCell className={cn(compactCell, "text-right tabular-nums font-semibold")}>{formatMoney(r.amount)}</TableCell>
+                  <TableCell className={compactCell}>
                     <StatusBadge dict={WORK_STATUSES} value={r.workStatus} />
                   </TableCell>
-                  <TableCell>{formatDateShort(r.checkedAt)}</TableCell>
-                  <TableCell>{formatDateShort(r.plannedPayAt)}</TableCell>
-                  <TableCell className={cn(r.workStatus === "paid" && !r.paidAt && "bg-red-100 text-red-700")}>{formatDateShort(r.paidAt)}</TableCell>
-                  <TableCell className="text-sm">{SMETA_LABEL[r.sourceType]}</TableCell>
+                  <TableCell className={compactCell}>{formatDateShort(r.checkedAt)}</TableCell>
+                  <TableCell className={compactCell}>{formatDateShort(r.plannedPayAt)}</TableCell>
+                  <TableCell className={cn(compactCell, r.workStatus === "paid" && !r.paidAt && "bg-red-100 text-red-700")}>{formatDateShort(r.paidAt)}</TableCell>
+                  <TableCell className={compactCell}>{smetaTypeCell(r)}</TableCell>
                   <TableCell
                     className={cn(
                       stickyActionsCell,

@@ -7,6 +7,7 @@ import { updateBankAccount } from "@/lib/services/bankAccounts";
 const patchSchema = z.object({
   name: z.string().min(1).optional(),
   details: z.string().nullable().optional(),
+  currency: z.string().regex(/^[A-Za-z]{3,6}$/, "Код валюты: 3–6 латинских букв").optional(),
   isDefault: z.boolean().optional(),
 });
 

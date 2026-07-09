@@ -47,6 +47,18 @@ export function formatMoneyRub(n: number | null | undefined): string {
   return `${base} руб.`;
 }
 
+/** Сумма с кодом валюты (не пересчитывает), например «1 234 567 USD». */
+export function formatMoneyWithCurrency(
+  n: number | null | undefined,
+  currency: string | null | undefined
+): string {
+  const base = formatMoney(n);
+  if (base === "—") return base;
+  const code = (currency ?? "RUB").toUpperCase();
+  if (code === "RUB") return base;
+  return `${base}\u00A0${code}`;
+}
+
 export function formatDate(date: Date | string | null | undefined): string {
   if (!date) return "—";
   const d = typeof date === "string" ? new Date(date) : date;

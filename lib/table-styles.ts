@@ -10,6 +10,19 @@
  * Важно: у ячейки должен быть непрозрачный фон (по умолчанию bg-white),
  * для выделенных/подсвеченных строк фон нужно переопределить тем же цветом.
  */
+/** Компактная таблица (KPD-297): уменьшенный шрифт и колонки. Эталон — «Прочие траты». */
+export const compactTable = "table-fixed !text-xs";
+
+export const compactHead =
+  "text-xs leading-snug font-medium whitespace-normal normal-case align-middle! h-auto py-2 px-2.5";
+
+export const compactPeriodHead =
+  "text-xs leading-snug font-medium whitespace-normal normal-case align-middle! h-auto py-2 px-2";
+
+export const compactCell = "text-xs leading-snug py-2 px-2.5";
+
+export const compactCellClip = "overflow-hidden max-w-0";
+
 export const stickyActionsHead =
   "sticky right-0 z-20 bg-neutral-100 border-l border-neutral-200 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.08)] min-w-[96px]";
 

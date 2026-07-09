@@ -32,16 +32,12 @@ import { cn } from "@/lib/utils";
 import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
 import { useTableRowSelection } from "@/lib/useTableRowSelection";
 import { ExpandableListCell } from "@/components/ui-custom/ExpandableListCell";
-import { stickyActionsHead, stickyActionsCell } from "@/lib/table-styles";
+import { stickyActionsHead, stickyActionsCell, compactHead, compactPeriodHead } from "@/lib/table-styles";
 
-const compactPeriodHead =
-  "text-[10px] leading-tight font-medium whitespace-normal normal-case align-middle!";
-const compactHead =
-  "text-[10px] leading-tight font-medium whitespace-normal normal-case align-middle!";
 /** Ширины колонок (18) — table-fixed, иначе правые колонки сжимаются и наезжают друг на друга */
-const ACTIONS_COL_WIDTH = 96;
+const ACTIONS_COL_WIDTH = 128;
 const COL_WIDTHS = [
-  36, 72, 84, 64, 168, 128, 180, 100, 108, 92, 88, 80, 108, 120, 80, 104, 120, ACTIONS_COL_WIDTH,
+  40, 84, 96, 72, 192, 148, 208, 116, 124, 104, 100, 92, 124, 140, 92, 120, 140, ACTIONS_COL_WIDTH,
 ] as const;
 const TABLE_MIN_WIDTH = COL_WIDTHS.reduce((s, w) => s + w, 0);
 const cellClip = "overflow-hidden max-w-0";
@@ -564,7 +560,7 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
                 Дата оплаты факт
               </EditableColHead>
               <TableHead className={compactHead}>Источник перевода</TableHead>
-              <TableHead className={stickyActionsHead} />
+              <TableHead className={cn(stickyActionsHead, "w-[128px] min-w-[128px] max-w-[128px]")} />
             </TableRow>
           </TableHeader>
           <BulkSelectTableBody>
@@ -666,24 +662,24 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
                 <TableCell
                   className={cn(
                     stickyActionsCell,
-                    "min-w-[96px] w-[96px]",
+                    "min-w-[128px] w-[128px] max-w-[128px]",
                     selectedIds.has(row.id) && "bg-blue-50"
                   )}
                 >
                   <div className="flex shrink-0 gap-0.5 items-center justify-end">
                     {canReview(row) && !row.paymentStatus && row.workStatus === "submitted" && (
-                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Проверить" onClick={() => setCheckTarget(row)}>
+                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="Проверить" onClick={() => setCheckTarget(row)}>
                         <CheckCircle className="h-3.5 w-3.5 text-blue-600" />
                       </Button>
                     )}
                     {canReview(row) && !row.paymentStatus && row.workStatus === "submitted" && (
-                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="На доработку" onClick={() => setReworkTarget(row)}>
+                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="На доработку" onClick={() => setReworkTarget(row)}>
                         <RotateCcw className="h-3.5 w-3.5 text-amber-500" />
                       </Button>
                     )}
                     {isAdmin && (row.paymentStatus === "planned" || row.paymentStatus === "sent") && (
                       <Button
-                        size="sm" variant="ghost" className="h-7 w-7 p-0" title="Оплатить"
+                        size="sm" variant="ghost" className="h-6 w-6 p-0" title="Оплатить"
                         onClick={() => {
                           setPayDate(toLocalDateString(new Date()));
                           setPayTarget(row);
@@ -693,12 +689,12 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
                       </Button>
                     )}
                     {canEdit(row) && (
-                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Редактировать" onClick={() => setEditTarget(row)}>
+                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="Редактировать" onClick={() => setEditTarget(row)}>
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
                     )}
                     {canEdit(row) && (
-                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Удалить" onClick={() => setDeleteTarget(row)}>
+                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="Удалить" onClick={() => setDeleteTarget(row)}>
                         <Trash2 className="h-3.5 w-3.5 text-red-400" />
                       </Button>
                     )}

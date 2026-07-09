@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SortableHead } from "@/components/ui-custom/SortableHead";
 import { cn } from "@/lib/utils";
-import { stickyActionsHead, stickyActionsCell, stickyActionsInner } from "@/lib/table-styles";
+import { stickyActionsHead, stickyActionsCell, stickyActionsInner, compactTable, compactHead, compactCell, compactCellClip } from "@/lib/table-styles";
 
 type Row = {
   id: string;
@@ -95,23 +95,23 @@ export function ResponsiblesClient() {
         />
       </div>
 
-      <Table containerClassName="rounded-md border bg-white flex-1 min-h-0 overflow-auto">
+      <Table className={compactTable} containerClassName="rounded-md border bg-white flex-1 min-h-0 overflow-auto">
           <TableHeader>
             <TableRow>
-              <SortableHead field="fullName" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
+              <SortableHead field="fullName" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort} className={cn(compactHead, "w-[220px] max-w-[220px]")}>
                 Имя
               </SortableHead>
-              <TableHead>Статус</TableHead>
+              <TableHead className={cn(compactHead, "w-28")}>Статус</TableHead>
               <SortableHead
                 field="projectCount"
                 sortBy={sort.field}
                 sortDir={sort.dir}
                 onSort={handleSort}
-                className="text-right"
+                className={cn(compactHead, "text-right w-24")}
               >
                 Кол-во проектов
               </SortableHead>
-              <TableHead>Проекты как руководитель</TableHead>
+              <TableHead className={cn(compactHead, "w-[320px] max-w-[320px]")}>Проекты как руководитель</TableHead>
               <TableHead className={stickyActionsHead} />
             </TableRow>
           </TableHeader>
@@ -131,18 +131,18 @@ export function ResponsiblesClient() {
             ) : (
               rows.map((r) => (
                 <TableRow key={r.id} className={!r.isActive ? "bg-neutral-50 text-neutral-400" : ""}>
-                  <TableCell>
-                    <div className="font-medium">{r.fullName}</div>
-                    <div className="text-xs text-neutral-500">{r.email}</div>
+                  <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>
+                    <div className="font-medium truncate">{r.fullName}</div>
+                    <div className="text-xs text-neutral-500 truncate">{r.email}</div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className={compactCell}>
                     <StatusBadge
                       tone={r.isActive ? "green" : "slate"}
                       label={r.isActive ? "Активный" : "Архивный"}
                     />
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{r.projectCount}</TableCell>
-                  <TableCell>
+                  <TableCell className={cn(compactCell, "text-right tabular-nums")}>{r.projectCount}</TableCell>
+                  <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>
                     {r.projects.length === 0
                       ? <span className="text-neutral-400">—</span>
                       : r.projects.map((p) => (
@@ -152,7 +152,7 @@ export function ResponsiblesClient() {
                             target="_blank"
                             rel="noopener noreferrer"
                             className={cn(
-                              "block hover:underline",
+                              "block truncate hover:underline",
                               p.status === "archived" ? "text-neutral-400" : "text-blue-600"
                             )}
                           >

@@ -11,7 +11,7 @@ import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import { ConfirmDialog } from "@/components/ui-custom/ConfirmDialog";
 import { ExpandableListCell } from "@/components/ui-custom/ExpandableListCell";
 import { CLIENT_DEPARTMENTS, ENTITY_STATUSES } from "@/lib/statuses";
-import { formatMoney, formatDate } from "@/lib/format";
+import { formatMoney, formatMoneyRub, formatDate } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SortableHead } from "@/components/ui-custom/SortableHead";
@@ -20,7 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DepartmentCombobox } from "@/components/ui-custom/DepartmentCombobox";
 import { cn } from "@/lib/utils";
-import { stickyActionsHead, stickyActionsCell, stickyActionsInner } from "@/lib/table-styles";
+import { stickyActionsHead, stickyActionsCell, stickyActionsInner, compactTable, compactHead, compactCell, compactCellClip } from "@/lib/table-styles";
 
 type Row = {
   id: string;
@@ -102,6 +102,11 @@ export function ClientsClient() {
     return list;
   }, [data, companyFilter, statusFilter, sort]);
 
+  const filteredRevenue = React.useMemo(
+    () => rows.reduce((s, r) => s + (r.revenue ?? 0), 0),
+    [rows]
+  );
+
   function handleSort(field: string, dir: SortDir) {
     setSort({ field: field as SortField, dir });
   }
@@ -145,24 +150,32 @@ export function ClientsClient() {
         />
       </div>
 
-      <Table containerClassName="rounded-md border bg-white flex-1 min-h-0 overflow-auto">
+      {rows.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 mb-3 px-3 py-2 rounded-lg bg-neutral-50 border border-neutral-200 shrink-0">
+          <span className="text-xs text-neutral-500">{rows.length} клиентов</span>
+          <span className="text-xs text-neutral-500">Выручка:</span>
+          <span className="text-xs font-semibold tabular-nums text-neutral-900">{formatMoneyRub(filteredRevenue)}</span>
+        </div>
+      )}
+
+      <Table className={compactTable} containerClassName="rounded-md border bg-white flex-1 min-h-0 overflow-auto">
           <TableHeader>
             <TableRow>
-              <SortableHead field="name" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
+              <SortableHead field="name" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort} className={cn(compactHead, "w-[240px] max-w-[240px]")}>
                 Клиент
               </SortableHead>
-              <TableHead className="w-48 max-w-48">Проекты клиента</TableHead>
-              <TableHead>Статус проектов</TableHead>
+              <TableHead className={cn(compactHead, "w-52 max-w-52")}>Проекты клиента</TableHead>
+              <TableHead className={cn(compactHead, "w-36")}>Статус проектов</TableHead>
               <SortableHead
                 field="revenue"
                 sortBy={sort.field}
                 sortDir={sort.dir}
                 onSort={handleSort}
-                className="text-right"
+                className={cn(compactHead, "text-right w-32")}
               >
                 Выручка
               </SortableHead>
-              <SortableHead field="createdAt" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
+              <SortableHead field="createdAt" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort} className={cn(compactHead, "w-28")}>
                 Создан
               </SortableHead>
               <TableHead className={stickyActionsHead} />
@@ -184,8 +197,8 @@ export function ClientsClient() {
             ) : (
               rows.map((r) => (
                 <TableRow key={r.id} className={r.status === "archived" ? "bg-neutral-100 text-neutral-400" : ""}>
-                  <TableCell className="font-medium">{r.name}</TableCell>
-                  <TableCell className="w-48 max-w-48" style={{ maxWidth: "12rem", width: "12rem" }}>
+                  <TableCell className={cn(compactCell, compactCellClip, "font-medium whitespace-normal")}>{r.name}</TableCell>
+                  <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>
                     <ExpandableListCell
                       items={r.projects.map((p) => p.name)}
                       renderItem={(name) => {
@@ -203,14 +216,14 @@ export function ClientsClient() {
                       }}
                     />
                   </TableCell>
-                  <TableCell>
+                  <TableCell className={compactCell}>
                     <StatusBadge
                       tone={PROJECTS_STATUS_TONE[r.projectsStatus]}
                       label={PROJECTS_STATUS_LABEL[r.projectsStatus]}
                     />
                   </TableCell>
-                  <TableCell className="text-right tabular-nums font-semibold text-sm">{formatMoney(r.revenue)}</TableCell>
-                  <TableCell>{formatDate(r.createdAt)}</TableCell>
+                  <TableCell className={cn(compactCell, "text-right tabular-nums font-semibold")}>{formatMoney(r.revenue)}</TableCell>
+                  <TableCell className={compactCell}>{formatDate(r.createdAt)}</TableCell>
                   <TableCell className={cn(stickyActionsCell, r.status === "archived" && "bg-neutral-100 text-neutral-400")}>
                     <div className={stickyActionsInner}>
                       <Button size="sm" variant="ghost" onClick={() => setEditing(r)} title="Редактировать">

@@ -413,9 +413,9 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
       />
 
       {/* Main grid */}
-      <div className="rounded-lg border border-neutral-200 bg-white">
+      <div className="rounded-lg border border-neutral-200 bg-white flex flex-col max-h-[90dvh] min-h-0 overflow-hidden">
         {year === currentYear && (
-          <div className="px-3 pt-2 pb-0">
+          <div className="shrink-0 px-3 pt-2 pb-0">
             <button
               className="text-xs text-neutral-400 hover:text-neutral-700 hover:underline underline-offset-2"
               onClick={() => setShowOldWeeks((v) => !v)}
@@ -426,7 +426,7 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
             </button>
           </div>
         )}
-        <div className="overflow-x-auto">
+        <div className="min-h-0 flex-1 overflow-auto">
           <table className="min-w-max border-collapse text-sm">
             <thead className="sticky top-0 z-20">
               {/* Month row */}

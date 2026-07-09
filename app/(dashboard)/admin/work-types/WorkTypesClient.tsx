@@ -16,7 +16,8 @@ import { DepartmentCombobox } from "@/components/ui-custom/DepartmentCombobox";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { stickyActionsHead, stickyActionsCell, stickyActionsInner } from "@/lib/table-styles";
+import { cn } from "@/lib/utils";
+import { stickyActionsHead, stickyActionsCell, stickyActionsInner, compactTable, compactHead, compactCell, compactCellClip } from "@/lib/table-styles";
 
 type Row = {
   id: string;
@@ -171,16 +172,16 @@ export function WorkTypesClient() {
         />
       </div>
 
-      <Table containerClassName="rounded-md border bg-white flex-1 min-h-0 overflow-auto">
+      <Table className={compactTable} containerClassName="rounded-md border bg-white flex-1 min-h-0 overflow-auto">
           <TableHeader>
             <TableRow>
-              <SortableHead field="name" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
+              <SortableHead field="name" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort} className={cn(compactHead, "w-[320px] max-w-[320px]")}>
                 Вид работ
               </SortableHead>
-              <SortableHead field="segment" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
+              <SortableHead field="segment" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort} className={cn(compactHead, "w-40")}>
                 Сегмент
               </SortableHead>
-              <SortableHead field="status" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
+              <SortableHead field="status" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort} className={cn(compactHead, "w-28")}>
                 Статус
               </SortableHead>
               <TableHead className={stickyActionsHead} />
@@ -202,12 +203,12 @@ export function WorkTypesClient() {
             ) : (
               rows.map((r) => (
                 <TableRow key={r.id}>
-                  <TableCell className="font-medium">
+                  <TableCell className={cn(compactCell, compactCellClip, "font-medium whitespace-normal")}>
                     <span className={r.isUnused ? "text-neutral-400" : ""}>{r.name}</span>
-                    {r.isUnused && <span className="ml-1.5 text-[10px] text-neutral-400 font-normal">(не используется)</span>}
+                    {r.isUnused && <span className="ml-1 text-xs text-neutral-400 font-normal">(не используется)</span>}
                   </TableCell>
-                  <TableCell>{r.segment}</TableCell>
-                  <TableCell>
+                  <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>{r.segment}</TableCell>
+                  <TableCell className={compactCell}>
                     <StatusBadge dict={ENTITY_STATUSES} value={r.status} />
                   </TableCell>
                   <TableCell className={stickyActionsCell}>

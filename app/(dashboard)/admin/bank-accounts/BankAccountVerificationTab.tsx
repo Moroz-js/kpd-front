@@ -10,6 +10,7 @@ import { DateInput } from "@/components/ui-custom/DateInput";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toLocalDateString } from "@/lib/iso-weeks";
+import { weekLabel } from "@/lib/format";
 import {
   Dialog,
   DialogContent,
@@ -27,6 +28,9 @@ import { ConfirmDialog } from "@/components/ui-custom/ConfirmDialog";
 type ReconciliationResult = {
   bankAccountId: string;
   bankAccountName: string;
+  bankAccountCurrency: string;
+  foreignAmount: number | null;
+  exchangeRate: number | null;
   amount: number | null;
   comment: string | null;
 };
@@ -34,6 +38,9 @@ type ReconciliationResult = {
 type Reconciliation = {
   id: string;
   date: string;
+  isoWeek: number;
+  isoWeekYear: number;
+  weekLabel: string;
   createdAt: string;
   totalAccounts: number;
   filledAccounts: number;
@@ -41,11 +48,19 @@ type Reconciliation = {
   results: ReconciliationResult[];
 };
 
-function isAmountFilled(amount: number | null): boolean {
-  return amount !== null && Number.isFinite(amount);
+function isResultFilled(r: ReconciliationResult): boolean {
+  if (r.bankAccountCurrency === "RUB") {
+    return r.foreignAmount !== null && Number.isFinite(r.foreignAmount);
+  }
+  return (
+    r.foreignAmount !== null &&
+    Number.isFinite(r.foreignAmount) &&
+    r.exchangeRate !== null &&
+    Number.isFinite(r.exchangeRate)
+  );
 }
 
-function parseAmountInput(val: string): number | null {
+function parseNumber(val: string): number | null {
   const t = val.trim().replace(/\s/g, "").replace(",", ".");
   if (t === "") return null;
   const n = Number(t);
@@ -70,7 +85,28 @@ function formatRuDateShort(iso: string) {
   });
 }
 
-const RECON_COL = "w-[108px] min-w-[108px] max-w-[108px] px-1.5 border-r last:border-r-0";
+function getClientISOWeek(dateStr: string): { isoWeek: number; isoWeekYear: number } | null {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return null;
+  // ISO week calc
+  const tmp = new Date(d);
+  tmp.setHours(0, 0, 0, 0);
+  tmp.setDate(tmp.getDate() + 3 - ((tmp.getDay() + 6) % 7));
+  const week1 = new Date(tmp.getFullYear(), 0, 4);
+  const isoWeek =
+    1 +
+    Math.round(
+      ((tmp.getTime() - week1.getTime()) / 86400000 -
+        3 +
+        ((week1.getDay() + 6) % 7)) /
+        7
+    );
+  const isoWeekYear = tmp.getFullYear();
+  return { isoWeek, isoWeekYear };
+}
+
+// ─── Comment cell ────────────────────────────────────────────────────────────
 
 function CommentCell({
   reconciliationId,
@@ -85,7 +121,6 @@ function CommentCell({
 }) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState(comment ?? "");
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (open) setValue(comment ?? "");
@@ -112,7 +147,6 @@ function CommentCell({
         <div className="space-y-2">
           <p className="text-xs font-medium text-neutral-700">Комментарий</p>
           <Textarea
-            ref={textareaRef}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder="Введите комментарий..."
@@ -135,38 +169,45 @@ function CommentCell({
   );
 }
 
-function AmountCell({
-  reconciliationId,
-  bankAccountId,
-  amount,
-  onSave,
+// ─── Number input cell ────────────────────────────────────────────────────────
+
+function NumberInputCell({
+  value,
+  onChange,
+  onCommit,
+  placeholder,
+  step = "1",
+  className,
 }: {
-  reconciliationId: string;
-  bankAccountId: string;
-  amount: number | null;
-  onSave: (reconciliationId: string, bankAccountId: string, amount: number | null) => void;
+  value: number | null;
+  onChange: (v: number | null) => void;
+  onCommit: (v: number | null) => void;
+  placeholder?: string;
+  step?: string;
+  className?: string;
 }) {
-  const [value, setValue] = useState(amount === null ? "" : String(amount));
+  const [local, setLocal] = useState(value === null ? "" : String(value));
 
   useEffect(() => {
-    setValue(amount === null ? "" : String(amount));
-  }, [amount]);
+    setLocal(value === null ? "" : String(value));
+  }, [value]);
 
   function commit() {
-    const parsed = parseAmountInput(value);
+    const parsed = parseNumber(local);
     const same =
-      (parsed === null && amount === null) ||
-      (parsed !== null && amount !== null && parsed === amount);
+      (parsed === null && value === null) ||
+      (parsed !== null && value !== null && parsed === value);
     if (same) return;
-    onSave(reconciliationId, bankAccountId, parsed);
+    onChange(parsed);
+    onCommit(parsed);
   }
 
   return (
     <Input
       type="number"
-      step="0.01"
-      value={value}
-      onChange={(e) => setValue(e.target.value)}
+      step="any"
+      value={local}
+      onChange={(e) => setLocal(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => {
         if (e.key === "Enter") {
@@ -175,18 +216,118 @@ function AmountCell({
           (e.target as HTMLInputElement).blur();
         }
       }}
-      className={`h-7 w-[72px] text-xs px-1.5 tabular-nums ${
-        isAmountFilled(amount) ? "border-neutral-300" : "border-neutral-200"
-      }`}
-      placeholder="—"
+      className={`h-7 w-[76px] text-xs px-1.5 tabular-nums ${value !== null ? "border-neutral-300" : "border-neutral-200"} ${className ?? ""}`}
+      placeholder={placeholder ?? "—"}
     />
   );
 }
 
+// ─── Editable date header ─────────────────────────────────────────────────────
+
+function EditableDateHeader({
+  reconciliation,
+  existingWeeks,
+  onDateChange,
+}: {
+  reconciliation: Reconciliation;
+  existingWeeks: Array<{ isoWeek: number; isoWeekYear: number; id: string }>;
+  onDateChange: (id: string, newDate: string, isoWeek: number, isoWeekYear: number, newWeekLabel: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [dateVal, setDateVal] = useState(reconciliation.date.slice(0, 10));
+  const [saving, setSaving] = useState(false);
+
+  const weekInfo = useMemo(() => getClientISOWeek(dateVal), [dateVal]);
+
+  const conflict = useMemo(() => {
+    if (!weekInfo) return false;
+    return existingWeeks.some(
+      (w) =>
+        w.id !== reconciliation.id &&
+        w.isoWeek === weekInfo.isoWeek &&
+        w.isoWeekYear === weekInfo.isoWeekYear
+    );
+  }, [weekInfo, existingWeeks, reconciliation.id]);
+
+  async function handleSave() {
+    if (!dateVal || !weekInfo || conflict) return;
+    setSaving(true);
+    try {
+      const r = await fetch(`/api/bank-account-reconciliations/${reconciliation.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: dateVal }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        toast.error(err.error ?? "Не удалось изменить дату");
+        return;
+      }
+      const data = await r.json();
+      onDateChange(reconciliation.id, data.date, data.isoWeek, data.isoWeekYear, data.weekLabel);
+      setEditing(false);
+    } catch {
+      toast.error("Ошибка при изменении даты");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        title="Изменить дату"
+        className="text-left w-full group"
+        onClick={() => { setDateVal(reconciliation.date.slice(0, 10)); setEditing(true); }}
+      >
+        <div className="font-medium text-neutral-800 text-[11px] leading-tight group-hover:underline">
+          {formatRuDateShort(reconciliation.date)}
+        </div>
+        <div className="text-[10px] text-neutral-500 mt-0.5">{reconciliation.weekLabel}</div>
+      </button>
+    );
+  }
+
+  return (
+    <div className="space-y-1">
+      <DateInput
+        value={dateVal}
+        onChange={(e) => setDateVal(e.target.value)}
+        className="h-6 text-[11px] px-1 w-[110px]"
+        autoFocus
+      />
+      {weekInfo && (
+        <div className={`text-[10px] ${conflict ? "text-red-600 font-medium" : "text-neutral-500"}`}>
+          {weekLabel(weekInfo.isoWeek)}
+          {conflict ? " — уже занята" : ""}
+        </div>
+      )}
+      <div className="flex gap-1">
+        <Button
+          size="sm"
+          className="h-5 text-[10px] px-1.5"
+          onClick={handleSave}
+          disabled={saving || conflict || !weekInfo}
+        >
+          {saving ? "..." : "OK"}
+        </Button>
+        <Button size="sm" variant="ghost" className="h-5 text-[10px] px-1.5" onClick={() => setEditing(false)}>
+          ✕
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Create dialog ────────────────────────────────────────────────────────────
+
 function CreateReconciliationDialog({
+  existingWeeks,
   onClose,
   onCreated,
 }: {
+  existingWeeks: Array<{ isoWeek: number; isoWeekYear: number; id: string }>;
   onClose: () => void;
   onCreated: () => void;
 }) {
@@ -194,11 +335,17 @@ function CreateReconciliationDialog({
   const [date, setDate] = useState(today);
   const [saving, setSaving] = useState(false);
 
+  const weekInfo = useMemo(() => getClientISOWeek(date), [date]);
+
+  const conflict = useMemo(() => {
+    if (!weekInfo) return false;
+    return existingWeeks.some(
+      (w) => w.isoWeek === weekInfo.isoWeek && w.isoWeekYear === weekInfo.isoWeekYear
+    );
+  }, [weekInfo, existingWeeks]);
+
   async function handleSave() {
-    if (!date) {
-      toast.error("Укажите дату");
-      return;
-    }
+    if (!date || conflict) return;
     setSaving(true);
     try {
       const r = await fetch("/api/bank-account-reconciliations", {
@@ -206,7 +353,11 @@ function CreateReconciliationDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ date }),
       });
-      if (!r.ok) throw new Error();
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        toast.error(err.error ?? "Ошибка при создании");
+        return;
+      }
       toast.success("Остатки созданы");
       onCreated();
     } catch {
@@ -227,12 +378,18 @@ function CreateReconciliationDialog({
             <Label>Дата остатков *</Label>
             <DateInput value={date} onChange={(e) => setDate(e.target.value)} />
           </div>
+          {weekInfo && (
+            <div className={`text-sm ${conflict ? "text-red-600 font-medium" : "text-neutral-500"}`}>
+              {weekLabel(weekInfo.isoWeek)} {weekInfo.isoWeekYear}
+              {conflict ? " — остаток за эту неделю уже существует. Выберите другую дату." : ""}
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Отмена
           </Button>
-          <Button onClick={handleSave} disabled={saving}>
+          <Button onClick={handleSave} disabled={saving || conflict || !weekInfo}>
             {saving ? "Создание..." : "Создать"}
           </Button>
         </DialogFooter>
@@ -240,6 +397,11 @@ function CreateReconciliationDialog({
     </Dialog>
   );
 }
+
+// ─── Main tab ─────────────────────────────────────────────────────────────────
+
+const RECON_SUB_COL = "w-[76px] min-w-[76px] max-w-[76px] px-1 border-r last:border-r-0";
+const RECON_GROUP_COL = "min-w-[240px] border-r last:border-r-0";
 
 export function BankAccountVerificationTab() {
   const [reconciliations, setReconciliations] = useState<Reconciliation[]>([]);
@@ -264,6 +426,11 @@ export function BankAccountVerificationTab() {
     load();
   }, [load]);
 
+  const existingWeeks = useMemo(
+    () => reconciliations.map((v) => ({ id: v.id, isoWeek: v.isoWeek, isoWeekYear: v.isoWeekYear })),
+    [reconciliations]
+  );
+
   const allAccounts = useMemo(() => {
     const map = new Map<string, string>();
     reconciliations.forEach((v) => {
@@ -284,77 +451,97 @@ export function BankAccountVerificationTab() {
     return m;
   }, [reconciliations]);
 
-  function updateProgress(results: ReconciliationResult[], total: number) {
-    const filled = results.filter((r) => isAmountFilled(r.amount)).length;
-    return {
-      filledAccounts: filled,
-      progressPct: total === 0 ? 0 : Math.round((filled / total) * 100),
-    };
-  }
-
-  async function handleAmount(
+  function updateLocalResult(
     reconciliationId: string,
     bankAccountId: string,
-    amount: number | null
+    patch: Partial<ReconciliationResult>
   ) {
     setReconciliations((prev) =>
       prev.map((v) => {
         if (v.id !== reconciliationId) return v;
         const newResults = v.results.map((r) =>
-          r.bankAccountId === bankAccountId ? { ...r, amount } : r
+          r.bankAccountId === bankAccountId ? { ...r, ...patch } : r
         );
-        const prog = updateProgress(newResults, v.totalAccounts);
-        return { ...v, results: newResults, ...prog };
-      })
-    );
-
-    try {
-      const r = await fetch(
-        `/api/bank-account-reconciliations/${reconciliationId}/results/${bankAccountId}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ amount }),
-        }
-      );
-      if (!r.ok) throw new Error();
-    } catch {
-      load();
-      toast.error("Не удалось обновить сумму");
-    }
-  }
-
-  async function handleComment(
-    reconciliationId: string,
-    bankAccountId: string,
-    comment: string
-  ) {
-    setReconciliations((prev) =>
-      prev.map((v) => {
-        if (v.id !== reconciliationId) return v;
+        const filled = newResults.filter(isResultFilled).length;
+        const total = v.totalAccounts;
         return {
           ...v,
-          results: v.results.map((r) =>
-            r.bankAccountId === bankAccountId ? { ...r, comment: comment || null } : r
-          ),
+          results: newResults,
+          filledAccounts: filled,
+          progressPct: total === 0 ? 0 : Math.round((filled / total) * 100),
         };
       })
     );
+  }
 
+  async function patchResult(
+    reconciliationId: string,
+    bankAccountId: string,
+    data: Record<string, unknown>
+  ) {
     try {
       const r = await fetch(
         `/api/bank-account-reconciliations/${reconciliationId}/results/${bankAccountId}`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ comment: comment || null }),
+          body: JSON.stringify(data),
         }
       );
       if (!r.ok) throw new Error();
+      const resp = await r.json();
+      // server returns calculated amount
+      if (resp.amount !== undefined) {
+        updateLocalResult(reconciliationId, bankAccountId, { amount: resp.amount });
+      }
     } catch {
       load();
-      toast.error("Не удалось сохранить комментарий");
+      toast.error("Не удалось сохранить");
     }
+  }
+
+  function handleForeignAmount(reconciliationId: string, bankAccountId: string, val: number | null) {
+    const result = lookup.get(reconciliationId)?.get(bankAccountId);
+    if (!result) return;
+    // optimistic RUB calc
+    const newAmount =
+      result.bankAccountCurrency === "RUB"
+        ? val
+        : val != null && result.exchangeRate != null
+          ? Math.round(val * result.exchangeRate * 100) / 100
+          : null;
+    updateLocalResult(reconciliationId, bankAccountId, { foreignAmount: val, amount: newAmount });
+    patchResult(reconciliationId, bankAccountId, { foreignAmount: val });
+  }
+
+  function handleExchangeRate(reconciliationId: string, bankAccountId: string, val: number | null) {
+    const result = lookup.get(reconciliationId)?.get(bankAccountId);
+    if (!result) return;
+    const newAmount =
+      result.foreignAmount != null && val != null
+        ? Math.round(result.foreignAmount * val * 100) / 100
+        : null;
+    updateLocalResult(reconciliationId, bankAccountId, { exchangeRate: val, amount: newAmount });
+    patchResult(reconciliationId, bankAccountId, { exchangeRate: val });
+  }
+
+  function handleComment(reconciliationId: string, bankAccountId: string, comment: string) {
+    updateLocalResult(reconciliationId, bankAccountId, { comment: comment || null });
+    patchResult(reconciliationId, bankAccountId, { comment: comment || null });
+  }
+
+  function handleDateChange(
+    id: string,
+    newDate: string,
+    isoWeek: number,
+    isoWeekYear: number,
+    newWeekLbl: string
+  ) {
+    setReconciliations((prev) =>
+      prev.map((v) =>
+        v.id === id ? { ...v, date: newDate, isoWeek, isoWeekYear, weekLabel: newWeekLbl } : v
+      )
+    );
   }
 
   async function handleDelete(reconciliationId: string) {
@@ -393,35 +580,63 @@ export function BankAccountVerificationTab() {
         <div className="overflow-auto rounded-lg border border-neutral-200 flex-1 min-h-0">
           <table className="border-collapse text-xs w-max">
             <thead>
+              {/* Row 1: date groups */}
               <tr className="bg-neutral-50">
-                <th className="sticky left-0 z-20 bg-neutral-50 border-b border-r border-neutral-200 px-3 py-2 text-left font-medium text-neutral-600 uppercase tracking-wide min-w-[220px]">
+                <th
+                  className="sticky left-0 z-20 bg-neutral-50 border-b border-r border-neutral-200 px-3 py-2 text-left font-medium text-neutral-600 uppercase tracking-wide min-w-[220px]"
+                  rowSpan={2}
+                >
                   Счёт
                 </th>
                 {reconciliations.map((v) => (
                   <th
                     key={v.id}
-                    className={`border-b border-neutral-200 py-2 text-left font-medium text-neutral-600 ${RECON_COL}`}
+                    colSpan={3}
+                    className={`border-b border-neutral-200 py-2 px-2 text-left font-medium text-neutral-600 ${RECON_GROUP_COL}`}
                   >
-                    <div className="font-medium text-neutral-800 text-[11px] leading-tight">
-                      {formatRuDateShort(v.date)}
-                    </div>
-                    <div className="mt-1 flex items-center gap-1">
-                      <Progress value={v.progressPct} className="h-1 min-w-0 flex-1" />
-                      <span className="text-neutral-500 shrink-0 text-[10px] tabular-nums">
-                        {v.filledAccounts}/{v.totalAccounts}
-                      </span>
-                    </div>
-                    <div className="mt-1">
-                      <button
-                        type="button"
-                        onClick={() => setConfirmDeleteId(v.id)}
-                        className="text-[11px] text-red-400 hover:text-red-600 flex items-center gap-0.5 transition-colors"
-                      >
-                        <Trash2 className="h-3 w-3" /> Удалить
-                      </button>
+                    <div className="flex items-start justify-between gap-2">
+                      <EditableDateHeader
+                        reconciliation={v}
+                        existingWeeks={existingWeeks}
+                        onDateChange={handleDateChange}
+                      />
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <div className="flex items-center gap-1">
+                          <Progress value={v.progressPct} className="h-1 w-16" />
+                          <span className="text-neutral-500 text-[10px] tabular-nums">
+                            {v.filledAccounts}/{v.totalAccounts}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteId(v.id)}
+                          className="text-[11px] text-red-400 hover:text-red-600 flex items-center gap-0.5 transition-colors"
+                        >
+                          <Trash2 className="h-3 w-3" /> Удалить
+                        </button>
+                      </div>
                     </div>
                   </th>
                 ))}
+              </tr>
+              {/* Row 2: sub-column headers */}
+              <tr className="bg-neutral-50">
+                {reconciliations.map((v) => {
+                  const anyCurrency = v.results[0]?.bankAccountCurrency;
+                  return (
+                    <React.Fragment key={v.id}>
+                      <th className={`border-b border-neutral-200 py-1 text-center text-[10px] font-medium text-neutral-500 ${RECON_SUB_COL}`}>
+                        Валюта
+                      </th>
+                      <th className={`border-b border-neutral-200 py-1 text-center text-[10px] font-medium text-neutral-500 ${RECON_SUB_COL}`}>
+                        Курс
+                      </th>
+                      <th className={`border-b border-neutral-200 py-1 text-center text-[10px] font-medium text-neutral-500 ${RECON_SUB_COL}`}>
+                        Руб
+                      </th>
+                    </React.Fragment>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
@@ -430,32 +645,83 @@ export function BankAccountVerificationTab() {
                   key={bankAccountId}
                   className={rowIdx % 2 === 0 ? "bg-white" : "bg-neutral-50/50"}
                 >
-                  <td className="sticky left-0 z-10 border-r border-neutral-100 px-3 py-2 font-medium text-neutral-800 text-xs bg-inherit">
+                  <td className="sticky left-0 z-10 border-r border-neutral-100 px-3 py-1.5 font-medium text-neutral-800 text-xs bg-inherit">
                     {bankAccountName}
                   </td>
                   {reconciliations.map((v) => {
                     const result = lookup.get(v.id)?.get(bankAccountId);
+                    const isRub = result?.bankAccountCurrency === "RUB";
+                    const currency = result?.bankAccountCurrency ?? "RUB";
+
                     return (
-                      <td key={v.id} className={`border-neutral-100 py-1.5 ${RECON_COL}`}>
-                        {result ? (
-                          <div className="flex items-center justify-center gap-0.5">
-                            <AmountCell
-                              reconciliationId={v.id}
-                              bankAccountId={bankAccountId}
-                              amount={result.amount}
-                              onSave={handleAmount}
-                            />
-                            <CommentCell
-                              reconciliationId={v.id}
-                              bankAccountId={bankAccountId}
-                              comment={result.comment}
-                              onSave={handleComment}
-                            />
-                          </div>
-                        ) : (
-                          <span className="text-neutral-300">—</span>
-                        )}
-                      </td>
+                      <React.Fragment key={v.id}>
+                        {/* Валюта */}
+                        <td className={`py-1 ${RECON_SUB_COL}`}>
+                          {result ? (
+                            <div className="flex items-center gap-0.5">
+                              <NumberInputCell
+                                value={result.foreignAmount}
+                                onChange={(val) =>
+                                  updateLocalResult(v.id, bankAccountId, { foreignAmount: val })
+                                }
+                                onCommit={(val) => handleForeignAmount(v.id, bankAccountId, val)}
+                                placeholder="—"
+                              />
+                              <span className="text-[10px] text-neutral-400 font-mono shrink-0">{currency}</span>
+                            </div>
+                          ) : (
+                            <span className="text-neutral-300">—</span>
+                          )}
+                        </td>
+                        {/* Курс */}
+                        <td className={`py-1 ${RECON_SUB_COL}`}>
+                          {result ? (
+                            isRub ? (
+                              <Input
+                                type="text"
+                                value="1"
+                                disabled
+                                className="h-7 w-[76px] text-xs px-1.5 tabular-nums border-neutral-100 bg-neutral-50 text-neutral-300 cursor-not-allowed"
+                              />
+                            ) : (
+                              <NumberInputCell
+                                value={result.exchangeRate}
+                                onChange={(val) =>
+                                  updateLocalResult(v.id, bankAccountId, { exchangeRate: val })
+                                }
+                                onCommit={(val) => handleExchangeRate(v.id, bankAccountId, val)}
+                                placeholder="—"
+                              />
+                            )
+                          ) : (
+                            <span className="text-neutral-300">—</span>
+                          )}
+                        </td>
+                        {/* Руб */}
+                        <td className={`py-1 ${RECON_SUB_COL}`}>
+                          {result ? (
+                            <div className="flex items-center gap-0.5">
+                              <span
+                                className={`text-xs tabular-nums px-1 ${
+                                  result.amount !== null ? "text-neutral-800" : "text-neutral-300"
+                                }`}
+                              >
+                                {result.amount !== null
+                                  ? result.amount.toLocaleString("ru-RU")
+                                  : "—"}
+                              </span>
+                              <CommentCell
+                                reconciliationId={v.id}
+                                bankAccountId={bankAccountId}
+                                comment={result.comment}
+                                onSave={handleComment}
+                              />
+                            </div>
+                          ) : (
+                            <span className="text-neutral-300">—</span>
+                          )}
+                        </td>
+                      </React.Fragment>
                     );
                   })}
                 </tr>
@@ -463,7 +729,7 @@ export function BankAccountVerificationTab() {
               {allAccounts.length === 0 && (
                 <tr>
                   <td
-                    colSpan={reconciliations.length + 1}
+                    colSpan={reconciliations.length * 3 + 1}
                     className="px-3 py-8 text-center text-neutral-400"
                   >
                     Нет активных счетов
@@ -477,6 +743,7 @@ export function BankAccountVerificationTab() {
 
       {createOpen && (
         <CreateReconciliationDialog
+          existingWeeks={existingWeeks}
           onClose={() => setCreateOpen(false)}
           onCreated={() => {
             setCreateOpen(false);

@@ -555,6 +555,9 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
 
   function PaymentCells({ p }: { p: AllPaymentRow }) {
     const active = hoverPaymentId === p.id;
+    const linkedCount = worksByPayment.get(p.id)?.length ?? 0;
+    const worksLabel = linkedCount ? worksCountLabel(linkedCount) : "без работ";
+    const paymentSubtitle = p.comment ? `${worksLabel} · ${p.comment}` : worksLabel;
     return (
       <>
         <td className="border-b border-neutral-100 px-1 py-1 w-8" />
@@ -563,8 +566,8 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
             <span className="inline-flex items-center gap-1 font-semibold text-green-800 shrink-0">
               <CircleDollarSign className="h-3.5 w-3.5" /> Выплата
             </span>
-            <span className="text-neutral-500 truncate">
-              {p.comment || (worksByPayment.get(p.id)?.length ? worksCountLabel(worksByPayment.get(p.id)!.length) : "без работ")}
+            <span className="text-neutral-500 truncate" title={paymentSubtitle}>
+              {paymentSubtitle}
             </span>
           </div>
         </td>
@@ -1501,7 +1504,7 @@ function EditPaymentDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto overflow-x-hidden">
         <DialogHeader><DialogTitle>Параметры выплаты</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
@@ -1543,13 +1546,13 @@ function EditPaymentDialog({
             {linkedWorks.length === 0 ? (
               <p className="text-xs text-neutral-400">Нет привязанных работ.</p>
             ) : (
-              <div className="space-y-1">
+              <div className="space-y-1 min-w-0">
                 {linkedWorks.map((w) => (
-                  <label key={w.id} className="flex items-center gap-2 text-xs">
-                    <Checkbox checked={removeIds.has(w.id)} disabled={locked} onCheckedChange={() => toggle(removeIds, w.id, setRemoveIds)} />
-                    <span className="text-red-600">отвязать</span>
-                    <span className="truncate flex-1">{w.project.name} · {w.techTask || "—"}</span>
-                    <span className="tabular-nums">{formatMoney(w.amount)}</span>
+                  <label key={w.id} className="flex items-start gap-2 text-xs min-w-0">
+                    <Checkbox className="mt-0.5 shrink-0" checked={removeIds.has(w.id)} disabled={locked} onCheckedChange={() => toggle(removeIds, w.id, setRemoveIds)} />
+                    <span className="shrink-0 text-red-600">отвязать</span>
+                    <span className="min-w-0 flex-1 break-words">{w.project.name} · {w.techTask || "—"}</span>
+                    <span className="shrink-0 tabular-nums">{formatMoney(w.amount)}</span>
                   </label>
                 ))}
               </div>
@@ -1557,12 +1560,12 @@ function EditPaymentDialog({
             {!locked && availableWorks.length > 0 && (
               <>
                 <div className="text-xs font-semibold text-neutral-700 pt-1">Добавить проверенные работы</div>
-                <div className="space-y-1 max-h-40 overflow-y-auto">
+                <div className="max-h-40 space-y-1 overflow-y-auto min-w-0">
                   {availableWorks.map((w) => (
-                    <label key={w.id} className="flex items-center gap-2 text-xs">
-                      <Checkbox checked={addIds.has(w.id)} onCheckedChange={() => toggle(addIds, w.id, setAddIds)} />
-                      <span className="truncate flex-1">{w.project.name} · {w.techTask || "—"}</span>
-                      <span className="tabular-nums">{formatMoney(w.amount)}</span>
+                    <label key={w.id} className="flex items-start gap-2 text-xs min-w-0">
+                      <Checkbox className="mt-0.5 shrink-0" checked={addIds.has(w.id)} onCheckedChange={() => toggle(addIds, w.id, setAddIds)} />
+                      <span className="min-w-0 flex-1 break-words">{w.project.name} · {w.techTask || "—"}</span>
+                      <span className="shrink-0 tabular-nums">{formatMoney(w.amount)}</span>
                     </label>
                   ))}
                 </div>

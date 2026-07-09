@@ -153,6 +153,7 @@ model BankAccount {
   id        String   @id @default(cuid())
   name      String   @unique
   details   String?
+  currency  String   @default("RUB") // код валюты: RUB | USD | EUR | GEL | ...
   isDefault Boolean  @default(false) // единственный active с true (см. TDNB-23)
   status    String   @default("active") // active | archived
   createdAt DateTime @default(now())
@@ -485,24 +486,29 @@ model ActivityLog {
 }
 
 model BankAccountReconciliation {
-  id        String   @id @default(cuid())
-  date      DateTime
-  createdAt DateTime @default(now())
-  createdBy String
-  results   BankAccountReconciliationResult[]
+  id          String   @id @default(cuid())
+  date        DateTime
+  isoWeekYear Int // ISO-год недели
+  isoWeek     Int // номер ISO-недели (1–53)
+  createdAt   DateTime @default(now())
+  createdBy   String
+  results     BankAccountReconciliationResult[]
 
+  @@unique([isoWeekYear, isoWeek])
   @@map("bank_account_reconciliations")
 }
 
 model BankAccountReconciliationResult {
-  id               String                  @id @default(cuid())
+  id               String                    @id @default(cuid())
   reconciliationId String
   bankAccountId    String
-  amount           Float?
-  comment          String?
-  updatedAt        DateTime                @updatedAt
+  foreignAmount    Float?                    // сумма в валюте счёта (ручной ввод)
+  exchangeRate     Float?                    // курс к рублю (ручной ввод; null для RUB)
+  amount           Float?                    // рублёвый остаток = foreignAmount × exchangeRate
+  comment          String?                   // только для поля «Руб»
+  updatedAt        DateTime                  @updatedAt
   reconciliation   BankAccountReconciliation @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
-  bankAccount      BankAccount             @relation(fields: [bankAccountId], references: [id])
+  bankAccount      BankAccount               @relation(fields: [bankAccountId], references: [id])
 
   @@unique([reconciliationId, bankAccountId])
   @@index([reconciliationId])

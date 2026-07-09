@@ -5,9 +5,21 @@ import { isAdmin } from "@/lib/permissions";
 import { prisma } from "@/lib/db";
 
 const schema = z.object({
-  amount: z.number().nullable().optional(),
+  foreignAmount: z.number().nullable().optional(),
+  exchangeRate: z.number().nullable().optional(),
   comment: z.string().nullable().optional(),
 });
+
+function calcAmount(
+  foreignAmount: number | null | undefined,
+  exchangeRate: number | null | undefined,
+  currency: string
+): number | null {
+  if (foreignAmount == null || !Number.isFinite(foreignAmount)) return null;
+  if (currency === "RUB") return foreignAmount;
+  if (exchangeRate == null || !Number.isFinite(exchangeRate)) return null;
+  return Math.round(foreignAmount * exchangeRate * 100) / 100;
+}
 
 export async function PATCH(
   req: NextRequest,
@@ -22,20 +34,38 @@ export async function PATCH(
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Validation" }, { status: 422 });
 
-  const data: { amount?: number | null; comment?: string | null } = {};
-  if (parsed.data.amount !== undefined) data.amount = parsed.data.amount;
+  const current = await prisma.bankAccountReconciliationResult.findUnique({
+    where: { reconciliationId_bankAccountId: { reconciliationId, bankAccountId } },
+    include: { bankAccount: { select: { currency: true } } },
+  });
+  if (!current) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const currency = current.bankAccount.currency;
+
+  const data: {
+    foreignAmount?: number | null;
+    exchangeRate?: number | null;
+    amount?: number | null;
+    comment?: string | null;
+  } = {};
+
+  if (parsed.data.foreignAmount !== undefined) data.foreignAmount = parsed.data.foreignAmount;
+  if (parsed.data.exchangeRate !== undefined && currency !== "RUB") {
+    data.exchangeRate = parsed.data.exchangeRate != null
+      ? Math.round(parsed.data.exchangeRate * 100) / 100
+      : null;
+  }
+  if (currency === "RUB") data.exchangeRate = null;
   if (parsed.data.comment !== undefined) data.comment = parsed.data.comment;
 
-  if (Object.keys(data).length === 0) {
-    return NextResponse.json({ error: "No fields to update" }, { status: 422 });
-  }
+  const newForeignAmount = data.foreignAmount !== undefined ? data.foreignAmount : current.foreignAmount;
+  const newExchangeRate = data.exchangeRate !== undefined ? data.exchangeRate : current.exchangeRate;
+  data.amount = calcAmount(newForeignAmount, newExchangeRate, currency);
 
-  const result = await prisma.bankAccountReconciliationResult.updateMany({
-    where: { reconciliationId, bankAccountId },
+  const result = await prisma.bankAccountReconciliationResult.update({
+    where: { reconciliationId_bankAccountId: { reconciliationId, bankAccountId } },
     data,
   });
 
-  if (result.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, amount: result.amount });
 }

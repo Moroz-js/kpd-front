@@ -9,7 +9,7 @@ import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import { ConfirmDialog } from "@/components/ui-custom/ConfirmDialog";
 import { ENTITY_STATUSES } from "@/lib/statuses";
-import { formatMoney } from "@/lib/format";
+import { formatMoneyWithCurrency } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
@@ -18,12 +18,15 @@ import { SortableHead } from "@/components/ui-custom/SortableHead";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { CurrencyCombobox } from "@/components/ui-custom/CurrencyCombobox";
+import { DEFAULT_CURRENCIES, mergeCurrencyOptions } from "@/lib/currencies";
 import { BankAccountVerificationTab } from "./BankAccountVerificationTab";
 
 type Row = {
   id: string;
   name: string;
   details: string | null;
+  currency: string;
   status: string;
   isDefault: boolean;
   paymentCount: number;
@@ -132,12 +135,14 @@ export function BankAccountsClient() {
       {activeTab === "accounts" && (
       <>
       <div className="flex flex-wrap items-center gap-2 mb-4">
-        <MultiSelectFilter
-          label="Статус"
-          options={Object.entries(ENTITY_STATUSES).map(([value, { label }]) => ({ value, label }))}
-          value={statusFilter}
-          onChange={setStatusFilter}
-        />
+        <div className="ml-auto">
+          <MultiSelectFilter
+            label="Статус"
+            options={Object.entries(ENTITY_STATUSES).map(([value, { label }]) => ({ value, label }))}
+            value={statusFilter}
+            onChange={setStatusFilter}
+          />
+        </div>
       </div>
 
       <Table containerClassName="rounded-md border bg-white flex-1 min-h-0 overflow-auto">
@@ -145,9 +150,6 @@ export function BankAccountsClient() {
             <TableRow>
               <SortableHead field="name" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
                 Счёт
-              </SortableHead>
-              <SortableHead field="status" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
-                Статус
               </SortableHead>
               <TableHead className="text-right">Кол-во выплат</TableHead>
               <TableHead className="text-right">Кол-во начислений</TableHead>
@@ -171,6 +173,9 @@ export function BankAccountsClient() {
               >
                 Сумма начислений
               </SortableHead>
+              <SortableHead field="status" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
+                Статус
+              </SortableHead>
               <TableHead className={stickyActionsHead} />
             </TableRow>
           </TableHeader>
@@ -193,15 +198,15 @@ export function BankAccountsClient() {
                   <TableCell className="font-medium">
                     {r.name}
                   </TableCell>
-                  <TableCell>
-                    <StatusBadge dict={ENTITY_STATUSES} value={r.status} />
-                  </TableCell>
                   <TableCell className="text-right tabular-nums">{r.paymentCount}</TableCell>
                   <TableCell className="text-right tabular-nums">{r.chargeCount}</TableCell>
                   <TableCell className="text-right tabular-nums">{r.operationCount}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMoney(r.paymentSum)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMoney(r.operationSum)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMoney(r.chargeSum)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatMoneyWithCurrency(r.paymentSum, r.currency)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatMoneyWithCurrency(r.operationSum, r.currency)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatMoneyWithCurrency(r.chargeSum, r.currency)}</TableCell>
+                  <TableCell>
+                    <StatusBadge dict={ENTITY_STATUSES} value={r.status} />
+                  </TableCell>
                   <TableCell className={cn(stickyActionsCell)}>
                     <div className={stickyActionsInner}>
                       <Button
@@ -293,14 +298,24 @@ function BankAccountEditDialog({
 }) {
   const [name, setName] = React.useState(row?.name ?? "");
   const [details, setDetails] = React.useState(row?.details ?? "");
+  const [currency, setCurrency] = React.useState(row?.currency ?? "RUB");
+  const [currencyOptions, setCurrencyOptions] = React.useState<string[]>([...DEFAULT_CURRENCIES]);
   const [isDefault, setIsDefault] = React.useState(row?.isDefault ?? false);
   const [submitting, setSubmitting] = React.useState(false);
 
   React.useEffect(() => {
     setName(row?.name ?? "");
     setDetails(row?.details ?? "");
+    setCurrency(row?.currency ?? "RUB");
     setIsDefault(row?.isDefault ?? false);
   }, [row]);
+
+  React.useEffect(() => {
+    fetch("/api/bank-accounts/currencies")
+      .then((r) => r.json())
+      .then((codes: string[]) => setCurrencyOptions(mergeCurrencyOptions(codes)))
+      .catch(() => {});
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -316,6 +331,7 @@ function BankAccountEditDialog({
       body: JSON.stringify({
         name: name.trim(),
         details: details.trim() || null,
+        currency,
         isDefault,
       }),
     });
@@ -354,6 +370,15 @@ function BankAccountEditDialog({
               value={details}
               onChange={(e) => setDetails(e.target.value)}
               placeholder="р/с 40802810…, БИК 04…"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Валюта</Label>
+            <CurrencyCombobox
+              value={currency}
+              onValueChange={setCurrency}
+              options={currencyOptions}
+              onAddOption={(code) => setCurrencyOptions((prev) => [...new Set([...prev, code])])}
             />
           </div>
           <DialogFooter>
