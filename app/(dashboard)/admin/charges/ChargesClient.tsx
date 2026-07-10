@@ -589,7 +589,7 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
                 return (
                   <TableRow key={row.id} className={isSelected ? "bg-blue-50/50" : ""}>
                     <TableCell
-                      className={cn(stickyCheckboxCell, isSelected && "bg-blue-50/50")}
+                      className={cn(stickyCheckboxCell, isSelected && "bg-blue-50")}
                       style={stickyColStyle(0, COL_CHECKBOX)}
                     >
                       <div className="flex items-center justify-center">
@@ -608,7 +608,7 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
                         stickyBankCell,
                         cellRed(bankEmpty),
                         "whitespace-normal",
-                        isSelected && "bg-blue-50/50",
+                        isSelected && "bg-blue-50",
                         bankEmpty && isSelected && "bg-red-100",
                       )}
                       style={stickyColStyle(COL_CHECKBOX, COL_BANK)}
@@ -621,7 +621,7 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
                         stickyAmountCell,
                         "text-right tabular-nums font-semibold",
                         cellRed(cellEmpty(row.amount)),
-                        isSelected && "bg-blue-50/50",
+                        isSelected && "bg-blue-50",
                         cellEmpty(row.amount) && isSelected && "bg-red-100",
                       )}
                       style={stickyColStyle(COL_CHECKBOX + COL_BANK, COL_AMOUNT)}
@@ -688,7 +688,7 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
                     <TableCell className={cn(compactCell, compactCellClip, cellRed(cellEmpty(row.invoiceNumber)), "whitespace-normal")}>
                       {clipText(row.invoiceNumber || "—", row.invoiceNumber || undefined)}
                     </TableCell>
-                    <TableCell className={cn(stickyActionsCell, "w-[96px] min-w-[96px] max-w-[96px]", isSelected && "bg-blue-50/50")}>
+                    <TableCell className={cn(stickyActionsCell, "w-[96px] min-w-[96px] max-w-[96px]", isSelected && "bg-blue-50")}>
                       <div className={stickyActionsInner}>
                         <button title="Редактировать" className="p-0.5 text-neutral-500 hover:text-neutral-800" onClick={() => setEditTarget(row)}>
                           <Pencil className="h-3.5 w-3.5" />
