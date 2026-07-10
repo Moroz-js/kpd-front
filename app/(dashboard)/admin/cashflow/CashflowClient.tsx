@@ -179,7 +179,7 @@ function OpeningBalanceInput({
       ref={inputRef}
       className={
         compact
-          ? "w-full text-right text-[11px] leading-snug tabular-nums italic bg-transparent border border-neutral-300 rounded px-1 py-0 outline-none focus:border-blue-400 focus:bg-white"
+          ? "w-20 text-right text-[11px] leading-snug tabular-nums italic bg-transparent border border-neutral-300 rounded px-1 py-0 outline-none focus:border-blue-400 focus:bg-white"
           : "h-7 w-28 text-right text-xs tabular-nums border border-neutral-300 rounded px-1.5 outline-none focus:border-blue-400"
       }
       value={display}
