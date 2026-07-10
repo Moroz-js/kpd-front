@@ -108,10 +108,10 @@ const SUMMARY_DEFS: SummaryDef[] = [
   { key: "incomePlanOnly", label: "Приход (план)", labelAlign: "center" },
   { key: "incomePlanFact", label: "Приход (план+факт)", labelAlign: "center", borderAfter: true },
   { key: "expensePlanDP", label: "Расход (план-факт) из ДП", labelAlign: "center", borderAfter: true },
-  { key: "balanceEndDP", label: "Баланс (смета/ДП)", signed: true, labelAlign: "right", borderAfter: true },
+  { key: "balanceEndDP", label: "Баланс (сметы/ДП)", signed: true, labelAlign: "right", borderAfter: true },
   // Далее — balanceInAccounts, discrepancy (рендерятся отдельно)
   { key: "paidFromBudget", label: "Оплачено из смет", labelAlign: "right" },
-  { key: "unpaidFromBudget", label: "Неплачено из смет", labelAlign: "right", borderAfter: true },
+  { key: "unpaidFromBudget", label: "Неоплачено из смет", labelAlign: "right", borderAfter: true },
   // Далее — discrepancyDPFact (рендерится отдельно)
 ];
 
@@ -526,10 +526,10 @@ export function CashflowClient() {
                 );
               })}
 
-              {/* Баланс в счетах (из DB) */}
+              {/* Баланс на счетах (из DB) */}
               <tr className={cn(ROW_BORDER, "hover:bg-neutral-50")}>
                 <td className={cn(compactLbl, "text-right font-normal italic text-neutral-500")}>
-                  Баланс в счетах
+                  Баланс на счетах
                 </td>
                 <td className={cn(stickyTotal)}>
                   {fmtNullable(
@@ -559,10 +559,13 @@ export function CashflowClient() {
                 })}
               </tr>
 
-              {/* Расхождение = Баланс (смета/ДП) − Баланс в счетах */}
+              {/* Несхождение = Баланс (сметы/ДП) − Баланс на счетах */}
               <tr className={cn(ROW_BORDER_STRONG, "hover:bg-neutral-50")}>
-                <td className={cn(compactLbl, "text-right font-normal italic text-neutral-500")}>
-                  Расхождение
+                <td
+                  className={cn(compactLbl, "text-right font-normal italic text-neutral-500")}
+                  title="Несхождение расчётного баланса и фактического остатка на счетах"
+                >
+                  Несхождение
                 </td>
                 <td className={cn(stickyTotal)}>
                   {fmtNullable(
@@ -641,10 +644,10 @@ export function CashflowClient() {
                 );
               })}
 
-              {/* Расхождение план/факт в ДП = iwPaid − planTotal */}
+              {/* Несхождение план и факт в ДП = iwPaid − planTotal */}
               <tr className={cn(ROW_BORDER_STRONG, "hover:bg-neutral-50")}>
                 <td className={cn(compactLbl, "text-right font-normal italic text-neutral-500")}>
-                  Расхождение план/факт в ДП
+                  Несхождение план и факт в ДП
                 </td>
                 <td className={cn(stickyTotal)}>
                   {fmtSign(rowTotal(discrepancyDPFact))}
@@ -796,7 +799,7 @@ export function CashflowClient() {
         <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              Расхождение план/факт в ДП — Неделя {discrepancyModal?.week}
+              Несхождение план и факт в ДП — Неделя {discrepancyModal?.week}
             </DialogTitle>
           </DialogHeader>
           {modalProjects.length === 0 ? (
