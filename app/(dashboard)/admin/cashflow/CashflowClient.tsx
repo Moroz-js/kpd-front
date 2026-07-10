@@ -121,6 +121,15 @@ const AGGREGATE_DEFS: AggregateDef[] = [
   { key: "nonProjectExpenses", label: "Непроектные расходы", bold: true },
 ];
 
+function parseMoneyInput(raw: string): number {
+  return parseFloat(raw.replace(/\s/g, "").replace(/\u00A0/g, "").replace(",", ".")) || 0;
+}
+
+function formatMoneyInput(n: number): string {
+  if (!n && n !== 0) return "";
+  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(n);
+}
+
 function OpeningBalanceInput({
   year,
   initial,
@@ -132,15 +141,16 @@ function OpeningBalanceInput({
   onSaved: (v: number) => void;
   compact?: boolean;
 }) {
-  const [draft, setDraft] = useState(String(initial));
+  const [focused, setFocused] = useState(false);
+  const [raw, setRaw] = useState(String(initial || ""));
 
   useEffect(() => {
-    setDraft(String(initial));
-  }, [initial]);
+    if (!focused) setRaw(String(initial || ""));
+  }, [initial, focused]);
 
   async function save() {
-    const amount = parseFloat(draft.replace(/\s/g, "").replace(",", "."));
-    if (isNaN(amount)) return;
+    const amount = parseMoneyInput(raw);
+    setFocused(false);
     const res = await fetch("/api/cashflow/opening-balance", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -149,13 +159,20 @@ function OpeningBalanceInput({
     if (res.ok) { onSaved(amount); toast.success("Баланс сохранён"); }
   }
 
+  const displayValue = focused ? raw : formatMoneyInput(parseMoneyInput(raw));
+
   return (
     <Input
-      className={compact ? "h-6 w-24 text-right text-[11px] px-1.5 tabular-nums italic" : "h-7 w-28 text-right text-xs"}
-      value={draft}
-      onChange={e => setDraft(e.target.value)}
+      className={compact ? "h-6 w-24 text-right text-[11px] px-1.5 tabular-nums italic" : "h-7 w-28 text-right text-xs tabular-nums"}
+      value={displayValue}
+      onChange={e => setRaw(e.target.value)}
+      onFocus={e => {
+        setFocused(true);
+        setRaw(String(parseMoneyInput(e.target.value) || ""));
+        setTimeout(() => e.target.select(), 0);
+      }}
       onBlur={save}
-      onKeyDown={e => e.key === "Enter" && save()}
+      onKeyDown={e => { if (e.key === "Enter") { (e.target as HTMLInputElement).blur(); } }}
     />
   );
 }
