@@ -36,7 +36,7 @@ import { useTableRowSelection } from "@/lib/useTableRowSelection";
 const ACTIONS_COL_WIDTH = 96;
 /** table-fixed: фиксированные ширины, иначе текст залезает под sticky-действия */
 const CHARGES_COL_WIDTHS = [
-  36, 140, 100, 128, 148, 168, 84, 84, 84, 84, 72, 60, 84, 192, 100, 100, 168, ACTIONS_COL_WIDTH,
+  48, 140, 100, 128, 148, 168, 84, 84, 84, 84, 72, 60, 84, 192, 100, 100, 168, ACTIONS_COL_WIDTH,
 ] as const;
 const CHARGES_TABLE_MIN_WIDTH = CHARGES_COL_WIDTHS.reduce((s, w) => s + w, 0);
 
