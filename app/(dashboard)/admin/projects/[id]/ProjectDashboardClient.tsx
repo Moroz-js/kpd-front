@@ -613,14 +613,14 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
               {expensesExpanded && (
                 <>
                   {/* Итого расходы по неделям */}
-                  <tr className="border-b border-neutral-200 bg-neutral-50/50 font-semibold">
-                    <td className={cn(stickyLbl, "bg-neutral-50/80")}>Итого расходы</td>
+                  <tr className="border-b border-neutral-200 bg-neutral-50 font-semibold">
+                    <td className={cn(stickyLbl, "bg-neutral-50")}>Итого расходы</td>
                     <td className={cn(stickyTotal, "font-semibold")}>{fmt(rowTotal(summary.paidWorks ?? []))}</td>
                     {visibleWeekIndices.map((idx, vi) => {
                       const wh = visibleWeeks[vi];
                       const v = (summary.paidWorks ?? [])[idx] ?? 0;
                       return (
-                        <td key={idx} className={cn(tdCls, "bg-neutral-50/50", wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50" : "")}>
+                        <td key={idx} className={cn(tdCls, "bg-neutral-50", wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50" : "")}>
                           {fmt(v)}
                         </td>
                       );
@@ -724,14 +724,14 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
               {planExpanded && (
                 <>
                   {/* Итого план */}
-                  <tr className="border-b border-neutral-200 bg-neutral-50/50 font-semibold">
-                    <td className={cn(stickyLbl, "bg-neutral-50/80")}>Итого план</td>
+                  <tr className="border-b border-neutral-200 bg-neutral-50 font-semibold">
+                    <td className={cn(stickyLbl, "bg-neutral-50")}>Итого план</td>
                     <td className={cn(stickyTotal, "font-semibold")}>{fmt(rowTotal(summary.expensePlan ?? []))}</td>
                     {visibleWeekIndices.map((idx, vi) => {
                       const wh = visibleWeeks[vi];
                       const v = (summary.expensePlan ?? [])[idx] ?? 0;
                       return (
-                        <td key={idx} className={cn(tdCls, "bg-neutral-50/50", wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50" : "")}>
+                        <td key={idx} className={cn(tdCls, "bg-neutral-50", wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50" : "")}>
                           {fmt(v)}
                         </td>
                       );
