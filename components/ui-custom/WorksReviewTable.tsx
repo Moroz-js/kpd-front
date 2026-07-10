@@ -3,7 +3,7 @@
 import * as React from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { CheckCircle2, MessageSquare, ArrowUp, ArrowDown, ExternalLink } from "lucide-react";
+import { CheckCircle2, MessageSquare, ArrowUp, ArrowDown, ArrowUpDown, ExternalLink } from "lucide-react";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import { WORK_STATUSES, WORK_STATUSES_SETTABLE } from "@/lib/statuses";
@@ -154,26 +154,30 @@ function SortableHead({
   sort,
   onSort,
   className,
-  children,
+  topContent,
 }: {
   label: string;
   sortKey: SortKey;
   sort: SortState;
   onSort: (key: SortKey) => void;
   className?: string;
-  children?: React.ReactNode;
+  topContent?: React.ReactNode;
 }) {
   const active = sort?.key === sortKey;
   return (
     <TableHead
-      className={cn("cursor-pointer select-none hover:text-neutral-900", className)}
+      className={cn("cursor-pointer select-none hover:text-neutral-900 group/th", className)}
       onClick={() => onSort(sortKey)}
     >
+      {topContent}
       <span className="inline-flex items-center gap-0.5">
         {label}
-        {active && (sort!.dir === 1 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+        {active ? (
+          sort!.dir === 1 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+        ) : (
+          <ArrowUpDown className="h-3 w-3 text-neutral-300 group-hover/th:text-neutral-500" />
+        )}
       </span>
-      {children}
     </TableHead>
   );
 }
@@ -422,13 +426,20 @@ export function WorksReviewTable({
             <SortableHead label="Ответственный" sortKey="responsibleExecutorName" sort={sort} onSort={handleSort} className="min-w-[150px]" />
             <SortableHead label="ТЗ" sortKey="techTask" sort={sort} onSort={handleSort} className="max-w-[140px]" />
             <SortableHead label="Ставка" sortKey="rate" sort={sort} onSort={handleSort} className="text-right" />
-            <SortableHead label="Сумма" sortKey="amount" sort={sort} onSort={handleSort} className="text-right">
-              {rows.length > 0 && (
-                <div className="text-[10px] font-semibold tabular-nums text-neutral-800 whitespace-nowrap">
-                  {formatMoney(total)} ₽
-                </div>
-              )}
-            </SortableHead>
+            <SortableHead
+              label="Сумма"
+              sortKey="amount"
+              sort={sort}
+              onSort={handleSort}
+              className="text-right"
+              topContent={
+                rows.length > 0 ? (
+                  <div className="text-[10px] font-semibold tabular-nums text-neutral-800 whitespace-nowrap">
+                    {formatMoney(total)} ₽
+                  </div>
+                ) : undefined
+              }
+            />
             <SortableHead label="Статус" sortKey="workStatus" sort={sort} onSort={handleSort} className="min-w-[150px]" />
             <SortableHead label="Дата оплаты план-факт" sortKey="date" sort={sort} onSort={handleSort} className="whitespace-nowrap" />
             <TableHead className={stickyActionsHead} />
