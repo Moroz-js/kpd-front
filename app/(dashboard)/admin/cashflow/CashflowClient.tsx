@@ -4,7 +4,6 @@ import React, { useState, useEffect, useRef } from "react";
 import useSWR from "swr";
 import Link from "next/link";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -176,9 +175,13 @@ function OpeningBalanceInput({
   }
 
   return (
-    <Input
+    <input
       ref={inputRef}
-      className={compact ? "h-5 w-24 text-right text-[11px] px-1 tabular-nums italic border-neutral-300" : "h-7 w-28 text-right text-xs tabular-nums"}
+      className={
+        compact
+          ? "w-full text-right text-[11px] leading-snug tabular-nums italic bg-transparent border border-neutral-300 rounded px-1 py-0 outline-none focus:border-blue-400 focus:bg-white"
+          : "h-7 w-28 text-right text-xs tabular-nums border border-neutral-300 rounded px-1.5 outline-none focus:border-blue-400"
+      }
       value={display}
       onChange={handleChange}
       onFocus={e => setTimeout(() => e.target.select(), 0)}
