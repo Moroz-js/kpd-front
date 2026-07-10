@@ -145,18 +145,33 @@ if [ -n "${NEON_DATABASE_URL:-}" ]; then
       fi
     fi
     if [ -n "$DUMP_FILE" ] && [ -f "$DUMP_FILE" ]; then
-      # pg_restore той же (или более новой) версии, что делал дамп
-      if ! "$PGBIN/pg_restore" --no-owner --no-privileges --dbname="$LOCAL_DB_URL" "$DUMP_FILE" 2>/tmp/pgrestore.err; then
-        if grep -qi "unsupported version" /tmp/pgrestore.err; then
-          install_pg17_client
-          PGBIN=$(pg_bin_dir)
-          "$PGBIN/pg_restore" --no-owner --no-privileges --dbname="$LOCAL_DB_URL" "$DUMP_FILE"
-        else
-          cat /tmp/pgrestore.err >&2
-          exit 1
-        fi
+      # pg_restore той же (или более новой) версии, что делал дамп.
+      # Некритичные ошибки (SET transaction_timeout из PG17, COMMENT ON SCHEMA)
+      # игнорируем — важен фактический результат (таблицы с данными).
+      run_restore() {
+        set +e
+        "$PGBIN/pg_restore" --no-owner --no-privileges --no-comments --dbname="$LOCAL_DB_URL" "$DUMP_FILE" 2>/tmp/pgrestore.err
+        RESTORE_RC=$?
+        set -e
+      }
+      run_restore
+      if [ "$RESTORE_RC" -ne 0 ] && grep -qi "unsupported version" /tmp/pgrestore.err; then
+        install_pg17_client
+        PGBIN=$(pg_bin_dir)
+        run_restore
       fi
-      log "Дамп импортирован (сохранён в $DUMP_FILE)"
+      IMPORTED_TABLES=$(sudo -u postgres psql -d "$DB_NAME" -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'")
+      if [ "$IMPORTED_TABLES" -gt 0 ]; then
+        if [ "$RESTORE_RC" -ne 0 ]; then
+          warn "pg_restore сообщил о некритичных ошибках (полный лог: /tmp/pgrestore.err):"
+          grep -i "error" /tmp/pgrestore.err | head -n 5 >&2 || true
+        fi
+        log "Дамп импортирован: $IMPORTED_TABLES таблиц (файл: $DUMP_FILE)"
+      else
+        cat /tmp/pgrestore.err >&2
+        err "Импорт не удался — таблицы не созданы"
+        exit 1
+      fi
     fi
   else
     warn "База $DB_NAME не пуста ($TABLE_COUNT таблиц) — импорт с Neon пропущен"
