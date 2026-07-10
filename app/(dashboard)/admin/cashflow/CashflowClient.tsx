@@ -125,10 +125,12 @@ function OpeningBalanceInput({
   year,
   initial,
   onSaved,
+  compact,
 }: {
   year: number;
   initial: number;
   onSaved: (v: number) => void;
+  compact?: boolean;
 }) {
   const [draft, setDraft] = useState(String(initial));
 
@@ -149,7 +151,7 @@ function OpeningBalanceInput({
 
   return (
     <Input
-      className="h-7 w-28 text-right text-xs"
+      className={compact ? "h-6 w-24 text-right text-[11px] px-1.5 tabular-nums italic" : "h-7 w-28 text-right text-xs"}
       value={draft}
       onChange={e => setDraft(e.target.value)}
       onBlur={save}
@@ -364,20 +366,10 @@ export function CashflowClient() {
     <div className="flex flex-col h-[calc(100vh-3rem)] min-h-0 gap-3">
       <div className="shrink-0 flex items-center justify-between">
         <h1 className="text-xl font-semibold">Кэшфлоу проектов</h1>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 text-sm text-neutral-600">
-            <span>Стартовый баланс:</span>
-            <OpeningBalanceInput
-              year={year}
-              initial={openingBalance ?? 0}
-              onSaved={v => { setOpeningBalance(v); mutate(); }}
-            />
-          </div>
-          <Select value={String(year)} onValueChange={v => v && setYear(parseInt(v))}>
-            <SelectTrigger className="w-24 h-8 text-sm"><SelectValue /></SelectTrigger>
-            <SelectContent>{YEARS.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
+        <Select value={String(year)} onValueChange={v => v && setYear(parseInt(v))}>
+          <SelectTrigger className="w-24 h-8 text-sm"><SelectValue /></SelectTrigger>
+          <SelectContent>{YEARS.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}</SelectContent>
+        </Select>
       </div>
 
       {/* Tab bar */}
@@ -494,10 +486,33 @@ export function CashflowClient() {
                       {def.label}
                     </td>
                     <td className={cn(stickyTotal, valueCls, def.highlight && "font-medium")}>
-                      {"signed" in def && def.signed ? fmtSign(total) : fmt(total)}
+                      {def.key === "balanceStart" ? fmt(openingBalance ?? 0) : ("signed" in def && def.signed ? fmtSign(total) : fmt(total))}
                     </td>
-                    {visibleWeekIndices.map((idx) =>
-                      renderWeekCell(
+                    {visibleWeekIndices.map((idx) => {
+                      // Первая неделя строки «Баланс на начало» — редактируемый input
+                      if (def.key === "balanceStart" && idx === 0) {
+                        const week = weeks[idx]?.week;
+                        if (week == null) return null;
+                        const meta = getCellMeta(`summary:${def.key}`, week);
+                        const highlightClass = cashflowHighlightCellClass(meta?.highlight);
+                        return (
+                          <td key={idx} className={weekCellClass(idx, cn(highlightClass), true)}>
+                            <CashflowCommentCell
+                              meta={meta}
+                              compact
+                              onSave={(payload) => saveCellMeta(`summary:${def.key}`, week, payload)}
+                            >
+                              <OpeningBalanceInput
+                                year={year}
+                                initial={openingBalance ?? 0}
+                                onSaved={v => { setOpeningBalance(v); mutate(); }}
+                                compact
+                              />
+                            </CashflowCommentCell>
+                          </td>
+                        );
+                      }
+                      return renderWeekCell(
                         `summary:${def.key}`,
                         idx,
                         <span className={valueCls}>
@@ -505,8 +520,8 @@ export function CashflowClient() {
                         </span>,
                         cn(valueCls, def.highlight && "font-medium"),
                         true
-                      )
-                    )}
+                      );
+                    })}
                   </tr>
                 );
               })}
