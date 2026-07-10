@@ -233,6 +233,74 @@ systemctl restart "$SERVICE_NAME"
 log "Сервис $SERVICE_NAME запущен (127.0.0.1:$APP_PORT)"
 
 # ── 7. Traefik ──────────────────────────────────────────────────────────────
+# Включает file-provider у traefik в docker-compose (n8n): +2 аргумента, +1 volume.
+# Compose-файл бэкапится, пересоздаётся только контейнер traefik.
+patch_docker_traefik() {
+  local CONTAINER="$1"
+  local COMPOSE_FILE SERVICE PROJECT_DIR HOST_DYN="/opt/kpd/traefik-dynamic"
+
+  COMPOSE_FILE=$(docker inspect "$CONTAINER" --format '{{index .Config.Labels "com.docker.compose.project.config_files"}}' 2>/dev/null | cut -d, -f1)
+  SERVICE=$(docker inspect "$CONTAINER" --format '{{index .Config.Labels "com.docker.compose.service"}}' 2>/dev/null)
+  PROJECT_DIR=$(docker inspect "$CONTAINER" --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' 2>/dev/null)
+
+  if [ -z "$COMPOSE_FILE" ] || [ ! -f "$COMPOSE_FILE" ] || [ -z "$SERVICE" ]; then
+    err "Не нашёл compose-файл traefik (labels compose отсутствуют)."
+    return 1
+  fi
+
+  # Traefik со статическим конфиг-файлом (не CLI-args) — патчить надо иначе, не рискуем
+  if ! docker inspect "$CONTAINER" --format '{{join .Args " "}}' | grep -q 'certificatesresolvers\|entrypoints'; then
+    err "Traefik настроен статическим файлом, а не CLI-аргументами — включи file-provider вручную."
+    return 1
+  fi
+
+  log "Патчу $COMPOSE_FILE: file-provider для traefik (бэкап рядом)..."
+  cp "$COMPOSE_FILE" "$COMPOSE_FILE.bak.$(date +%s)"
+  mkdir -p "$HOST_DYN"
+
+  command -v python3 >/dev/null || apt-get install -y -qq python3
+  python3 -c "import yaml" 2>/dev/null || apt-get install -y -qq python3-yaml
+
+  python3 - "$COMPOSE_FILE" "$SERVICE" "$HOST_DYN" <<'PYEOF'
+import sys, yaml
+
+path, service, host_dyn = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path) as f:
+    data = yaml.safe_load(f)
+
+svc = data["services"][service]
+args = ["--providers.file.directory=/etc/traefik/dynamic", "--providers.file.watch=true"]
+cmd = svc.get("command", [])
+if isinstance(cmd, str):
+    if "providers.file.directory" not in cmd:
+        svc["command"] = cmd + " " + " ".join(args)
+else:
+    if not any("providers.file.directory" in str(c) for c in cmd):
+        svc["command"] = list(cmd) + args
+
+vols = svc.get("volumes", [])
+mount = f"{host_dyn}:/etc/traefik/dynamic:ro"
+if not any("/etc/traefik/dynamic" in str(v) for v in vols):
+    vols.append(mount)
+    svc["volumes"] = vols
+
+with open(path, "w") as f:
+    yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+print("compose patched")
+PYEOF
+
+  local DC="docker compose"
+  command -v docker-compose >/dev/null 2>&1 && ! docker compose version >/dev/null 2>&1 && DC="docker-compose"
+  if ! (cd "$PROJECT_DIR" && $DC up -d "$SERVICE"); then
+    err "docker compose up не удался — откатываю compose-файл из бэкапа"
+    cp "$(ls -t "$COMPOSE_FILE".bak.* | head -1)" "$COMPOSE_FILE"
+    (cd "$PROJECT_DIR" && $DC up -d "$SERVICE") || true
+    return 1
+  fi
+  log "Traefik пересоздан с file-provider (dynamic-каталог: $HOST_DYN)"
+  DYNAMIC_DIR="$HOST_DYN"
+}
+
 setup_traefik() {
   local DYNAMIC_DIR="" CERT_RESOLVER="" TARGET_IP="127.0.0.1" TRAEFIK_CONTAINER=""
 
@@ -262,10 +330,11 @@ setup_traefik() {
     fi
 
     if [ -z "$DYNAMIC_DIR" ]; then
-      err "У Traefik в Docker не включён file-provider (providers.file.directory) или каталог не смонтирован."
-      err "Добавь traefik'у аргументы: --providers.file.directory=/etc/traefik/dynamic --providers.file.watch=true"
-      err "смонтируй каталог с хоста и перезапусти этот скрипт (повторный запуск безопасен)."
-      return 1
+      warn "File-provider у traefik не включён — включаю автоматически (патч compose + пересоздание traefik)..."
+      patch_docker_traefik "$TRAEFIK_CONTAINER" || {
+        err "Автопатч не удался. Включи file-provider вручную и перезапусти скрипт (повторный запуск безопасен)."
+        return 1
+      }
     fi
   elif [ -d /etc/traefik ]; then
     log "Traefik найден нативный (/etc/traefik)"
