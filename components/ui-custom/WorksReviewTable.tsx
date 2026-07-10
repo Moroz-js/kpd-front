@@ -414,6 +414,18 @@ export function WorksReviewTable({
         containerClassName="rounded-md border bg-white max-h-[60vh] overflow-auto"
       >
         <TableHeader className="sticky top-0 z-10 bg-white">
+          {rows.length > 0 && (
+            <TableRow className="hover:bg-transparent border-b-0">
+              <TableHead colSpan={showProjectColumn ? 9 : 8} className="h-6 py-0 border-b-0" />
+              <TableHead className="h-6 py-0 text-right border-b-0">
+                <span className="text-[11px] font-semibold tabular-nums text-neutral-800 whitespace-nowrap">
+                  {formatMoney(total)} ₽
+                </span>
+              </TableHead>
+              <TableHead colSpan={2} className="h-6 py-0 border-b-0" />
+              <TableHead className={cn(stickyActionsHead, "h-6 py-0")} />
+            </TableRow>
+          )}
           <TableRow>
             <SortableHead label="Год" sortKey="executionYear" sort={sort} onSort={handleSort} className="w-16 text-[10px]" />
             <SortableHead label="Месяц" sortKey="executionMonth" sort={sort} onSort={handleSort} className="w-20 text-[10px]" />
@@ -426,20 +438,7 @@ export function WorksReviewTable({
             <SortableHead label="Ответственный" sortKey="responsibleExecutorName" sort={sort} onSort={handleSort} className="min-w-[150px]" />
             <SortableHead label="ТЗ" sortKey="techTask" sort={sort} onSort={handleSort} className="max-w-[140px]" />
             <SortableHead label="Ставка" sortKey="rate" sort={sort} onSort={handleSort} className="text-right" />
-            <SortableHead
-              label="Сумма"
-              sortKey="amount"
-              sort={sort}
-              onSort={handleSort}
-              className="text-right"
-              topContent={
-                rows.length > 0 ? (
-                  <div className="text-[10px] font-semibold tabular-nums text-neutral-800 whitespace-nowrap">
-                    {formatMoney(total)} ₽
-                  </div>
-                ) : undefined
-              }
-            />
+            <SortableHead label="Сумма" sortKey="amount" sort={sort} onSort={handleSort} className="text-right" />
             <SortableHead label="Статус" sortKey="workStatus" sort={sort} onSort={handleSort} className="min-w-[150px]" />
             <SortableHead label="Дата оплаты план-факт" sortKey="date" sort={sort} onSort={handleSort} className="whitespace-nowrap" />
             <TableHead className={stickyActionsHead} />
