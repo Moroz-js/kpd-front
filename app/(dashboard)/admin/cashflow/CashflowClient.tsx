@@ -325,8 +325,8 @@ export function CashflowClient() {
       compact ? compactTdCls : tdCls,
       isCurrent(idx)
         ? compact
-          ? "bg-blue-50/70 font-medium"
-          : "bg-blue-50/70 font-semibold"
+          ? "bg-blue-50 font-medium"
+          : "bg-blue-50 font-semibold"
         : isPast(idx)
           ? "text-neutral-400 bg-neutral-50/30"
           : isFuture(idx)

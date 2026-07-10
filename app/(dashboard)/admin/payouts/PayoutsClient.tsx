@@ -428,7 +428,7 @@ export function PayoutsClient() {
                 const key = rowKey(r);
                 const isEditing = (field: string) => inlineEdit?.key === key && inlineEdit.field === field;
                 return (
-                  <TableRow key={key} className={selectedIds.has(key) ? "bg-blue-50/40" : undefined}>
+                  <TableRow key={key} className={selectedIds.has(key) ? "bg-blue-50" : undefined}>
                     <TableCell className="w-8">
                       <RowSelectCheckbox
                         checked={selectedIds.has(key)}
@@ -541,7 +541,7 @@ export function PayoutsClient() {
                     </TableCell>
 
                     <TableCell>{SMETA_LABEL[r.sourceType]}</TableCell>
-                    <TableCell className={cn(stickyActionsCell, selectedIds.has(key) && "bg-blue-50/40")}>
+                    <TableCell className={cn(stickyActionsCell, selectedIds.has(key) && "bg-blue-50")}>
                       <div className={stickyActionsInner}>
                         {r.paymentStatus === "planned" && (
                           <Button size="sm" variant="ghost" onClick={() => setPaying(r)} title="Оплатить" className="text-green-600 hover:text-green-800">

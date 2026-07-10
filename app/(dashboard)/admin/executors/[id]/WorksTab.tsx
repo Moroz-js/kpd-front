@@ -538,7 +538,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
         <td className={cn(td, "whitespace-nowrap text-neutral-500", w.workStatus === "paid" && !w.paidAt && "bg-red-100 text-red-700")}>{formatDate(w.paidAt)}</td>
         <td className={cn(td, "min-w-[140px]")}><StatusBadge status={w.workStatus} type="work" /></td>
         <td className={dim}>—</td>
-        <td className={cn(td, stickyActionsCell, active && "bg-blue-100/70")}>
+        <td className={cn(td, stickyActionsCell, active && "bg-blue-100")}>
           <div className={stickyActionsInner}>
             {isAdmin && w.workStatus !== "checked" && w.workStatus !== "paid" && !w.paymentId && (
               <button title="Проверить" className="p-0.5 text-blue-600 hover:text-blue-800" onClick={() => handleCheck(w)}>
@@ -765,7 +765,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
                       onMouseLeave={() => setHoverPaymentId(null)}
                       className={cn(
                         "border-l-2 transition-colors",
-                        active ? "bg-blue-100/70 border-l-blue-500" : "bg-blue-50/20 hover:bg-blue-50/40 border-l-blue-300"
+                        active ? "bg-blue-100 border-l-blue-500" : "bg-blue-50 hover:bg-blue-100 border-l-blue-300"
                       )}
                     >
                       <WorkCells w={w} />

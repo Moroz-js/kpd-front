@@ -587,7 +587,7 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
                 const bankEmpty = cellEmpty(row.bankAccount?.name);
 
                 return (
-                  <TableRow key={row.id} className={isSelected ? "bg-blue-50/50" : ""}>
+                  <TableRow key={row.id} className={isSelected ? "bg-blue-50" : ""}>
                     <TableCell
                       className={cn(stickyCheckboxCell, isSelected && "bg-blue-50")}
                       style={stickyColStyle(0, COL_CHECKBOX)}

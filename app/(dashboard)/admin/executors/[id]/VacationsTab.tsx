@@ -189,7 +189,7 @@ function SharedVacationCalendar() {
                         key={w}
                         className={cn(
                           tdWeek,
-                          w === currentWeek && !weekSet.has(w) && "bg-blue-50/40",
+                          w === currentWeek && !weekSet.has(w) && "bg-blue-50",
                           weekSet.has(w) && "bg-orange-200"
                         )}
                         title={

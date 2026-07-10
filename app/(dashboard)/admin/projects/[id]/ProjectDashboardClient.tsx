@@ -469,7 +469,7 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                 return (
                   <tr key={key} className={cn(
                     "hover:bg-neutral-50 border-b border-neutral-100",
-                    highlight && "bg-blue-50/30 font-semibold"
+                    highlight && "bg-blue-50 font-semibold"
                   )}>
                     <td className={cn(stickyLbl, !highlight && "font-normal italic text-neutral-500")}>{label}</td>
                     <td className={cn(stickyTotal, highlight && "font-semibold")}>
@@ -500,7 +500,7 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                       const wh = visibleWeeks[vi];
                       return (
                         <td key={idx} className={cn(tdCls,
-                          wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50/70 font-semibold" : wh?.week < currentISOWeek && year === currentYear ? "text-neutral-400 bg-neutral-50/40" : "",
+                          wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50 font-semibold" : wh?.week < currentISOWeek && year === currentYear ? "text-neutral-400 bg-neutral-50/40" : "",
                         )}>
                           {cellVal(v)}
                         </td>
@@ -531,7 +531,7 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                     const wh = visibleWeeks[vi];
                     const v = wt.weeks[idx] ?? 0;
                     return (
-                      <td key={idx} className={cn(tdCls, wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50/70 font-semibold" : wh?.week < currentISOWeek && year === currentYear ? "text-neutral-400 bg-neutral-50/40" : "")}>
+                      <td key={idx} className={cn(tdCls, wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50 font-semibold" : wh?.week < currentISOWeek && year === currentYear ? "text-neutral-400 bg-neutral-50/40" : "")}>
                         {fmt(v)}
                       </td>
                     );
@@ -556,7 +556,7 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                         "bg-neutral-50",
                         overspendValueClass(v),
                         wh?.week === currentISOWeek && year === currentYear
-                          ? "!bg-blue-50/70 font-semibold"
+                          ? "!bg-blue-50 font-semibold"
                           : wh?.week < currentISOWeek && year === currentYear && v === 0
                             ? "text-neutral-400"
                             : ""
@@ -582,7 +582,7 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                   const wh = visibleWeeks[vi];
                   const v = (summary.expensePlan ?? [])[idx] ?? 0;
                   return (
-                    <td key={idx} className={cn(tdCls, "bg-neutral-50/50", wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50/70" : "")}>
+                    <td key={idx} className={cn(tdCls, "bg-neutral-50/50", wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50" : "")}>
                       {fmt(v)}
                     </td>
                   );
@@ -651,7 +651,7 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                       const wh = visibleWeeks[vi];
                       const v = pl.weeks[idx] ?? null;
                       return (
-                        <td key={idx} className={cn("p-0 text-right border-r border-neutral-100 last:border-0", wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50/70" : wh?.week < currentISOWeek && year === currentYear ? "bg-neutral-50/40" : "")}>
+                        <td key={idx} className={cn("p-0 text-right border-r border-neutral-100 last:border-0", wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50" : wh?.week < currentISOWeek && year === currentYear ? "bg-neutral-50/40" : "")}>
                           {canManagePlan ? (
                             <PlanCell
                               value={v}
@@ -692,7 +692,7 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                       key={i}
                       className={cn(
                         tdCls,
-                        wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50/70" : ""
+                        wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50" : ""
                       )}
                     />
                   ))}
