@@ -11,7 +11,7 @@ export default async function Page() {
   const [bankAccounts, orders] = await Promise.all([
     prisma.bankAccount.findMany({
       where: { status: "active" },
-      select: { id: true, name: true },
+      select: { id: true, name: true, currency: true },
       orderBy: { name: "asc" },
     }),
     prisma.order.findMany({
