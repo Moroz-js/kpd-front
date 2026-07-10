@@ -78,7 +78,7 @@ function clipText(text: string, title?: string) {
 
 // ─── Типы ─────────────────────────────────────────────────────────────────────
 
-type BankAccount = { id: string; name: string };
+type BankAccount = { id: string; name: string; currency: string };
 type Order = {
   id: string;
   orderNumber: string;
@@ -626,7 +626,16 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
                       )}
                       style={stickyColStyle(COL_CHECKBOX + COL_BANK, COL_AMOUNT)}
                     >
-                      {row.amount ? formatMoney(row.amount) : "—"}
+                      {row.amount ? (
+                        <span className="inline-flex items-center gap-1">
+                          {formatMoney(row.amount)}
+                          {row.bankAccount?.currency && (
+                            <span className="text-[10px] font-normal text-neutral-400 tracking-wide">
+                              {row.bankAccount.currency}
+                            </span>
+                          )}
+                        </span>
+                      ) : "—"}
                     </TableCell>
                     <TableCell className={compactCell}>
                       <Select

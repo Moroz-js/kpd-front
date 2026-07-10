@@ -35,7 +35,7 @@ export type UpdateChargeInput = Partial<CreateChargeInput>;
 export async function listCharges() {
   return prisma.charge.findMany({
     include: {
-      bankAccount: { select: { id: true, name: true } },
+      bankAccount: { select: { id: true, name: true, currency: true } },
       order: {
         select: {
           id: true,
@@ -134,7 +134,7 @@ export async function updateCharge(id: string, patch: UpdateChargeInput, userId:
       status,
     },
     include: {
-      bankAccount: { select: { id: true, name: true } },
+      bankAccount: { select: { id: true, name: true, currency: true } },
       order: {
         select: {
           id: true, orderNumber: true, description: true,
