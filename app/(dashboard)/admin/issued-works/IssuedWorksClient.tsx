@@ -382,7 +382,7 @@ export function IssuedWorksClient() {
       )}
 
       <Table
-        className={cn(compactTable, "min-w-[1380px]")}
+        className={cn(compactTable, "min-w-[1680px]")}
         containerClassName="rounded-md border bg-white flex-1 min-h-0 overflow-auto"
       >
           <TableHeader>
