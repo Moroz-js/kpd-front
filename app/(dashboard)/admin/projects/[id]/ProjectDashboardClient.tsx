@@ -599,33 +599,27 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                 </tr>
               )}
 
-              {/* Block 2: Расходы из смет (только оплаченные работы) */}
-              <tr className="bg-neutral-50 border-t-2 border-b border-neutral-200">
+              {/* Block 2: Расходы из смет (только оплаченные работы) — итоги в строке заголовка */}
+              <tr className="bg-neutral-50 border-t-2 border-b border-neutral-200 font-semibold">
                 <td className={cn(stickyHdr, "cursor-pointer select-none")} onClick={toggleExpenses}>
                   <span className="inline-flex items-center gap-1">
                     <SectionChevron expanded={expensesExpanded} />
                     Расходы из смет
                   </span>
                 </td>
-                <td className={cn(stickyTotal, "bg-neutral-50")} />
-                <td colSpan={visibleWeeks.length} className="bg-neutral-50" />
+                <td className={cn(stickyTotal, "font-semibold")}>{fmt(rowTotal(summary.paidWorks ?? []))}</td>
+                {visibleWeekIndices.map((idx, vi) => {
+                  const wh = visibleWeeks[vi];
+                  const v = (summary.paidWorks ?? [])[idx] ?? 0;
+                  return (
+                    <td key={idx} className={cn(tdCls, "bg-neutral-50", wh?.week === currentISOWeek && year === currentYear ? "!bg-blue-50" : "")}>
+                      {fmt(v)}
+                    </td>
+                  );
+                })}
               </tr>
               {expensesExpanded && (
                 <>
-                  {/* Итого расходы по неделям */}
-                  <tr className="border-b border-neutral-200 bg-neutral-50 font-semibold">
-                    <td className={cn(stickyLbl, "bg-neutral-50")}>Итого расходы</td>
-                    <td className={cn(stickyTotal, "font-semibold")}>{fmt(rowTotal(summary.paidWorks ?? []))}</td>
-                    {visibleWeekIndices.map((idx, vi) => {
-                      const wh = visibleWeeks[vi];
-                      const v = (summary.paidWorks ?? [])[idx] ?? 0;
-                      return (
-                        <td key={idx} className={cn(tdCls, "bg-neutral-50", wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50" : "")}>
-                          {fmt(v)}
-                        </td>
-                      );
-                    })}
-                  </tr>
                   {workTypes.length === 0 && (
                     <tr>
                       <td className={stickyLbl}>—</td>
@@ -710,33 +704,27 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                 })}
               </tr>
 
-              {/* Block 4: SpendingPlan — группировка по видам работ */}
-              <tr className="bg-neutral-50 border-t-2 border-b border-neutral-200">
+              {/* Block 4: SpendingPlan — группировка по видам работ, итоги в строке заголовка */}
+              <tr className="bg-neutral-50 border-t-2 border-b border-neutral-200 font-semibold">
                 <td className={cn(stickyHdr, "cursor-pointer select-none")} onClick={togglePlan}>
                   <span className="inline-flex items-center gap-1">
                     <SectionChevron expanded={planExpanded} />
                     План расходов
                   </span>
                 </td>
-                <td className={cn(stickyTotal, "bg-neutral-50")} />
-                <td colSpan={visibleWeeks.length} className="bg-neutral-50" />
+                <td className={cn(stickyTotal, "font-semibold")}>{fmt(rowTotal(summary.expensePlan ?? []))}</td>
+                {visibleWeekIndices.map((idx, vi) => {
+                  const wh = visibleWeeks[vi];
+                  const v = (summary.expensePlan ?? [])[idx] ?? 0;
+                  return (
+                    <td key={idx} className={cn(tdCls, "bg-neutral-50", wh?.week === currentISOWeek && year === currentYear ? "!bg-blue-50" : "")}>
+                      {fmt(v)}
+                    </td>
+                  );
+                })}
               </tr>
               {planExpanded && (
                 <>
-                  {/* Итого план */}
-                  <tr className="border-b border-neutral-200 bg-neutral-50 font-semibold">
-                    <td className={cn(stickyLbl, "bg-neutral-50")}>Итого план</td>
-                    <td className={cn(stickyTotal, "font-semibold")}>{fmt(rowTotal(summary.expensePlan ?? []))}</td>
-                    {visibleWeekIndices.map((idx, vi) => {
-                      const wh = visibleWeeks[vi];
-                      const v = (summary.expensePlan ?? [])[idx] ?? 0;
-                      return (
-                        <td key={idx} className={cn(tdCls, "bg-neutral-50", wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50" : "")}>
-                          {fmt(v)}
-                        </td>
-                      );
-                    })}
-                  </tr>
                   {planLines.length === 0 && !canManagePlan && (
                     <tr className="border-b border-neutral-100">
                       <td className={cn(stickyLbl, "font-normal text-neutral-400")}>Нет строк плана</td>
