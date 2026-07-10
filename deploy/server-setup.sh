@@ -110,6 +110,11 @@ else
   git -C "$APP_DIR" checkout "$BRANCH"
   git -C "$APP_DIR" reset --hard "origin/$BRANCH"
 fi
+# Репо принадлежит root (setup/CI), но git pull могут делать и другие пользователи
+if ! git config --system --get-all safe.directory 2>/dev/null | grep -qxF "$APP_DIR"; then
+  git config --system --add safe.directory "$APP_DIR"
+  log "git safe.directory: $APP_DIR"
+fi
 
 # ── 4. Импорт дампа с Neon (всегда при заданном NEON_DATABASE_URL) ───────────
 pg_bin_dir() { ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1; }
