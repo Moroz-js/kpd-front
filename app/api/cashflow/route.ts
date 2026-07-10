@@ -44,13 +44,27 @@ export async function GET(req: NextRequest) {
   const weeksInYear = getISOWeeksInYear(year);
   const weeks = Array.from({ length: weeksInYear }, (_, i) => i + 1);
 
-  const [charges, works, otherExpenses, planLines, openingBalance, activeProjects] = await Promise.all([
+  // Current week for past/future determination
+  const now = new Date();
+  const { week: currentWeek, year: currentWeekYear } = cashflowWeekYear(now);
+
+  function isWeekPast(weekNum: number): boolean {
+    if (year < currentWeekYear) return true;
+    if (year > currentWeekYear) return false;
+    return weekNum < currentWeek;
+  }
+
+  const [charges, works, otherExpenses, planLines, openingBalance, activeProjects, reconciliations] = await Promise.all([
     prisma.charge.findMany({ include: { order: { select: { projectId: true } } } }),
     prisma.work.findMany({ select: { projectId: true, amount: true, workStatus: true, plannedPayAt: true, paidAt: true } }),
     prisma.otherExpense.findMany({ select: { projectId: true, amount: true, workStatus: true, plannedPayAt: true, paidAt: true } }),
     prisma.spendingPlanLine.findMany({ where: { year }, select: { projectId: true, week: true, amount: true } }),
     prisma.cashflowOpeningBalance.findUnique({ where: { year } }),
     prisma.project.findMany({ where: { status: "active" }, select: { id: true, name: true, type: true } }),
+    prisma.bankAccountReconciliation.findMany({
+      where: { isoWeekYear: year },
+      include: { results: { select: { amount: true } } },
+    }),
   ]);
 
   const activeProjectIds = new Set(activeProjects.map(p => p.id));
@@ -80,6 +94,7 @@ export async function GET(req: NextRequest) {
   const iwTotal = new Array(weeksInYear).fill(0);
   const iwPaid = new Array(weeksInYear).fill(0);
   const iwByProject = new Map<string, number[]>();
+  const iwPaidByProject = new Map<string, number[]>();
 
   const allSources = [
     ...works.map(w => ({ ...w })),
@@ -91,8 +106,12 @@ export async function GET(req: NextRequest) {
     if (!pf || pf.year !== year) continue;
     const wi = pf.week - 1;
     iwTotal[wi] += r.amount;
-    if (r.workStatus === "paid") iwPaid[wi] += r.amount;
-    // per project
+    if (r.workStatus === "paid") {
+      iwPaid[wi] += r.amount;
+      if (!iwPaidByProject.has(r.projectId)) iwPaidByProject.set(r.projectId, new Array(weeksInYear).fill(0));
+      iwPaidByProject.get(r.projectId)![wi] += r.amount;
+    }
+    // per project (total)
     if (!iwByProject.has(r.projectId)) iwByProject.set(r.projectId, new Array(weeksInYear).fill(0));
     iwByProject.get(r.projectId)![wi] += r.amount;
   }
@@ -110,31 +129,46 @@ export async function GET(req: NextRequest) {
     planByProject.get(pl.projectId)![wi] += pl.amount;
   }
 
-  // ─── Block 1: Summary (11 строк × недели) ─────────────────────
+  // ─── Balance in accounts from bank reconciliations ────────────
+  const balanceInAccountsArr: (number | null)[] = new Array(weeksInYear).fill(null);
+  for (const rec of reconciliations) {
+    const wi = rec.isoWeek - 1;
+    if (wi >= 0 && wi < weeksInYear) {
+      const total = rec.results.reduce((sum, r) => sum + (r.amount ?? 0), 0);
+      balanceInAccountsArr[wi] = total;
+    }
+  }
+
+  // ─── Block 1: Summary (строки × недели) ───────────────────────
   const startBalance = openingBalance?.amount ?? 0;
   const summaryRows = {
-    balanceStart: [] as number[],      // row 3
-    incomeFact: [] as number[],        // row 4
-    incomePlanOnly: [] as number[],    // row 5
-    incomePlanFact: [] as number[],    // row 6
-    expensePlanDP: [] as number[],     // row 7
-    balanceEndDP: [] as number[],      // row 8
-    paidFromBudget: [] as number[],    // row 9
-    unpaidFromBudget: [] as number[],  // row 10
-    totalExpenseBudget: [] as number[],// row 11
-    deltaDP: [] as number[],           // row 12
-    balanceEndBudget: [] as number[],  // row 13
+    balanceStart: [] as number[],      // Баланс на начало
+    incomeFact: [] as number[],        // Приход (факт)
+    incomePlanOnly: [] as number[],    // Приход (план)
+    incomePlanFact: [] as number[],    // Приход (план+факт)
+    expensePlanDP: [] as number[],     // Расход (план-факт) из ДП — прошлые: paid works; текущие/будущие: plan
+    balanceEndDP: [] as number[],      // Баланс (смета/ДП)
+    paidFromBudget: [] as number[],    // Оплачено из смет
+    unpaidFromBudget: [] as number[],  // Неплачено из смет
+    totalExpenseBudget: [] as number[],// (не показывается, сохранено для обратной совместимости)
+    deltaDP: [] as number[],           // (внутренний, не отображается)
+    balanceEndBudget: [] as number[],  // (внутренний, для графика)
   };
 
-  let rollingDP = startBalance;
-  let rollingBudget = startBalance;
+  // Discrepancy plan/fact in DP per week = iwPaid - planTotal
+  const discrepancyDPFact: number[] = new Array(weeksInYear).fill(0);
 
   for (let i = 0; i < weeksInYear; i++) {
+    const weekNum = i + 1;
     const balanceStart = i === 0 ? startBalance : summaryRows.balanceEndDP[i - 1];
     const incomePF = chargeTotal[i];
     const incomeFact = chargePaid[i];
     const incPlanOnly = incomePF - incomeFact;
-    const expDP = planTotal[i];
+
+    // Расход (план-факт) из ДП:
+    // прошлые недели → факт оплаченных работ; текущая/будущие → план из ДП
+    const expDP = isWeekPast(weekNum) ? iwPaid[i] : planTotal[i];
+
     const expBudget = iwTotal[i];
     const paidBudget = iwPaid[i];
     const unpaidBudget = expBudget - paidBudget;
@@ -154,9 +188,14 @@ export async function GET(req: NextRequest) {
     summaryRows.deltaDP.push(delta);
     summaryRows.balanceEndBudget.push(balanceEndBudget);
 
-    rollingDP = balanceEndDP;
-    rollingBudget = balanceEndBudget;
+    discrepancyDPFact[i] = iwPaid[i] - planTotal[i];
   }
+
+  // Discrepancy = balanceEndDP - balanceInAccounts (null if no accounts data)
+  const discrepancyArr: (number | null)[] = summaryRows.balanceEndDP.map((bal, i) => {
+    const acc = balanceInAccountsArr[i];
+    return acc === null ? null : bal - acc;
+  });
 
   // ─── Projects union list ───────────────────────────────────────
   const allPids = new Set<string>([
@@ -169,6 +208,7 @@ export async function GET(req: NextRequest) {
     .map(p => {
       const plan = planByProject.get(p.id) ?? new Array(weeksInYear).fill(0);
       const iw = iwByProject.get(p.id) ?? new Array(weeksInYear).fill(0);
+      const iwPaidArr = iwPaidByProject.get(p.id) ?? new Array(weeksInYear).fill(0);
       const charges2 = chargeByProject.get(p.id) ?? new Array(weeksInYear).fill(0);
 
       // Block 2.4: rolling cashflow per project
@@ -185,6 +225,7 @@ export async function GET(req: NextRequest) {
         type: p.type,
         plan,
         iw,
+        iwPaid: iwPaidArr,
         charges: charges2,
         cashflow,
       };
@@ -237,5 +278,10 @@ export async function GET(req: NextRequest) {
     externalProjects,
     internalProjects,
     aggregates: { projectExpenses, nonProjectExpenses, taxes, motivation },
+    balanceInAccounts: balanceInAccountsArr,
+    discrepancy: discrepancyArr,
+    discrepancyDPFact,
+    currentWeek,
+    currentWeekYear,
   });
 }

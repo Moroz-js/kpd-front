@@ -2,8 +2,10 @@
 
 import React, { useState, useEffect } from "react";
 import useSWR from "swr";
+import Link from "next/link";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { getISOWeek, getISOWeekYear, firstVisibleCashflowWeek } from "@/lib/iso-weeks";
@@ -23,6 +25,12 @@ function fmt(n: number) {
 }
 
 function fmtSign(n: number) {
+  if (n === 0) return "—";
+  return n.toLocaleString("ru-RU", { maximumFractionDigits: 0 });
+}
+
+function fmtNullable(n: number | null) {
+  if (n === null) return "—";
   if (n === 0) return "—";
   return n.toLocaleString("ru-RU", { maximumFractionDigits: 0 });
 }
@@ -49,6 +57,7 @@ type ProjectRow = {
   type: string;
   plan: number[];
   iw: number[];
+  iwPaid: number[];
   charges: number[];
   cashflow: number[];
 };
@@ -70,6 +79,11 @@ type CashflowData = {
   externalProjects: ProjectRow[];
   internalProjects: ProjectRow[];
   aggregates: Aggregates;
+  balanceInAccounts: (number | null)[];
+  discrepancy: (number | null)[];
+  discrepancyDPFact: number[];
+  currentWeek: number;
+  currentWeekYear: number;
 };
 
 type CashflowResponse = CashflowData | { error: string };
@@ -93,12 +107,12 @@ const SUMMARY_DEFS: SummaryDef[] = [
   { key: "incomeFact", label: "Приход (факт)", labelAlign: "center" },
   { key: "incomePlanOnly", label: "Приход (план)", labelAlign: "center" },
   { key: "incomePlanFact", label: "Приход (план+факт)", labelAlign: "center", borderAfter: true },
-  { key: "expensePlanDP", label: "Расход (План из дп)", labelAlign: "center", borderAfter: true },
-  { key: "balanceEndDP", label: "Баланс из ДП", signed: true, labelAlign: "right" },
-  { key: "balanceEndBudget", label: "Баланс из смет", signed: true, labelAlign: "right", borderAfter: true },
+  { key: "expensePlanDP", label: "Расход (план-факт) из ДП", labelAlign: "center", borderAfter: true },
+  { key: "balanceEndDP", label: "Баланс (смета/ДП)", signed: true, labelAlign: "right", borderAfter: true },
+  // Далее — balanceInAccounts, discrepancy (рендерятся отдельно)
   { key: "paidFromBudget", label: "Оплачено из смет", labelAlign: "right" },
-  { key: "unpaidFromBudget", label: "Неплачено из смет", labelAlign: "right" },
-  { key: "totalExpenseBudget", label: "Общий расход из смет", labelAlign: "right", borderAfter: true },
+  { key: "unpaidFromBudget", label: "Неплачено из смет", labelAlign: "right", borderAfter: true },
+  // Далее — discrepancyDPFact (рендерится отдельно)
 ];
 
 type AggregateDef = { key: keyof Aggregates; label: string; bold: boolean };
@@ -144,6 +158,11 @@ function OpeningBalanceInput({
   );
 }
 
+type DiscrepancyModalState = {
+  weekIdx: number;
+  week: number;
+} | null;
+
 export function CashflowClient() {
   const now = new Date();
   const currentISOWeek = getISOWeek(now);
@@ -151,6 +170,7 @@ export function CashflowClient() {
   const [year, setYear] = useState(currentISOYear);
   const [openingBalance, setOpeningBalance] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<"table" | "chart">("table");
+  const [discrepancyModal, setDiscrepancyModal] = useState<DiscrepancyModalState>(null);
   const YEARS = [currentISOYear - 2, currentISOYear - 1, currentISOYear, currentISOYear + 1];
 
   const { data, mutate } = useSWR<CashflowResponse>(`/api/cashflow?year=${year}`, fetcher, {
@@ -240,7 +260,7 @@ export function CashflowClient() {
     );
   }
 
-  const { summary, projects, weeksInYear, aggregates } = data;
+  const { summary, projects, weeksInYear, aggregates, balanceInAccounts, discrepancy, discrepancyDPFact } = data;
   const externalProjects = [...(data.externalProjects ?? data.projects ?? [])].sort((a, b) => a.name.localeCompare(b.name, "ru"));
   const internalProjects = [...(data.internalProjects ?? [])].sort((a, b) => a.name.localeCompare(b.name, "ru"));
 
@@ -320,6 +340,25 @@ export function CashflowClient() {
   }
 
   function rowTotal(arr: number[]) { return arr.reduce((a, b) => a + b, 0); }
+
+  // ─── Modal: Расхождение план/факт в ДП ────────────────────────
+  const allProjectsForModal = [...externalProjects, ...internalProjects];
+
+  function getDiscrepancyProjectsForWeek(weekIdx: number) {
+    return allProjectsForModal
+      .map(p => {
+        const paid = (p.iwPaid ?? [])[weekIdx] ?? 0;
+        const plan = p.plan[weekIdx] ?? 0;
+        const diff = paid - plan;
+        return { id: p.id, name: p.name, paid, plan, diff };
+      })
+      .filter(r => Math.round(r.diff) !== 0)
+      .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+  }
+
+  const modalProjects = discrepancyModal !== null
+    ? getDiscrepancyProjectsForWeek(discrepancyModal.weekIdx)
+    : [];
 
   return (
     <div className="flex flex-col h-[calc(100vh-3rem)] min-h-0 gap-3">
@@ -425,7 +464,9 @@ export function CashflowClient() {
                 <td className={cn(stickyTotal, "bg-neutral-50")} />
                 <td colSpan={visibleWeeks.length} className="bg-neutral-50 py-0" />
               </tr>
-              {SUMMARY_DEFS.map(def => {
+
+              {/* Основные строки из SUMMARY_DEFS (до balanceEndDP включительно) */}
+              {SUMMARY_DEFS.slice(0, 6).map(def => {
                 const arr = summary[def.key];
                 const total = rowTotal(arr);
                 const valueCls = def.balanceStartRow ? "italic" : undefined;
@@ -469,6 +510,161 @@ export function CashflowClient() {
                   </tr>
                 );
               })}
+
+              {/* Баланс в счетах (из DB) */}
+              <tr className={cn(ROW_BORDER, "hover:bg-neutral-50")}>
+                <td className={cn(compactLbl, "text-right font-normal italic text-neutral-500")}>
+                  Баланс в счетах
+                </td>
+                <td className={cn(stickyTotal)}>
+                  {fmtNullable(
+                    balanceInAccounts.reduce<number | null>((sum, v) => {
+                      if (v === null) return sum;
+                      return (sum ?? 0) + v;
+                    }, null)
+                  )}
+                </td>
+                {visibleWeekIndices.map((idx) => {
+                  const val = balanceInAccounts[idx] ?? null;
+                  const week = weeks[idx]?.week;
+                  if (week == null) return null;
+                  const meta = getCellMeta("summary:balanceInAccounts", week);
+                  const highlightClass = cashflowHighlightCellClass(meta?.highlight);
+                  return (
+                    <td key={idx} className={weekCellClass(idx, cn(highlightClass), true)}>
+                      <CashflowCommentCell
+                        meta={meta}
+                        compact
+                        onSave={(payload) => saveCellMeta("summary:balanceInAccounts", week, payload)}
+                      >
+                        {fmtNullable(val)}
+                      </CashflowCommentCell>
+                    </td>
+                  );
+                })}
+              </tr>
+
+              {/* Расхождение = Баланс (смета/ДП) − Баланс в счетах */}
+              <tr className={cn(ROW_BORDER_STRONG, "hover:bg-neutral-50")}>
+                <td className={cn(compactLbl, "text-right font-normal italic text-neutral-500")}>
+                  Расхождение
+                </td>
+                <td className={cn(stickyTotal)}>
+                  {fmtNullable(
+                    discrepancy.reduce<number | null>((sum, v) => {
+                      if (v === null) return sum;
+                      return (sum ?? 0) + v;
+                    }, null)
+                  )}
+                </td>
+                {visibleWeekIndices.map((idx) => {
+                  const val = discrepancy[idx] ?? null;
+                  const week = weeks[idx]?.week;
+                  if (week == null) return null;
+                  const isNonZero = val !== null && Math.round(val) !== 0;
+                  const meta = getCellMeta("summary:discrepancy", week);
+                  const highlightClass = cashflowHighlightCellClass(meta?.highlight);
+                  return (
+                    <td key={idx} className={weekCellClass(idx, cn(isNonZero && "bg-red-50", highlightClass), true)}>
+                      <CashflowCommentCell
+                        meta={meta}
+                        compact
+                        onSave={(payload) => saveCellMeta("summary:discrepancy", week, payload)}
+                      >
+                        <span className={cn(isNonZero && "text-red-600 font-medium")}>
+                          {fmtNullable(val)}
+                        </span>
+                      </CashflowCommentCell>
+                    </td>
+                  );
+                })}
+              </tr>
+
+              {/* paidFromBudget, unpaidFromBudget */}
+              {SUMMARY_DEFS.slice(6).map(def => {
+                const arr = summary[def.key];
+                const total = rowTotal(arr);
+                const valueCls = def.balanceStartRow ? "italic" : undefined;
+                return (
+                  <tr
+                    key={def.key}
+                    className={cn(
+                      def.borderAfter ? ROW_BORDER_STRONG : ROW_BORDER,
+                      "hover:bg-neutral-50",
+                      def.highlight ? "bg-neutral-50/50" : ""
+                    )}
+                  >
+                    <td
+                      className={cn(
+                        compactLbl,
+                        def.labelAlign === "center"
+                          ? "text-center"
+                          : def.labelAlign === "left" || def.balanceStartRow
+                            ? "text-left"
+                            : "text-right",
+                        def.balanceStartRow && "font-normal italic text-neutral-600",
+                        def.highlight ? "font-medium bg-neutral-50 text-neutral-800" : "font-normal italic text-neutral-500"
+                      )}
+                    >
+                      {def.label}
+                    </td>
+                    <td className={cn(stickyTotal, valueCls, def.highlight && "font-medium")}>
+                      {"signed" in def && def.signed ? fmtSign(total) : fmt(total)}
+                    </td>
+                    {visibleWeekIndices.map((idx) =>
+                      renderWeekCell(
+                        `summary:${def.key}`,
+                        idx,
+                        <span className={valueCls}>
+                          {"signed" in def && def.signed ? fmtSign(arr[idx] ?? 0) : fmt(arr[idx] ?? 0)}
+                        </span>,
+                        cn(valueCls, def.highlight && "font-medium"),
+                        true
+                      )
+                    )}
+                  </tr>
+                );
+              })}
+
+              {/* Расхождение план/факт в ДП = iwPaid − planTotal */}
+              <tr className={cn(ROW_BORDER_STRONG, "hover:bg-neutral-50")}>
+                <td className={cn(compactLbl, "text-right font-normal italic text-neutral-500")}>
+                  Расхождение план/факт в ДП
+                </td>
+                <td className={cn(stickyTotal)}>
+                  {fmtSign(rowTotal(discrepancyDPFact))}
+                </td>
+                {visibleWeekIndices.map((idx) => {
+                  const val = discrepancyDPFact[idx] ?? 0;
+                  const isNonZero = Math.round(val) !== 0;
+                  const week = weeks[idx]?.week;
+                  if (week == null) return null;
+                  const meta = getCellMeta("summary:discrepancyDPFact", week);
+                  const highlightClass = cashflowHighlightCellClass(meta?.highlight);
+                  return (
+                    <td key={idx} className={weekCellClass(idx, cn(isNonZero && "bg-red-50", highlightClass), true)}>
+                      <CashflowCommentCell
+                        meta={meta}
+                        compact
+                        onSave={(payload) => saveCellMeta("summary:discrepancyDPFact", week, payload)}
+                      >
+                        <button
+                          type="button"
+                          className={cn(
+                            "w-full text-right tabular-nums",
+                            isNonZero ? "text-red-600 font-medium hover:underline cursor-pointer" : "cursor-default"
+                          )}
+                          disabled={!isNonZero}
+                          onClick={isNonZero ? () => setDiscrepancyModal({ weekIdx: idx, week }) : undefined}
+                        >
+                          {fmtSign(val)}
+                        </button>
+                      </CashflowCommentCell>
+                    </td>
+                  );
+                })}
+              </tr>
+
               {/* Aggregate rows */}
               {aggregates && AGGREGATE_DEFS.map(def => {
                 const arr = aggregates[def.key];
@@ -579,6 +775,59 @@ export function CashflowClient() {
         </div>
       </div>
       )}
+
+      {/* Модал: расхождение план/факт в ДП по проектам */}
+      <Dialog open={discrepancyModal !== null} onOpenChange={(open) => !open && setDiscrepancyModal(null)}>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Расхождение план/факт в ДП — Неделя {discrepancyModal?.week}
+            </DialogTitle>
+          </DialogHeader>
+          {modalProjects.length === 0 ? (
+            <p className="text-sm text-neutral-500 py-4 text-center">Нет расхождений</p>
+          ) : (
+            <table className="w-full text-xs mt-2">
+              <thead>
+                <tr className="border-b border-neutral-200 text-neutral-500">
+                  <th className="text-left py-1.5 font-medium">Проект</th>
+                  <th className="text-right py-1.5 font-medium pr-2">Оплачено</th>
+                  <th className="text-right py-1.5 font-medium pr-2">План</th>
+                  <th className="text-right py-1.5 font-medium">Разница</th>
+                </tr>
+              </thead>
+              <tbody>
+                {modalProjects.map(p => (
+                  <tr key={p.id} className="border-b border-neutral-100 hover:bg-neutral-50">
+                    <td className="py-1.5">
+                      <Link
+                        href={`/admin/projects/${p.id}`}
+                        className="text-blue-600 hover:underline truncate block max-w-[200px]"
+                        title={p.name}
+                        onClick={() => setDiscrepancyModal(null)}
+                      >
+                        {p.name}
+                      </Link>
+                    </td>
+                    <td className="text-right py-1.5 pr-2 tabular-nums">
+                      {fmt(p.paid)}
+                    </td>
+                    <td className="text-right py-1.5 pr-2 tabular-nums">
+                      {fmt(p.plan)}
+                    </td>
+                    <td className={cn(
+                      "text-right py-1.5 tabular-nums font-medium",
+                      p.diff > 0 ? "text-red-600" : "text-green-600"
+                    )}>
+                      {p.diff > 0 ? "+" : ""}{fmtSign(p.diff)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
