@@ -706,11 +706,12 @@ export function BankAccountVerificationTab() {
                         {/* Руб */}
                         <td className={`py-1 ${RECON_COL_RUB}`}>
                           {result ? (
-                            <div className="flex items-center gap-0.5">
+                            <div className="flex items-center gap-0.5 overflow-hidden">
                               <span
-                                className={`text-[11px] tabular-nums px-1 min-w-0 flex-1 text-right ${
+                                className={`text-[11px] tabular-nums px-1 min-w-0 flex-1 text-right truncate ${
                                   result.amount !== null ? "text-neutral-800" : "text-neutral-300"
                                 }`}
+                                title={result.amount !== null ? result.amount.toLocaleString("ru-RU", { maximumFractionDigits: 0 }) : undefined}
                               >
                                 {result.amount !== null
                                   ? result.amount.toLocaleString("ru-RU", { maximumFractionDigits: 0 })
