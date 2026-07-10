@@ -178,7 +178,7 @@ function OpeningBalanceInput({
   return (
     <Input
       ref={inputRef}
-      className={compact ? "h-6 w-24 text-right text-[11px] px-1.5 tabular-nums italic" : "h-7 w-28 text-right text-xs tabular-nums"}
+      className={compact ? "h-5 w-24 text-right text-[11px] px-1 tabular-nums italic border-neutral-300" : "h-7 w-28 text-right text-xs tabular-nums"}
       value={display}
       onChange={handleChange}
       onFocus={e => setTimeout(() => e.target.select(), 0)}
