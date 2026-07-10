@@ -400,7 +400,11 @@ function CreateReconciliationDialog({
 
 // ─── Main tab ─────────────────────────────────────────────────────────────────
 
-const RECON_SUB_COL = "w-[76px] min-w-[76px] max-w-[76px] px-1 border-r last:border-r-0";
+const RECON_COL_FX   = "w-[116px] min-w-[116px] max-w-[116px] px-1 border-r last:border-r-0";
+const RECON_COL_RATE = "w-[56px]  min-w-[56px]  max-w-[56px]  px-1 border-r last:border-r-0";
+const RECON_COL_RUB  = "w-[104px] min-w-[104px] max-w-[104px] px-1 border-r last:border-r-0";
+/** @deprecated use RECON_COL_* */
+const RECON_SUB_COL = RECON_COL_FX;
 const RECON_GROUP_COL = "min-w-[240px] border-r last:border-r-0";
 
 export function BankAccountVerificationTab() {
@@ -625,13 +629,13 @@ export function BankAccountVerificationTab() {
                   const anyCurrency = v.results[0]?.bankAccountCurrency;
                   return (
                     <React.Fragment key={v.id}>
-                      <th className={`border-b border-neutral-200 py-1 text-center text-[10px] font-medium text-neutral-500 ${RECON_SUB_COL}`}>
+                      <th className={`border-b border-neutral-200 py-1 text-center text-[10px] font-medium text-neutral-500 ${RECON_COL_FX}`}>
                         Валюта
                       </th>
-                      <th className={`border-b border-neutral-200 py-1 text-center text-[10px] font-medium text-neutral-500 ${RECON_SUB_COL}`}>
+                      <th className={`border-b border-neutral-200 py-1 text-center text-[10px] font-medium text-neutral-500 ${RECON_COL_RATE}`}>
                         Курс
                       </th>
-                      <th className={`border-b border-neutral-200 py-1 text-center text-[10px] font-medium text-neutral-500 ${RECON_SUB_COL}`}>
+                      <th className={`border-b border-neutral-200 py-1 text-center text-[10px] font-medium text-neutral-500 ${RECON_COL_RUB}`}>
                         Руб
                       </th>
                     </React.Fragment>
@@ -656,7 +660,7 @@ export function BankAccountVerificationTab() {
                     return (
                       <React.Fragment key={v.id}>
                         {/* Валюта */}
-                        <td className={`py-1 ${RECON_SUB_COL}`}>
+                        <td className={`py-1 ${RECON_COL_FX}`}>
                           {result ? (
                             <div className="flex items-center gap-0.5">
                               <NumberInputCell
@@ -666,6 +670,7 @@ export function BankAccountVerificationTab() {
                                 }
                                 onCommit={(val) => handleForeignAmount(v.id, bankAccountId, val)}
                                 placeholder="—"
+                                className="w-[76px] text-[11px]"
                               />
                               <span className="text-[10px] text-neutral-400 font-mono shrink-0">{currency}</span>
                             </div>
@@ -674,14 +679,14 @@ export function BankAccountVerificationTab() {
                           )}
                         </td>
                         {/* Курс */}
-                        <td className={`py-1 ${RECON_SUB_COL}`}>
+                        <td className={`py-1 ${RECON_COL_RATE}`}>
                           {result ? (
                             isRub ? (
                               <Input
                                 type="text"
                                 value="1"
                                 disabled
-                                className="h-7 w-[76px] text-xs px-1.5 tabular-nums border-neutral-100 bg-neutral-50 text-neutral-300 cursor-not-allowed"
+                                className="h-7 w-full text-[11px] px-1.5 tabular-nums border-neutral-100 bg-neutral-50 text-neutral-300 cursor-not-allowed"
                               />
                             ) : (
                               <NumberInputCell
@@ -691,6 +696,7 @@ export function BankAccountVerificationTab() {
                                 }
                                 onCommit={(val) => handleExchangeRate(v.id, bankAccountId, val)}
                                 placeholder="—"
+                                className="w-full text-[11px]"
                               />
                             )
                           ) : (
@@ -698,16 +704,16 @@ export function BankAccountVerificationTab() {
                           )}
                         </td>
                         {/* Руб */}
-                        <td className={`py-1 ${RECON_SUB_COL}`}>
+                        <td className={`py-1 ${RECON_COL_RUB}`}>
                           {result ? (
                             <div className="flex items-center gap-0.5">
                               <span
-                                className={`text-xs tabular-nums px-1 ${
+                                className={`text-[11px] tabular-nums px-1 min-w-0 flex-1 text-right ${
                                   result.amount !== null ? "text-neutral-800" : "text-neutral-300"
                                 }`}
                               >
                                 {result.amount !== null
-                                  ? result.amount.toLocaleString("ru-RU")
+                                  ? result.amount.toLocaleString("ru-RU", { maximumFractionDigits: 0 })
                                   : "—"}
                               </span>
                               <CommentCell
