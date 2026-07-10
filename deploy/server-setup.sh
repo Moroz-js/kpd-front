@@ -6,7 +6,7 @@
 #   1. Ставит Node.js 22, git, PostgreSQL 16 (нативно, без Docker)
 #   2. Создаёт БД kpd + роль kpd
 #   3. Клонирует репозиторий в /opt/kpd/app (ветка main)
-#   4. (опция) Импортирует дамп с Neon, если задан NEON_DATABASE_URL и база пуста
+#   4. (опция) Импортирует дамп с Neon, если задан NEON_DATABASE_URL (всегда перезаливает)
 #   5. Собирает приложение, применяет схему Prisma
 #   6. Создаёт systemd-юнит kpd-frontend (Next.js на 127.0.0.1:3000)
 #   7. Подключает домен invoices.kpd.moscow через существующий Traefik
@@ -111,10 +111,7 @@ else
   git -C "$APP_DIR" reset --hard "origin/$BRANCH"
 fi
 
-# ── 4. Импорт дампа с Neon (однократно, только в пустую базу) ────────────────
-TABLE_COUNT=$(sudo -u postgres psql -d "$DB_NAME" -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'")
-# Используем самые свежие установленные pg-бинарники (pg_dump и pg_restore
-# должны быть одной версии, иначе «unsupported version in file header»)
+# ── 4. Импорт дампа с Neon (всегда при заданном NEON_DATABASE_URL) ───────────
 pg_bin_dir() { ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1; }
 install_pg17_client() {
   warn "Ставлю свежий postgresql-client из PGDG..."
@@ -126,62 +123,77 @@ install_pg17_client() {
   apt-get install -y -qq postgresql-client-17
 }
 
+wipe_db() {
+  log "Очищаю базу $DB_NAME перед импортом..."
+  sudo -u postgres psql -d postgres -c \
+    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$DB_NAME' AND pid <> pg_backend_pid();" >/dev/null 2>&1 || true
+  sudo -u postgres psql -d "$DB_NAME" -c \
+    "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public AUTHORIZATION $DB_USER; GRANT ALL ON SCHEMA public TO $DB_USER; GRANT ALL ON SCHEMA public TO public;"
+}
+
 if [ -n "${NEON_DATABASE_URL:-}" ]; then
-  if [ "$TABLE_COUNT" = "0" ]; then
-    log "Импортирую дамп с Neon..."
-    mkdir -p "$BACKUP_DIR"
-    NEON_URL_CLEAN=$(echo "$NEON_DATABASE_URL" | sed 's/[?&]channel_binding=[^&]*//')
-    DUMP_FILE="$BACKUP_DIR/neon-initial.dump"
+  TABLE_COUNT=$(sudo -u postgres psql -d "$DB_NAME" -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'")
+  if [ "$TABLE_COUNT" != "0" ]; then
+    warn "База $DB_NAME не пуста ($TABLE_COUNT таблиц) — перезаливаю дамп с Neon"
+  fi
+  log "Снимаю свежий дамп с Neon и импортирую..."
+  wipe_db
+  mkdir -p "$BACKUP_DIR"
+  NEON_URL_CLEAN=$(echo "$NEON_DATABASE_URL" | sed 's/[?&]channel_binding=[^&]*//')
+  DUMP_FILE="$BACKUP_DIR/neon-initial.dump"
+  PGBIN=$(pg_bin_dir)
+  if ! "$PGBIN/pg_dump" --no-owner --no-privileges --format=custom --file="$DUMP_FILE" "$NEON_URL_CLEAN" 2>/tmp/pgdump.err; then
+    if grep -qi "server version mismatch\|aborting because of server version" /tmp/pgdump.err; then
+      install_pg17_client
+      PGBIN=$(pg_bin_dir)
+      "$PGBIN/pg_dump" --no-owner --no-privileges --format=custom --file="$DUMP_FILE" "$NEON_URL_CLEAN"
+    else
+      cat /tmp/pgdump.err >&2
+      err "pg_dump с Neon не удался"
+      exit 1
+    fi
+  fi
+  # pg_restore той же (или более новой) версии, что делал дамп.
+  # Некритичные ошибки (SET transaction_timeout из PG17, COMMENT ON SCHEMA)
+  # игнорируем — важен фактический результат (таблицы с данными).
+  run_restore() {
+    set +e
+    "$PGBIN/pg_restore" --no-owner --no-privileges --no-comments --dbname="$LOCAL_DB_URL" "$DUMP_FILE" 2>/tmp/pgrestore.err
+    RESTORE_RC=$?
+    set -e
+  }
+  run_restore
+  if [ "$RESTORE_RC" -ne 0 ] && grep -qi "unsupported version" /tmp/pgrestore.err; then
+    install_pg17_client
     PGBIN=$(pg_bin_dir)
-    if ! "$PGBIN/pg_dump" --no-owner --no-privileges --format=custom --file="$DUMP_FILE" "$NEON_URL_CLEAN" 2>/tmp/pgdump.err; then
-      if grep -qi "server version mismatch\|aborting because of server version" /tmp/pgdump.err; then
-        install_pg17_client
-        PGBIN=$(pg_bin_dir)
-        "$PGBIN/pg_dump" --no-owner --no-privileges --format=custom --file="$DUMP_FILE" "$NEON_URL_CLEAN"
-      else
-        cat /tmp/pgdump.err >&2
-        err "pg_dump с Neon не удался — база останется пустой (схема применится через prisma db push). Импорт можно повторить, перезапустив скрипт."
-        DUMP_FILE=""
-      fi
+    run_restore
+  fi
+  IMPORTED_TABLES=$(sudo -u postgres psql -d "$DB_NAME" -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'")
+  if [ "$IMPORTED_TABLES" -gt 0 ]; then
+    if [ "$RESTORE_RC" -ne 0 ]; then
+      warn "pg_restore сообщил о некритичных ошибках (полный лог: /tmp/pgrestore.err):"
+      grep -i "error" /tmp/pgrestore.err | head -n 5 >&2 || true
     fi
-    if [ -n "$DUMP_FILE" ] && [ -f "$DUMP_FILE" ]; then
-      # pg_restore той же (или более новой) версии, что делал дамп.
-      # Некритичные ошибки (SET transaction_timeout из PG17, COMMENT ON SCHEMA)
-      # игнорируем — важен фактический результат (таблицы с данными).
-      run_restore() {
-        set +e
-        "$PGBIN/pg_restore" --no-owner --no-privileges --no-comments --dbname="$LOCAL_DB_URL" "$DUMP_FILE" 2>/tmp/pgrestore.err
-        RESTORE_RC=$?
-        set -e
-      }
-      run_restore
-      if [ "$RESTORE_RC" -ne 0 ] && grep -qi "unsupported version" /tmp/pgrestore.err; then
-        install_pg17_client
-        PGBIN=$(pg_bin_dir)
-        run_restore
-      fi
-      IMPORTED_TABLES=$(sudo -u postgres psql -d "$DB_NAME" -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'")
-      if [ "$IMPORTED_TABLES" -gt 0 ]; then
-        if [ "$RESTORE_RC" -ne 0 ]; then
-          warn "pg_restore сообщил о некритичных ошибках (полный лог: /tmp/pgrestore.err):"
-          grep -i "error" /tmp/pgrestore.err | head -n 5 >&2 || true
-        fi
-        log "Дамп импортирован: $IMPORTED_TABLES таблиц (файл: $DUMP_FILE)"
-      else
-        cat /tmp/pgrestore.err >&2
-        err "Импорт не удался — таблицы не созданы"
-        exit 1
-      fi
-    fi
+    log "Дамп импортирован: $IMPORTED_TABLES таблиц (файл: $DUMP_FILE)"
   else
-    warn "База $DB_NAME не пуста ($TABLE_COUNT таблиц) — импорт с Neon пропущен"
+    cat /tmp/pgrestore.err >&2
+    err "Импорт не удался — таблицы не созданы"
+    exit 1
   fi
 else
+  TABLE_COUNT=$(sudo -u postgres psql -d "$DB_NAME" -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'")
   [ "$TABLE_COUNT" = "0" ] && warn "NEON_DATABASE_URL не задан — база будет пустой (схема применится через prisma db push)"
 fi
 
 # ── 5. .env.local + сборка ──────────────────────────────────────────────────
 ENV_FILE="$APP_DIR/.env.local"
+ensure_env() {
+  local key="$1" val="$2"
+  if [ ! -f "$ENV_FILE" ]; then return; fi
+  if grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then return; fi
+  echo "${key}=${val}" >> "$ENV_FILE"
+}
+
 if [ ! -f "$ENV_FILE" ]; then
   log "Создаю $ENV_FILE..."
   NEXTAUTH_SECRET=$(openssl rand -base64 48 | tr -d '\n')
@@ -190,10 +202,22 @@ if [ ! -f "$ENV_FILE" ]; then
 DATABASE_URL=$LOCAL_DB_URL
 NEXTAUTH_URL=https://$DOMAIN
 NEXTAUTH_SECRET=$NEXTAUTH_SECRET
+AUTH_SECRET=$NEXTAUTH_SECRET
+AUTH_URL=https://$DOMAIN
+AUTH_TRUST_HOST=true
 EOF
   chmod 600 "$ENV_FILE"
 else
-  log "$ENV_FILE уже существует — не трогаю"
+  log "$ENV_FILE уже существует — дополняю недостающие переменные"
+  # AUTH_* — для NextAuth v5; AUTH_TRUST_HOST обязателен за reverse-proxy (Traefik)
+  SECRET=$(grep -m1 '^NEXTAUTH_SECRET=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)
+  [ -z "$SECRET" ] && SECRET=$(grep -m1 '^AUTH_SECRET=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)
+  [ -z "$SECRET" ] && SECRET=$(openssl rand -base64 48 | tr -d '\n')
+  ensure_env "NEXTAUTH_SECRET" "$SECRET"
+  ensure_env "AUTH_SECRET" "$SECRET"
+  ensure_env "NEXTAUTH_URL" "https://$DOMAIN"
+  ensure_env "AUTH_URL" "https://$DOMAIN"
+  ensure_env "AUTH_TRUST_HOST" "true"
 fi
 
 log "npm ci..."
@@ -218,6 +242,7 @@ Wants=postgresql.service
 Type=simple
 WorkingDirectory=$APP_DIR
 Environment=NODE_ENV=production
+EnvironmentFile=-$ENV_FILE
 ExecStart=$(command -v npx) next start -p $APP_PORT -H 127.0.0.1
 Restart=always
 RestartSec=5
@@ -362,12 +387,9 @@ setup_traefik() {
 
   mkdir -p "$DYNAMIC_DIR"
   local CONF="$DYNAMIC_DIR/invoices-kpd.yml"
-  if [ -f "$CONF" ]; then
-    log "Конфиг Traefik уже существует: $CONF — не трогаю"
-  else
-    log "Пишу dynamic-конфиг Traefik: $CONF (certresolver=$CERT_RESOLVER, backend=$TARGET_IP:$APP_PORT)"
-    cat > "$CONF" <<EOF
-# invoices.kpd.moscow → KPD frontend (создано server-setup.sh; конфиги n8n не затронуты)
+  log "Пишу dynamic-конфиг Traefik: $CONF (certresolver=$CERT_RESOLVER, backend=$TARGET_IP:$APP_PORT, SSL + redirect)"
+  cat > "$CONF" <<EOF
+# invoices.kpd.moscow → KPD frontend (server-setup.sh; конфиги n8n не затронуты)
 http:
   routers:
     kpd-invoices:
@@ -381,14 +403,20 @@ http:
       rule: "Host(\`$DOMAIN\`)"
       entryPoints:
         - web
+      middlewares:
+        - kpd-invoices-redirect
       service: kpd-invoices
+  middlewares:
+    kpd-invoices-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
   services:
     kpd-invoices:
       loadBalancer:
         servers:
           - url: "http://$TARGET_IP:$APP_PORT"
 EOF
-  fi
 
   # Приложение слушает 127.0.0.1 — для docker-traefik нужно слушать gateway-IP
   if [ -n "$TRAEFIK_CONTAINER" ] && [ "$TARGET_IP" != "127.0.0.1" ]; then
