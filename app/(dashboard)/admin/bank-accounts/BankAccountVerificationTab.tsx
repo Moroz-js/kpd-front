@@ -203,7 +203,7 @@ function NumberInputCell({
   }
 
   return (
-    <Input
+    <input
       type="number"
       step="any"
       value={local}
@@ -216,7 +216,7 @@ function NumberInputCell({
           (e.target as HTMLInputElement).blur();
         }
       }}
-      className={`h-7 w-[76px] text-xs px-1.5 tabular-nums ${value !== null ? "border-neutral-300" : "border-neutral-200"} ${className ?? ""}`}
+      className={`h-6 w-[76px] text-[11px] px-1.5 tabular-nums rounded border bg-transparent outline-none focus:bg-white focus:border-blue-400 ${value !== null ? "border-neutral-300" : "border-neutral-200"} ${className ?? ""}`}
       placeholder={placeholder ?? "—"}
     />
   );
@@ -647,9 +647,9 @@ export function BankAccountVerificationTab() {
               {allAccounts.map(([bankAccountId, bankAccountName], rowIdx) => (
                 <tr
                   key={bankAccountId}
-                  className={rowIdx % 2 === 0 ? "bg-white" : "bg-neutral-50/50"}
+                  className={rowIdx % 2 === 0 ? "bg-white" : "bg-neutral-50"}
                 >
-                  <td className="sticky left-0 z-10 border-r border-neutral-100 px-3 py-1.5 font-medium text-neutral-800 text-xs bg-inherit">
+                  <td className={`sticky left-0 z-10 border-r border-neutral-100 px-3 py-1.5 font-medium text-neutral-800 text-xs ${rowIdx % 2 === 0 ? "bg-white" : "bg-neutral-50"}`}>
                     {bankAccountName}
                   </td>
                   {reconciliations.map((v) => {
