@@ -113,30 +113,49 @@ fi
 
 # ── 4. Импорт дампа с Neon (однократно, только в пустую базу) ────────────────
 TABLE_COUNT=$(sudo -u postgres psql -d "$DB_NAME" -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'")
+# Используем самые свежие установленные pg-бинарники (pg_dump и pg_restore
+# должны быть одной версии, иначе «unsupported version in file header»)
+pg_bin_dir() { ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1; }
+install_pg17_client() {
+  warn "Ставлю свежий postgresql-client из PGDG..."
+  install -d /usr/share/postgresql-common/pgdg
+  curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+  echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+    > /etc/apt/sources.list.d/pgdg.list
+  apt-get update -qq
+  apt-get install -y -qq postgresql-client-17
+}
+
 if [ -n "${NEON_DATABASE_URL:-}" ]; then
   if [ "$TABLE_COUNT" = "0" ]; then
     log "Импортирую дамп с Neon..."
     mkdir -p "$BACKUP_DIR"
     NEON_URL_CLEAN=$(echo "$NEON_DATABASE_URL" | sed 's/[?&]channel_binding=[^&]*//')
     DUMP_FILE="$BACKUP_DIR/neon-initial.dump"
-    if ! pg_dump --no-owner --no-privileges --format=custom --file="$DUMP_FILE" "$NEON_URL_CLEAN" 2>/tmp/pgdump.err; then
+    PGBIN=$(pg_bin_dir)
+    if ! "$PGBIN/pg_dump" --no-owner --no-privileges --format=custom --file="$DUMP_FILE" "$NEON_URL_CLEAN" 2>/tmp/pgdump.err; then
       if grep -qi "server version mismatch\|aborting because of server version" /tmp/pgdump.err; then
-        warn "Версия pg_dump старее сервера Neon — ставлю свежий клиент из PGDG..."
-        install -d /usr/share/postgresql-common/pgdg
-        curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
-        echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
-          > /etc/apt/sources.list.d/pgdg.list
-        apt-get update -qq
-        apt-get install -y -qq postgresql-client-17
-        /usr/lib/postgresql/17/bin/pg_dump --no-owner --no-privileges --format=custom --file="$DUMP_FILE" "$NEON_URL_CLEAN"
+        install_pg17_client
+        PGBIN=$(pg_bin_dir)
+        "$PGBIN/pg_dump" --no-owner --no-privileges --format=custom --file="$DUMP_FILE" "$NEON_URL_CLEAN"
       else
         cat /tmp/pgdump.err >&2
-        err "pg_dump с Neon не удался — база останется пустой (схема применится через prisma db push). Импорт можно повторить позже, перезапустив скрипт."
+        err "pg_dump с Neon не удался — база останется пустой (схема применится через prisma db push). Импорт можно повторить, перезапустив скрипт."
         DUMP_FILE=""
       fi
     fi
     if [ -n "$DUMP_FILE" ] && [ -f "$DUMP_FILE" ]; then
-      pg_restore --no-owner --no-privileges --dbname="$LOCAL_DB_URL" "$DUMP_FILE"
+      # pg_restore той же (или более новой) версии, что делал дамп
+      if ! "$PGBIN/pg_restore" --no-owner --no-privileges --dbname="$LOCAL_DB_URL" "$DUMP_FILE" 2>/tmp/pgrestore.err; then
+        if grep -qi "unsupported version" /tmp/pgrestore.err; then
+          install_pg17_client
+          PGBIN=$(pg_bin_dir)
+          "$PGBIN/pg_restore" --no-owner --no-privileges --dbname="$LOCAL_DB_URL" "$DUMP_FILE"
+        else
+          cat /tmp/pgrestore.err >&2
+          exit 1
+        fi
+      fi
       log "Дамп импортирован (сохранён в $DUMP_FILE)"
     fi
   else
