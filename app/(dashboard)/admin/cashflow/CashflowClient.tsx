@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import useSWR from "swr";
 import Link from "next/link";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -141,36 +141,47 @@ function OpeningBalanceInput({
   onSaved: (v: number) => void;
   compact?: boolean;
 }) {
-  const [focused, setFocused] = useState(false);
-  const [raw, setRaw] = useState(String(initial || ""));
+  const [numericValue, setNumericValue] = useState(initial || 0);
+  const [display, setDisplay] = useState(formatMoneyInput(initial || 0));
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!focused) setRaw(String(initial || ""));
-  }, [initial, focused]);
+    setNumericValue(initial || 0);
+    setDisplay(formatMoneyInput(initial || 0));
+  }, [initial]);
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const raw = e.target.value;
+    // Оставляем только цифры, знак минус, запятую/точку
+    const stripped = raw.replace(/[^\d,.-]/g, "").replace(",", ".");
+    const parsed = parseFloat(stripped);
+    const num = isNaN(parsed) ? 0 : parsed;
+    setNumericValue(num);
+    // Форматируем только если строка не заканчивается на разделитель (чтобы не мешать вводу)
+    if (stripped.endsWith(".") || stripped === "-" || stripped === "") {
+      setDisplay(raw.replace(/[^\d,.-]/g, ""));
+    } else {
+      setDisplay(formatMoneyInput(num));
+    }
+  }
 
   async function save() {
-    const amount = parseMoneyInput(raw);
-    setFocused(false);
+    setDisplay(formatMoneyInput(numericValue));
     const res = await fetch("/api/cashflow/opening-balance", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ year, amount }),
+      body: JSON.stringify({ year, amount: numericValue }),
     });
-    if (res.ok) { onSaved(amount); toast.success("Баланс сохранён"); }
+    if (res.ok) { onSaved(numericValue); toast.success("Баланс сохранён"); }
   }
-
-  const displayValue = focused ? raw : formatMoneyInput(parseMoneyInput(raw));
 
   return (
     <Input
+      ref={inputRef}
       className={compact ? "h-6 w-24 text-right text-[11px] px-1.5 tabular-nums italic" : "h-7 w-28 text-right text-xs tabular-nums"}
-      value={displayValue}
-      onChange={e => setRaw(e.target.value)}
-      onFocus={e => {
-        setFocused(true);
-        setRaw(String(parseMoneyInput(e.target.value) || ""));
-        setTimeout(() => e.target.select(), 0);
-      }}
+      value={display}
+      onChange={handleChange}
+      onFocus={e => setTimeout(() => e.target.select(), 0)}
       onBlur={save}
       onKeyDown={e => { if (e.key === "Enter") { (e.target as HTMLInputElement).blur(); } }}
     />
