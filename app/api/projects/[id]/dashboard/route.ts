@@ -131,6 +131,7 @@ export async function GET(req: NextRequest, { params }: Ctx) {
     expenses: [],
     expensePlan: [],
     overspend: [],
+    paidWorks: [],
   };
 
   let prevCashflow = project.cashflowInitial ?? 0;
@@ -158,26 +159,42 @@ export async function GET(req: NextRequest, { params }: Ctx) {
     summary.expenses.push(exp.total);
     summary.expensePlan.push(plan);
     summary.overspend.push(overspend);
+    summary.paidWorks.push(exp.paid);
 
     prevCashflow = cashflow;
     prevCumulative = cumulative;
   }
 
-  // Block 2: Work summary by type
-  const workTypeMap = new Map<string, { id: string; name: string; weeks: number[] }>();
+  // Block 2: «Расходы из смет» — только paid-работы, с разбивкой по исполнителям
+  const workTypeMap = new Map<string, {
+    id: string;
+    name: string;
+    weeks: number[];
+    executorMap: Map<string, { id: string; name: string; weeks: number[] }>;
+  }>();
   const allSources = [
-    ...works.map(w => ({ workTypeId: w.workTypeId, workTypeName: w.workType.name, amount: w.amount, plannedPayAt: w.plannedPayAt, paidAt: w.paidAt })),
-    ...otherExpenses.map(o => ({ workTypeId: o.workTypeId, workTypeName: o.workType.name, amount: o.amount, plannedPayAt: o.plannedPayAt, paidAt: o.paidAt })),
+    ...works.map(w => ({ workTypeId: w.workTypeId, workTypeName: w.workType.name, executorId: w.executorId, executorName: w.executor.name, amount: w.amount, plannedPayAt: w.plannedPayAt, paidAt: w.paidAt, workStatus: w.workStatus })),
+    ...otherExpenses.map(o => ({ workTypeId: o.workTypeId, workTypeName: o.workType.name, executorId: o.executorId, executorName: o.executor.name, amount: o.amount, plannedPayAt: o.plannedPayAt, paidAt: o.paidAt, workStatus: o.workStatus })),
   ];
 
   for (const src of allSources) {
+    if (src.workStatus !== "paid") continue;
     const pf = issuedWeek(src.plannedPayAt, src.paidAt);
     if (!pf || pf.year !== year) continue;
     if (!workTypeMap.has(src.workTypeId)) {
-      workTypeMap.set(src.workTypeId, { id: src.workTypeId, name: src.workTypeName, weeks: new Array(weeksInYear).fill(0) });
+      workTypeMap.set(src.workTypeId, {
+        id: src.workTypeId,
+        name: src.workTypeName,
+        weeks: new Array(weeksInYear).fill(0),
+        executorMap: new Map(),
+      });
     }
     const entry = workTypeMap.get(src.workTypeId)!;
     entry.weeks[pf.week - 1] += src.amount;
+    if (!entry.executorMap.has(src.executorId)) {
+      entry.executorMap.set(src.executorId, { id: src.executorId, name: src.executorName, weeks: new Array(weeksInYear).fill(0) });
+    }
+    entry.executorMap.get(src.executorId)!.weeks[pf.week - 1] += src.amount;
   }
 
   // Block 4: SpendingPlanLine grouped by (executor, workType)
@@ -237,7 +254,12 @@ export async function GET(req: NextRequest, { params }: Ctx) {
     year,
     weeks: weekHeaders,
     summary,
-    workTypes: Array.from(workTypeMap.values()),
+    workTypes: Array.from(workTypeMap.values()).map(wt => ({
+      id: wt.id,
+      name: wt.name,
+      weeks: wt.weeks,
+      executors: Array.from(wt.executorMap.values()).sort((a, b) => a.name.localeCompare(b.name, "ru")),
+    })),
     planLines: Array.from(planGroupMap.values()),
     executors: executors.map(e => ({
       id: e.id,

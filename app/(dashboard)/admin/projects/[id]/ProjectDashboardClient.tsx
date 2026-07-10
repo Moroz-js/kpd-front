@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import useSWR from "swr";
 import { ChevronLeft, Plus, Pencil, Check, TrendingUp, CreditCard, AlertTriangle, Trash2, ExternalLink } from "lucide-react";
 import Link from "next/link";
+import { CollapsibleSection, SectionChevron, useSectionCollapsed } from "@/components/ui-custom/CollapsibleSection";
 import { buttonVariants, Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -67,16 +68,28 @@ type PlanLineRow = {
   lineIds: (string | null)[];
 };
 
+type WorkTypeExpenseRow = {
+  id: string;
+  name: string;
+  weeks: number[];
+  executors: { id: string; name: string; weeks: number[] }[];
+};
+
 type DashboardData = {
   project: { id: string; name: string; status: string; client: string | null; responsible: string | null; cashflowInitial: number };
   year: number;
   weeks: WeekHeader[];
-  summary: Record<SummaryKey | "expensePlan" | "overspend", number[]>;
-  workTypes: { id: string; name: string; weeks: number[] }[];
+  summary: Record<SummaryKey | "expensePlan" | "overspend" | "paidWorks", number[]>;
+  workTypes: WorkTypeExpenseRow[];
   planLines: PlanLineRow[];
   executors: { id: string; name: string; workTypeIds: string[] }[];
   availableWorkTypes: { id: string; name: string }[];
 };
+
+/** Спец-записи «Пока не известен» (вид работ/исполнитель) определяются по имени. */
+function isUnknownName(name: string): boolean {
+  return /не\s*извест/i.test(name);
+}
 
 type EditingCell = {
   executorId: string;
@@ -109,8 +122,12 @@ function AddPlanLineDialog({
   const [executorId, setExecutorId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const filteredExecutors = workTypeId
-    ? executors.filter(e => e.workTypeIds.includes(workTypeId))
+  // «Пока не известен»: вид работ доступен всем исполнителям,
+  // исполнитель «Пока не известен» доступен для любых видов работ.
+  const selectedWorkType = workTypeId ? workTypes.find(w => w.id === workTypeId) : null;
+  const workTypeIsUnknown = selectedWorkType ? isUnknownName(selectedWorkType.name) : false;
+  const filteredExecutors = workTypeId && !workTypeIsUnknown
+    ? executors.filter(e => e.workTypeIds.includes(workTypeId) || isUnknownName(e.name))
     : executors;
 
   function handleWorkTypeChange(id: string) {
@@ -268,6 +285,24 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
   const [cashflowInitialEdit, setCashflowInitialEdit] = useState<string | null>(null);
   const [savingCashflow, setSavingCashflow] = useState(false);
 
+  // Сворачиваемые секции ДП (localStorage)
+  const [summaryExpanded, toggleSummary] = useSectionCollapsed("summary", true);
+  const [expensesExpanded, toggleExpenses] = useSectionCollapsed("expenses", true);
+  const [planExpanded, togglePlan] = useSectionCollapsed("plan", true);
+  // Раскрытие видов работ внутри блоков (по умолчанию все свёрнуты)
+  const [expandedExpenseWT, setExpandedExpenseWT] = useState<Set<string>>(new Set());
+  const [expandedPlanWT, setExpandedPlanWT] = useState<Set<string>>(new Set());
+
+  const toggleSetItem = (setter: React.Dispatch<React.SetStateAction<Set<string>>>) => (id: string) =>
+    setter(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const toggleExpenseWT = toggleSetItem(setExpandedExpenseWT);
+  const togglePlanWT = toggleSetItem(setExpandedPlanWT);
+
   async function deletePlanRow(pl: PlanLineRow) {
     const ids = pl.lineIds.filter((id): id is string => id !== null);
     if (ids.length === 0) { setConfirmRow(null); return; }
@@ -333,6 +368,30 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
   const planLines = [...rawPlanLines].sort((a, b) =>
     a.workTypeName.localeCompare(b.workTypeName, "ru")
   );
+
+  // Группировка строк плана по видам работ
+  const planGroupMap = new Map<string, { workTypeId: string; workTypeName: string; lines: PlanLineRow[]; weekTotals: number[] }>();
+  for (const pl of planLines) {
+    if (!planGroupMap.has(pl.workTypeId)) {
+      planGroupMap.set(pl.workTypeId, {
+        workTypeId: pl.workTypeId,
+        workTypeName: pl.workTypeName,
+        lines: [],
+        weekTotals: new Array(weeksCount).fill(0),
+      });
+    }
+    const group = planGroupMap.get(pl.workTypeId)!;
+    group.lines.push(pl);
+    pl.weeks.forEach((v, i) => {
+      if (v !== null) group.weekTotals[i] += parseFloat(v) || 0;
+    });
+  }
+  const planGroups = Array.from(planGroupMap.values()).sort((a, b) =>
+    a.workTypeName.localeCompare(b.workTypeName, "ru")
+  );
+  for (const g of planGroups) {
+    g.lines.sort((a, b) => a.executorName.localeCompare(b.executorName, "ru"));
+  }
 
   // Group month headers
   const monthGroups: { label: string; count: number }[] = [];
@@ -405,12 +464,14 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
         </div>
       </div>
 
-      <ProjectCashflowChart
-        weeks={visibleWeeks}
-        cashflow={visibleWeekIndices.map((i) => summary.cashflow[i] ?? 0)}
-        expensePlan={visibleWeekIndices.map((i) => summary.expensePlan[i] ?? 0)}
-        incomePlanFact={visibleWeekIndices.map((i) => summary.incomePlanFact[i] ?? 0)}
-      />
+      <CollapsibleSection sectionId="cashflow-chart" title="График кэшфлоу" defaultExpanded={false}>
+        <ProjectCashflowChart
+          weeks={visibleWeeks}
+          cashflow={visibleWeekIndices.map((i) => summary.cashflow[i] ?? 0)}
+          expensePlan={visibleWeekIndices.map((i) => summary.expensePlan[i] ?? 0)}
+          incomePlanFact={visibleWeekIndices.map((i) => summary.incomePlanFact[i] ?? 0)}
+        />
+      </CollapsibleSection>
 
       {/* Main grid */}
       <div className="rounded-lg border border-neutral-200 bg-white flex flex-col max-h-[90dvh] min-h-0 overflow-hidden">
@@ -450,11 +511,16 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
             </thead>
             <tbody>
               <tr className="bg-neutral-50 border-b border-neutral-200">
-                <td className={stickyHdr}>Сводка</td>
+                <td className={cn(stickyHdr, "cursor-pointer select-none")} onClick={toggleSummary}>
+                  <span className="inline-flex items-center gap-1">
+                    <SectionChevron expanded={summaryExpanded} />
+                    Сводка
+                  </span>
+                </td>
                 <td className={cn(stickyTotal, "bg-neutral-50")} />
                 <td colSpan={visibleWeeks.length} className="bg-neutral-50" />
               </tr>
-              {SUMMARY_DEFS.map(({ key, label, signed, highlight }) => {
+              {summaryExpanded && SUMMARY_DEFS.map(({ key, label, signed, highlight }) => {
                 const arr = summary[key] ?? [];
                 const totalRaw: number | null =
                   key === "cashflow"
@@ -510,34 +576,110 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                 );
               })}
 
-              {/* Block 2: Work by type */}
-              <tr className="bg-neutral-50 border-t-2 border-b border-neutral-200">
-                <td className={stickyHdr}>Расходы по видам работ</td>
-                <td className={cn(stickyTotal, "bg-neutral-50")} />
-                <td colSpan={visibleWeeks.length} className="bg-neutral-50" />
-              </tr>
-              {workTypes.length === 0 && (
-                <tr>
-                  <td className={stickyLbl}>—</td>
-                  <td className={stickyTotal}>—</td>
-                  {visibleWeeks.map((_, i) => <td key={i} className={tdCls}>—</td>)}
-                </tr>
-              )}
-              {workTypes.map(wt => (
-                <tr key={wt.id} className="hover:bg-neutral-50 border-b border-neutral-100">
-                  <td className={cn(stickyLbl, "font-normal")}>{wt.name}</td>
-                  <td className={stickyTotal}>{fmt(rowTotal(wt.weeks))}</td>
+              {/* Несхождение план-факт = paidWorks − expensePlan */}
+              {summaryExpanded && (
+                <tr className="hover:bg-neutral-50 border-b border-neutral-100">
+                  <td className={cn(stickyLbl, "font-normal italic text-neutral-500")}>Несхождение план-факт</td>
+                  <td className={cn(stickyTotal, rowTotal(summary.paidWorks ?? []) - rowTotal(summary.expensePlan ?? []) !== 0 && "text-red-600 font-medium")}>
+                    {fmtSign(rowTotal(summary.paidWorks ?? []) - rowTotal(summary.expensePlan ?? []))}
+                  </td>
                   {visibleWeekIndices.map((idx, vi) => {
                     const wh = visibleWeeks[vi];
-                    const v = wt.weeks[idx] ?? 0;
+                    const v = ((summary.paidWorks ?? [])[idx] ?? 0) - ((summary.expensePlan ?? [])[idx] ?? 0);
+                    const isNonZero = Math.round(v) !== 0;
                     return (
-                      <td key={idx} className={cn(tdCls, wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50 font-semibold" : wh?.week < currentISOWeek && year === currentYear ? "text-neutral-400 bg-neutral-50/40" : "")}>
-                        {fmt(v)}
+                      <td key={idx} className={cn(tdCls,
+                        wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50" : wh?.week < currentISOWeek && year === currentYear ? "bg-neutral-50/40" : "",
+                        isNonZero && "text-red-600 font-medium",
+                      )}>
+                        {fmtSign(v)}
                       </td>
                     );
                   })}
                 </tr>
-              ))}
+              )}
+
+              {/* Block 2: Расходы из смет (только оплаченные работы) */}
+              <tr className="bg-neutral-50 border-t-2 border-b border-neutral-200">
+                <td className={cn(stickyHdr, "cursor-pointer select-none")} onClick={toggleExpenses}>
+                  <span className="inline-flex items-center gap-1">
+                    <SectionChevron expanded={expensesExpanded} />
+                    Расходы из смет
+                  </span>
+                </td>
+                <td className={cn(stickyTotal, "bg-neutral-50")} />
+                <td colSpan={visibleWeeks.length} className="bg-neutral-50" />
+              </tr>
+              {expensesExpanded && (
+                <>
+                  {/* Итого расходы по неделям */}
+                  <tr className="border-b border-neutral-200 bg-neutral-50/50 font-semibold">
+                    <td className={cn(stickyLbl, "bg-neutral-50/80")}>Итого расходы</td>
+                    <td className={cn(stickyTotal, "font-semibold")}>{fmt(rowTotal(summary.paidWorks ?? []))}</td>
+                    {visibleWeekIndices.map((idx, vi) => {
+                      const wh = visibleWeeks[vi];
+                      const v = (summary.paidWorks ?? [])[idx] ?? 0;
+                      return (
+                        <td key={idx} className={cn(tdCls, "bg-neutral-50/50", wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50" : "")}>
+                          {fmt(v)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                  {workTypes.length === 0 && (
+                    <tr>
+                      <td className={stickyLbl}>—</td>
+                      <td className={stickyTotal}>—</td>
+                      {visibleWeeks.map((_, i) => <td key={i} className={tdCls}>—</td>)}
+                    </tr>
+                  )}
+                  {workTypes.map(wt => {
+                    const wtExpanded = expandedExpenseWT.has(wt.id);
+                    return (
+                      <React.Fragment key={wt.id}>
+                        <tr
+                          className="hover:bg-neutral-50 border-b border-neutral-100 cursor-pointer select-none"
+                          onClick={() => toggleExpenseWT(wt.id)}
+                        >
+                          <td className={cn(stickyLbl, "font-normal")}>
+                            <span className="inline-flex items-center gap-1">
+                              <SectionChevron expanded={wtExpanded} />
+                              {wt.name}
+                            </span>
+                          </td>
+                          <td className={stickyTotal}>{fmt(rowTotal(wt.weeks))}</td>
+                          {visibleWeekIndices.map((idx, vi) => {
+                            const wh = visibleWeeks[vi];
+                            const v = wt.weeks[idx] ?? 0;
+                            return (
+                              <td key={idx} className={cn(tdCls, wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50 font-semibold" : wh?.week < currentISOWeek && year === currentYear ? "text-neutral-400 bg-neutral-50/40" : "")}>
+                                {fmt(v)}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                        {wtExpanded && wt.executors.map(ex => (
+                          <tr key={`${wt.id}:${ex.id}`} className="hover:bg-neutral-50 border-b border-neutral-100">
+                            <td className={cn(stickyLbl, "font-normal")}>
+                              <span className="pl-6 text-neutral-500 text-[11px] truncate block">{ex.name}</span>
+                            </td>
+                            <td className={cn(stickyTotal, "font-normal text-neutral-500")}>{fmt(rowTotal(ex.weeks))}</td>
+                            {visibleWeekIndices.map((idx, vi) => {
+                              const wh = visibleWeeks[vi];
+                              const v = ex.weeks[idx] ?? 0;
+                              return (
+                                <td key={idx} className={cn(tdCls, "text-neutral-500", wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50" : wh?.week < currentISOWeek && year === currentYear ? "bg-neutral-50/40" : "")}>
+                                  {fmt(v)}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </React.Fragment>
+                    );
+                  })}
+                </>
+              )}
 
               {/* Block 3: Overspend (row41 = expenses − expensePlan) */}
               <tr className="bg-neutral-50 border-t-2 border-b border-neutral-200">
@@ -568,135 +710,173 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                 })}
               </tr>
 
-              {/* Block 4: SpendingPlan (row42 = итог; rows 43+ = строки) */}
+              {/* Block 4: SpendingPlan — группировка по видам работ */}
               <tr className="bg-neutral-50 border-t-2 border-b border-neutral-200">
-                <td className={stickyHdr}>План расходов</td>
+                <td className={cn(stickyHdr, "cursor-pointer select-none")} onClick={togglePlan}>
+                  <span className="inline-flex items-center gap-1">
+                    <SectionChevron expanded={planExpanded} />
+                    План расходов
+                  </span>
+                </td>
                 <td className={cn(stickyTotal, "bg-neutral-50")} />
                 <td colSpan={visibleWeeks.length} className="bg-neutral-50" />
               </tr>
-              {/* Row 42: итог плана */}
-              <tr className="border-b border-neutral-200 bg-neutral-50/50 font-semibold">
-                <td className={cn(stickyLbl, "bg-neutral-50/80")}>Итого план</td>
-                <td className={cn(stickyTotal, "font-semibold")}>{fmt(rowTotal(summary.expensePlan ?? []))}</td>
-                {visibleWeekIndices.map((idx, vi) => {
-                  const wh = visibleWeeks[vi];
-                  const v = (summary.expensePlan ?? [])[idx] ?? 0;
-                  return (
-                    <td key={idx} className={cn(tdCls, "bg-neutral-50/50", wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50" : "")}>
-                      {fmt(v)}
-                    </td>
-                  );
-                })}
-              </tr>
-              {planLines.length === 0 && !canManagePlan && (
-                <tr className="border-b border-neutral-100">
-                  <td className={cn(stickyLbl, "font-normal text-neutral-400")}>Нет строк плана</td>
-                  <td className={stickyTotal}>—</td>
-                  {visibleWeeks.map((_, i) => (
-                    <td key={i} className={tdCls}>—</td>
-                  ))}
-                </tr>
-              )}
-              {planLines.map(pl => {
-                const weekAmounts = pl.weeks.map(v => (v ? parseFloat(v) : 0));
-                const isDeleting = deletingRowId === pl.id;
-                return (
-                  <tr key={pl.id} className={cn("group hover:bg-neutral-50 border-b border-neutral-100", isDeleting && "opacity-40 pointer-events-none")}>
-                    <td className={cn(stickyLbl, "font-normal")}>
-                      <div className="flex items-center gap-1 min-w-0">
-                        <div className="flex flex-col leading-tight min-w-0 flex-1">
-                          <span className="truncate font-medium text-neutral-900">{pl.workTypeName}</span>
-                          {isAdmin && pl.executorHasPersonalSmeta ? (
-                            <Link
-                              href={`/admin/executors/${pl.executorId}?fromProject=${projectId}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-0.5 text-[11px] text-blue-600 hover:underline truncate max-w-full"
-                              title="Открыть личную смету"
-                            >
-                              <span className="truncate">{pl.executorName}</span>
-                              <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
-                            </Link>
-                          ) : !isAdmin ? (
-                            <Link
-                              href={`/executor/executors/${pl.executorId}?tab=settings`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-0.5 text-[11px] text-blue-600 hover:underline truncate max-w-full"
-                              title="Открыть настройки исполнителя"
-                            >
-                              <span className="truncate">{pl.executorName}</span>
-                              <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
-                            </Link>
-                          ) : (
-                            <span className="text-neutral-400 text-[11px] truncate">{pl.executorName}</span>
-                          )}
-                        </div>
-                        {canManagePlan && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-neutral-400 hover:text-red-500 hover:bg-red-50"
-                            onClick={() => setConfirmRow(pl)}
-                            disabled={isDeleting}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                      </div>
-                    </td>
-                    <td className={stickyTotal}>{fmt(rowTotal(weekAmounts))}</td>
+              {planExpanded && (
+                <>
+                  {/* Итого план */}
+                  <tr className="border-b border-neutral-200 bg-neutral-50/50 font-semibold">
+                    <td className={cn(stickyLbl, "bg-neutral-50/80")}>Итого план</td>
+                    <td className={cn(stickyTotal, "font-semibold")}>{fmt(rowTotal(summary.expensePlan ?? []))}</td>
                     {visibleWeekIndices.map((idx, vi) => {
                       const wh = visibleWeeks[vi];
-                      const v = pl.weeks[idx] ?? null;
+                      const v = (summary.expensePlan ?? [])[idx] ?? 0;
                       return (
-                        <td key={idx} className={cn("p-0 text-right border-r border-neutral-100 last:border-0", wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50" : wh?.week < currentISOWeek && year === currentYear ? "bg-neutral-50/40" : "")}>
-                          {canManagePlan ? (
-                            <PlanCell
-                              value={v}
-                              lineId={pl.lineIds[idx]}
-                              projectId={projectId}
-                              executorId={pl.executorId}
-                              workTypeId={pl.workTypeId}
-                              year={year}
-                              week={visibleWeeks[vi]?.week ?? idx + 1}
-                              onUpdate={() => mutate()}
-                            />
-                          ) : (
-                            <span className="text-xs tabular-nums">{v ? fmt(parseFloat(v)) : "·"}</span>
-                          )}
+                        <td key={idx} className={cn(tdCls, "bg-neutral-50/50", wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50" : "")}>
+                          {fmt(v)}
                         </td>
                       );
                     })}
                   </tr>
-                );
-              })}
-              {canManagePlan && (
-                <tr className="border-b border-neutral-100 hover:bg-neutral-50/50">
-                  <td className={cn(stickyLbl, "font-normal py-1.5")}>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 px-2 -ml-2 text-xs font-normal text-neutral-600 hover:text-neutral-900"
-                      onClick={() => setAddOpen(true)}
-                    >
-                      <Plus className="h-3.5 w-3.5 mr-0.5 shrink-0" />
-                      строка плана
-                    </Button>
-                  </td>
-                  <td className={stickyTotal} />
-                  {visibleWeeks.map((wh, i) => (
-                    <td
-                      key={i}
-                      className={cn(
-                        tdCls,
-                        wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50" : ""
-                      )}
-                    />
-                  ))}
-                </tr>
+                  {planLines.length === 0 && !canManagePlan && (
+                    <tr className="border-b border-neutral-100">
+                      <td className={cn(stickyLbl, "font-normal text-neutral-400")}>Нет строк плана</td>
+                      <td className={stickyTotal}>—</td>
+                      {visibleWeeks.map((_, i) => (
+                        <td key={i} className={tdCls}>—</td>
+                      ))}
+                    </tr>
+                  )}
+                  {planGroups.map(group => {
+                    const groupExpanded = expandedPlanWT.has(group.workTypeId);
+                    return (
+                      <React.Fragment key={group.workTypeId}>
+                        {/* Строка вида работ (агрегат) */}
+                        <tr
+                          className="hover:bg-neutral-50 border-b border-neutral-100 cursor-pointer select-none"
+                          onClick={() => togglePlanWT(group.workTypeId)}
+                        >
+                          <td className={cn(stickyLbl, "font-normal")}>
+                            <span className="inline-flex items-center gap-1">
+                              <SectionChevron expanded={groupExpanded} />
+                              <span className="truncate font-medium text-neutral-900">{group.workTypeName}</span>
+                            </span>
+                          </td>
+                          <td className={stickyTotal}>{fmt(rowTotal(group.weekTotals))}</td>
+                          {visibleWeekIndices.map((idx, vi) => {
+                            const wh = visibleWeeks[vi];
+                            const v = group.weekTotals[idx] ?? 0;
+                            return (
+                              <td key={idx} className={cn(tdCls, wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50 font-semibold" : wh?.week < currentISOWeek && year === currentYear ? "text-neutral-400 bg-neutral-50/40" : "")}>
+                                {fmt(v)}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                        {/* Строки исполнителей */}
+                        {groupExpanded && group.lines.map(pl => {
+                          const weekAmounts = pl.weeks.map(v => (v ? parseFloat(v) : 0));
+                          const isDeleting = deletingRowId === pl.id;
+                          return (
+                            <tr key={pl.id} className={cn("group hover:bg-neutral-50 border-b border-neutral-100", isDeleting && "opacity-40 pointer-events-none")}>
+                              <td className={cn(stickyLbl, "font-normal")}>
+                                <div className="flex items-center gap-1 min-w-0 pl-6">
+                                  <div className="flex flex-col leading-tight min-w-0 flex-1">
+                                    {isAdmin && pl.executorHasPersonalSmeta ? (
+                                      <Link
+                                        href={`/admin/executors/${pl.executorId}?fromProject=${projectId}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-0.5 text-[11px] text-blue-600 hover:underline truncate max-w-full"
+                                        title="Открыть личную смету"
+                                      >
+                                        <span className="truncate">{pl.executorName}</span>
+                                        <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
+                                      </Link>
+                                    ) : !isAdmin ? (
+                                      <Link
+                                        href={`/executor/executors/${pl.executorId}?tab=settings`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-0.5 text-[11px] text-blue-600 hover:underline truncate max-w-full"
+                                        title="Открыть настройки исполнителя"
+                                      >
+                                        <span className="truncate">{pl.executorName}</span>
+                                        <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
+                                      </Link>
+                                    ) : (
+                                      <span className="text-neutral-500 text-[11px] truncate">{pl.executorName}</span>
+                                    )}
+                                  </div>
+                                  {canManagePlan && (
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-neutral-400 hover:text-red-500 hover:bg-red-50"
+                                      onClick={() => setConfirmRow(pl)}
+                                      disabled={isDeleting}
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </td>
+                              <td className={stickyTotal}>{fmt(rowTotal(weekAmounts))}</td>
+                              {visibleWeekIndices.map((idx, vi) => {
+                                const wh = visibleWeeks[vi];
+                                const v = pl.weeks[idx] ?? null;
+                                return (
+                                  <td key={idx} className={cn("p-0 text-right border-r border-neutral-100 last:border-0", wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50" : wh?.week < currentISOWeek && year === currentYear ? "bg-neutral-50/40" : "")}>
+                                    {canManagePlan ? (
+                                      <PlanCell
+                                        value={v}
+                                        lineId={pl.lineIds[idx]}
+                                        projectId={projectId}
+                                        executorId={pl.executorId}
+                                        workTypeId={pl.workTypeId}
+                                        year={year}
+                                        week={visibleWeeks[vi]?.week ?? idx + 1}
+                                        onUpdate={() => mutate()}
+                                      />
+                                    ) : (
+                                      <span className="text-xs tabular-nums">{v ? fmt(parseFloat(v)) : "·"}</span>
+                                    )}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
+                      </React.Fragment>
+                    );
+                  })}
+                  {canManagePlan && (
+                    <tr className="border-b border-neutral-100 hover:bg-neutral-50/50">
+                      <td className={cn(stickyLbl, "font-normal py-1.5")}>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 -ml-2 text-xs font-normal text-neutral-600 hover:text-neutral-900"
+                          onClick={() => setAddOpen(true)}
+                        >
+                          <Plus className="h-3.5 w-3.5 mr-0.5 shrink-0" />
+                          строка плана
+                        </Button>
+                      </td>
+                      <td className={stickyTotal} />
+                      {visibleWeeks.map((wh, i) => (
+                        <td
+                          key={i}
+                          className={cn(
+                            tdCls,
+                            wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50" : ""
+                          )}
+                        />
+                      ))}
+                    </tr>
+                  )}
+                </>
               )}
             </tbody>
           </table>
@@ -704,14 +884,13 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
       </div>
 
       {/* Все работы по проекту (KPD-287) */}
-      <div className="rounded-lg border border-neutral-200 bg-white p-4 space-y-3">
-        <h2 className="text-base font-semibold text-neutral-900">Все работы по проекту</h2>
+      <CollapsibleSection sectionId="works" title="Все работы по проекту">
         <WorksReviewTable
           fetchUrl={`/api/projects/${projectId}/works`}
           emptyText="По проекту ещё нет работ (Личные сметы и Прочие траты)."
           showProjectColumn={false}
         />
-      </div>
+      </CollapsibleSection>
 
       {addOpen && (
         <AddPlanLineDialog

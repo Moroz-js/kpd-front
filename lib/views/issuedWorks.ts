@@ -34,6 +34,8 @@ export type IssuedWorkRow = {
   responsibleExecutorName: string | null;
 
   amount: number;
+  techTask: string | null;
+  rate: number | null;
   workStatus: string;
   comment: string | null;
   checkedAt: Date | null;
@@ -107,6 +109,8 @@ export async function listIssuedWorks(filter: IssuedWorksFilter = {}): Promise<I
       responsibleExecutorId: w.responsibleExecutorId,
       responsibleExecutorName: w.responsibleExecutor?.name ?? null,
       amount: w.amount,
+      techTask: w.techTask,
+      rate: w.rate,
       workStatus: w.workStatus,
       comment: w.comment,
       checkedAt: w.checkedAt,
@@ -137,6 +141,8 @@ export async function listIssuedWorks(filter: IssuedWorksFilter = {}): Promise<I
       responsibleExecutorId: o.responsibleExecutorId,
       responsibleExecutorName: o.responsibleExecutor?.name ?? null,
       amount: o.amount,
+      techTask: null,
+      rate: null,
       workStatus: o.workStatus,
       comment: o.comment,
       checkedAt: o.checkedAt,

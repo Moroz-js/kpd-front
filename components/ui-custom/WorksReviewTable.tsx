@@ -3,7 +3,7 @@
 import * as React from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, MessageSquare, ArrowUp, ArrowDown, ExternalLink } from "lucide-react";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import { WORK_STATUSES, WORK_STATUSES_SETTABLE } from "@/lib/statuses";
@@ -11,7 +11,7 @@ import { formatMoney, formatDateShort, monthLabel } from "@/lib/format";
 import { getISOWeek, weekLabel } from "@/lib/iso-weeks";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -19,6 +19,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Table,
   TableCell,
@@ -44,6 +49,8 @@ type ReviewRow = {
   responsibleExecutorId: string | null;
   responsibleExecutorName: string | null;
   amount: number;
+  techTask: string | null;
+  rate: number | null;
   workStatus: string;
   comment: string | null;
   checkedAt: string | null;
@@ -70,11 +77,111 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
   "other-expense": "Прочие траты",
 };
 
+/** Порядок статусов для сортировки по умолчанию: rework → submitted → checked → paid. */
+const STATUS_ORDER: Record<string, number> = {
+  rework: 0,
+  submitted: 1,
+  checked: 2,
+  paid: 3,
+};
+
+type SortKey =
+  | "executionYear"
+  | "executionMonth"
+  | "executorName"
+  | "projectName"
+  | "workTypeName"
+  | "sourceType"
+  | "responsibleExecutorName"
+  | "techTask"
+  | "rate"
+  | "amount"
+  | "workStatus"
+  | "date";
+
+type SortState = { key: SortKey; dir: 1 | -1 } | null;
+
+function rowDate(r: ReviewRow): string {
+  return r.paidAt ?? r.plannedPayAt ?? "";
+}
+
+function sortValue(r: ReviewRow, key: SortKey): string | number {
+  switch (key) {
+    case "date":
+      return rowDate(r);
+    case "workStatus":
+      return STATUS_ORDER[r.workStatus] ?? 9;
+    case "sourceType":
+      return SOURCE_TYPE_LABELS[r.sourceType] ?? r.sourceType;
+    case "responsibleExecutorName":
+      return r.responsibleExecutorName ?? "";
+    case "techTask":
+      return r.techTask ?? "";
+    case "rate":
+      return r.rate ?? -Infinity;
+    default:
+      return r[key];
+  }
+}
+
+function compareRows(a: ReviewRow, b: ReviewRow, sort: SortState): number {
+  if (sort) {
+    const va = sortValue(a, sort.key);
+    const vb = sortValue(b, sort.key);
+    let cmp: number;
+    if (typeof va === "number" && typeof vb === "number") cmp = va - vb;
+    else cmp = String(va).localeCompare(String(vb), "ru");
+    if (cmp !== 0) return cmp * sort.dir;
+    // стабилизация — дефолтным порядком
+  }
+  // Сортировка по умолчанию: статус → дата (ранние сверху)
+  const sa = STATUS_ORDER[a.workStatus] ?? 9;
+  const sb = STATUS_ORDER[b.workStatus] ?? 9;
+  if (sa !== sb) return sa - sb;
+  const da = rowDate(a);
+  const db = rowDate(b);
+  if (da !== db) {
+    if (!da) return 1;
+    if (!db) return -1;
+    return da.localeCompare(db);
+  }
+  return 0;
+}
+
+function SortableHead({
+  label,
+  sortKey,
+  sort,
+  onSort,
+  className,
+  children,
+}: {
+  label: string;
+  sortKey: SortKey;
+  sort: SortState;
+  onSort: (key: SortKey) => void;
+  className?: string;
+  children?: React.ReactNode;
+}) {
+  const active = sort?.key === sortKey;
+  return (
+    <TableHead
+      className={cn("cursor-pointer select-none hover:text-neutral-900", className)}
+      onClick={() => onSort(sortKey)}
+    >
+      <span className="inline-flex items-center gap-0.5">
+        {label}
+        {active && (sort!.dir === 1 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+      </span>
+      {children}
+    </TableHead>
+  );
+}
+
 /**
  * Переиспользуемая таблица «работ на проверку» (KPD-287 дашборд проекта,
  * KPD-288 личная смета). Позволяет рецензенту менять статус, ответственного и
- * комментарий, массово «Проверить все», фильтровать по исполнителю и сворачивать
- * оплаченные работы. Сортировка по месяцу выполнения.
+ * комментарий, массово «Проверить все», фильтровать и сортировать по всем колонкам.
  */
 export function WorksReviewTable({
   fetchUrl,
@@ -98,9 +205,19 @@ export function WorksReviewTable({
   const [projectFilter, setProjectFilter] = React.useState<string[]>([]);
   const [workTypeFilter, setWorkTypeFilter] = React.useState<string[]>([]);
   const [weekFilter, setWeekFilter] = React.useState<string[]>([]);
+  const [monthFilter, setMonthFilter] = React.useState<string[]>([]);
   const [hidePaid, setHidePaid] = React.useState(false);
   const [busyIds, setBusyIds] = React.useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = React.useState(false);
+  const [sort, setSort] = React.useState<SortState>(null);
+
+  function handleSort(key: SortKey) {
+    setSort((prev) => {
+      if (prev?.key !== key) return { key, dir: 1 };
+      if (prev.dir === 1) return { key, dir: -1 };
+      return null; // третий клик — вернуться к сортировке по умолчанию
+    });
+  }
 
   const allRows = React.useMemo(() => data ?? [], [data]);
 
@@ -141,12 +258,21 @@ export function WorksReviewTable({
       .map((w) => ({ value: w, label: weekLabel(parseInt(w)) }));
   }, [allRows]);
 
+  const monthOptions = React.useMemo(() => {
+    const months = new Set<number>();
+    for (const r of allRows) months.add(r.executionMonth);
+    return Array.from(months)
+      .sort((a, b) => a - b)
+      .map((m) => ({ value: String(m), label: monthLabel(m) }));
+  }, [allRows]);
+
   const rows = React.useMemo(() => {
     let list = allRows;
     if (executorFilter.length) list = list.filter((r) => executorFilter.includes(r.executorId));
     if (statusFilter.length) list = list.filter((r) => statusFilter.includes(r.workStatus));
     if (projectFilter.length) list = list.filter((r) => projectFilter.includes(r.projectId));
     if (workTypeFilter.length) list = list.filter((r) => workTypeFilter.includes(r.workTypeId));
+    if (monthFilter.length) list = list.filter((r) => monthFilter.includes(String(r.executionMonth)));
     if (weekFilter.length) {
       list = list.filter((r) => {
         if (!r.plannedPayAt) return false;
@@ -155,12 +281,8 @@ export function WorksReviewTable({
       });
     }
     if (hidePaid) list = list.filter((r) => !PAID.has(r.workStatus));
-    return [...list].sort((a, b) =>
-      a.executionYear !== b.executionYear
-        ? b.executionYear - a.executionYear
-        : b.executionMonth - a.executionMonth
-    );
-  }, [allRows, executorFilter, statusFilter, projectFilter, workTypeFilter, weekFilter, hidePaid]);
+    return [...list].sort((a, b) => compareRows(a, b, sort));
+  }, [allRows, executorFilter, statusFilter, projectFilter, workTypeFilter, weekFilter, monthFilter, hidePaid, sort]);
 
   const checkableRows = rows.filter((r) => r.workStatus === "submitted" || r.workStatus === "rework");
 
@@ -210,7 +332,7 @@ export function WorksReviewTable({
   }
 
   const total = rows.reduce((s, r) => s + r.amount, 0);
-  const colSpan = showProjectColumn ? 12 : 11;
+  const colSpan = showProjectColumn ? 13 : 12;
 
   return (
     <div className="flex flex-col gap-2">
@@ -244,6 +366,14 @@ export function WorksReviewTable({
             value={workTypeFilter}
             onChange={setWorkTypeFilter}
           />
+          {monthOptions.length > 0 && (
+            <MultiSelectFilter
+              label="Месяц выполнения"
+              options={monthOptions}
+              value={monthFilter}
+              onChange={setMonthFilter}
+            />
+          )}
           {weekOptions.length > 0 && (
             <MultiSelectFilter
               label="Неделя оплаты"
@@ -272,27 +402,35 @@ export function WorksReviewTable({
       {rows.length > 0 && (
         <div className="flex items-center gap-4 px-1 text-xs text-neutral-500">
           <span>{rows.length} записей</span>
-          <span className="font-medium tabular-nums text-neutral-800">{formatMoney(total)} ₽</span>
         </div>
       )}
 
       <Table
-        className="min-w-[1100px]"
+        className="min-w-[1250px]"
         containerClassName="rounded-md border bg-white max-h-[60vh] overflow-auto"
       >
         <TableHeader className="sticky top-0 z-10 bg-white">
           <TableRow>
-            <TableHead className="w-16 text-[10px]">Год</TableHead>
-            <TableHead className="w-20 text-[10px]">Месяц</TableHead>
-            <TableHead>Исполнитель</TableHead>
-            {showProjectColumn && <TableHead>Проект</TableHead>}
-            <TableHead>Вид работ</TableHead>
-            <TableHead className="w-24 text-[10px]">Тип сметы</TableHead>
-            <TableHead className="min-w-[150px]">Ответственный</TableHead>
-            <TableHead className="text-right">Сумма</TableHead>
-            <TableHead className="min-w-[150px]">Статус</TableHead>
-            <TableHead className="min-w-[160px]">Комментарий</TableHead>
-            <TableHead className="whitespace-nowrap">Дата оплаты план-факт</TableHead>
+            <SortableHead label="Год" sortKey="executionYear" sort={sort} onSort={handleSort} className="w-16 text-[10px]" />
+            <SortableHead label="Месяц" sortKey="executionMonth" sort={sort} onSort={handleSort} className="w-20 text-[10px]" />
+            <SortableHead label="Исполнитель" sortKey="executorName" sort={sort} onSort={handleSort} />
+            {showProjectColumn && (
+              <SortableHead label="Проект" sortKey="projectName" sort={sort} onSort={handleSort} />
+            )}
+            <SortableHead label="Вид работ" sortKey="workTypeName" sort={sort} onSort={handleSort} />
+            <SortableHead label="Тип сметы" sortKey="sourceType" sort={sort} onSort={handleSort} className="w-24 text-[10px]" />
+            <SortableHead label="Ответственный" sortKey="responsibleExecutorName" sort={sort} onSort={handleSort} className="min-w-[150px]" />
+            <SortableHead label="ТЗ" sortKey="techTask" sort={sort} onSort={handleSort} className="max-w-[140px]" />
+            <SortableHead label="Ставка" sortKey="rate" sort={sort} onSort={handleSort} className="text-right" />
+            <SortableHead label="Сумма" sortKey="amount" sort={sort} onSort={handleSort} className="text-right">
+              {rows.length > 0 && (
+                <div className="text-[10px] font-semibold tabular-nums text-neutral-800 whitespace-nowrap">
+                  {formatMoney(total)} ₽
+                </div>
+              )}
+            </SortableHead>
+            <SortableHead label="Статус" sortKey="workStatus" sort={sort} onSort={handleSort} className="min-w-[150px]" />
+            <SortableHead label="Дата оплаты план-факт" sortKey="date" sort={sort} onSort={handleSort} className="whitespace-nowrap" />
             <TableHead className={stickyActionsHead} />
           </TableRow>
         </TableHeader>
@@ -340,6 +478,28 @@ export function WorksReviewTable({
                       </SelectContent>
                     </Select>
                   </TableCell>
+                  <TableCell className="text-xs max-w-[140px]">
+                    {r.techTask ? (
+                      /^https?:\/\//i.test(r.techTask) ? (
+                        <a
+                          href={r.techTask}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-0.5 text-blue-600 hover:underline"
+                        >
+                          ТЗ
+                          <ExternalLink className="h-3 w-3 opacity-60" />
+                        </a>
+                      ) : (
+                        <span className="block truncate" title={r.techTask}>{r.techTask}</span>
+                      )
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums text-xs">
+                    {r.rate != null ? formatMoney(r.rate) : "—"}
+                  </TableCell>
                   <TableCell className="text-right tabular-nums font-semibold text-sm">{formatMoney(r.amount)}</TableCell>
                   <TableCell>
                     {isPaid ? (
@@ -363,9 +523,6 @@ export function WorksReviewTable({
                       </Select>
                     )}
                   </TableCell>
-                  <TableCell>
-                    <CommentCell value={r.comment ?? ""} disabled={busy || isPaid} onSave={(v) => patchRow(r, { comment: v || null })} />
-                  </TableCell>
                   <TableCell className={cn("text-xs whitespace-nowrap", r.workStatus === "paid" && !r.paidAt && "bg-red-100 text-red-700")}>
                     {r.paidAt ? (
                       <span className="inline-flex items-center gap-1.5">
@@ -383,6 +540,12 @@ export function WorksReviewTable({
                   </TableCell>
                   <TableCell className={stickyActionsCell}>
                     <div className={stickyActionsInner}>
+                      <CommentPopover
+                        comment={r.comment}
+                        disabled={busy}
+                        readOnly={isPaid}
+                        onSave={(v) => patchRow(r, { comment: v || null })}
+                      />
                       {(r.workStatus === "submitted" || r.workStatus === "rework") && (
                         <Button
                           size="sm"
@@ -406,20 +569,65 @@ export function WorksReviewTable({
   );
 }
 
-function CommentCell({ value, disabled, onSave }: { value: string; disabled?: boolean; onSave: (v: string) => void }) {
-  const [local, setLocal] = React.useState(value);
-  React.useEffect(() => setLocal(value), [value]);
-  if (disabled) {
-    return <span className="text-xs text-neutral-500">{value || "—"}</span>;
-  }
+function CommentPopover({
+  comment,
+  disabled,
+  readOnly,
+  onSave,
+}: {
+  comment: string | null;
+  disabled?: boolean;
+  readOnly?: boolean;
+  onSave: (v: string) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [draft, setDraft] = React.useState(comment ?? "");
+
+  React.useEffect(() => {
+    if (open) setDraft(comment ?? "");
+  }, [open, comment]);
+
   return (
-    <Input
-      value={local}
-      onChange={(e) => setLocal(e.target.value)}
-      onBlur={() => { if (local !== value) onSave(local); }}
-      onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") { setLocal(value); e.currentTarget.blur(); } }}
-      placeholder="—"
-      className="h-7 text-xs"
-    />
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        disabled={disabled}
+        title={comment ? comment : "Добавить комментарий"}
+        className={cn(
+          "inline-flex h-8 items-center justify-center rounded-md px-2 transition-colors border-0 bg-transparent cursor-pointer hover:bg-neutral-100",
+          comment ? "text-blue-600 hover:text-blue-700" : "text-neutral-400 hover:text-neutral-600"
+        )}
+      >
+        <MessageSquare className={cn("h-3.5 w-3.5", comment && "fill-blue-100")} />
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-72 p-3 space-y-2">
+        <p className="text-xs font-medium text-neutral-600">Комментарий</p>
+        {readOnly ? (
+          <p className="text-xs text-neutral-600 whitespace-pre-wrap">{comment || "—"}</p>
+        ) : (
+          <>
+            <Textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="—"
+              className="min-h-[72px] text-xs"
+            />
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="outline" onClick={() => setOpen(false)}>
+                Отмена
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (draft !== (comment ?? "")) onSave(draft);
+                  setOpen(false);
+                }}
+              >
+                Сохранить
+              </Button>
+            </div>
+          </>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }

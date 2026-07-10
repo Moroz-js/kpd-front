@@ -53,17 +53,11 @@ export function ProjectCashflowChart({
   );
 
   if (weeks.length === 0) {
-    return (
-      <div className="rounded-lg border border-neutral-200 bg-white p-4 text-sm text-neutral-500">
-        Нет данных для графика
-      </div>
-    );
+    return <div className="text-sm text-neutral-500">Нет данных для графика</div>;
   }
 
   return (
-    <div className="rounded-lg border border-neutral-200 bg-white p-4">
-      <h2 className="mb-4 text-sm font-semibold text-neutral-700">График кэшфлоу</h2>
-      <ResponsiveContainer width="100%" height={380}>
+    <ResponsiveContainer width="100%" height={380}>
         <LineChart data={data} margin={{ top: 8, right: 24, left: 24, bottom: 8 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
           <XAxis
@@ -103,6 +97,5 @@ export function ProjectCashflowChart({
           ))}
         </LineChart>
       </ResponsiveContainer>
-    </div>
   );
 }
