@@ -528,10 +528,12 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
             <TableHeader>
               <TableRow>
                 <TableHead className={cn(stickyCheckboxHead)} style={stickyColStyle(0, COL_CHECKBOX)}>
-                  <Checkbox
-                    checked={visible.length > 0 && selectedIds.size === visible.length}
-                    onCheckedChange={() => toggleAll(orderedRowIds)}
-                  />
+                  <div className="flex items-center justify-center">
+                    <Checkbox
+                      checked={visible.length > 0 && selectedIds.size === visible.length}
+                      onCheckedChange={() => toggleAll(orderedRowIds)}
+                    />
+                  </div>
                 </TableHead>
                 <TableHead className={cn(compactHead, stickyBankHead)} style={stickyColStyle(COL_CHECKBOX, COL_BANK)}>
                   Счёт получения
@@ -590,12 +592,14 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
                       className={cn(stickyCheckboxCell, isSelected && "bg-blue-50/50")}
                       style={stickyColStyle(0, COL_CHECKBOX)}
                     >
-                      <RowSelectCheckbox
-                        checked={isSelected}
-                        rowIndex={rowIndex}
-                        rowId={row.id}
-                        onSelect={handleRowSelect}
-                      />
+                      <div className="flex items-center justify-center">
+                        <RowSelectCheckbox
+                          checked={isSelected}
+                          rowIndex={rowIndex}
+                          rowId={row.id}
+                          onSelect={handleRowSelect}
+                        />
+                      </div>
                     </TableCell>
                     <TableCell
                       className={cn(
