@@ -55,7 +55,6 @@ export function formatMoneyWithCurrency(
   const base = formatMoney(n);
   if (base === "—") return base;
   const code = (currency ?? "RUB").toUpperCase();
-  if (code === "RUB") return base;
   return `${base}\u00A0${code}`;
 }
 
