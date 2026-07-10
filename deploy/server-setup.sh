@@ -310,11 +310,8 @@ EOF
 chmod 644 /etc/cron.d/kpd-backup
 log "Ежедневный бэкап настроен: $BACKUP_DIR (03:30, хранение 14 дней)"
 
-# ── 9. Deploy-скрипт + SSH-ключ для CI ──────────────────────────────────────
-cp "$APP_DIR/deploy/server-deploy.sh" /opt/kpd/deploy.sh
-chmod +x /opt/kpd/deploy.sh
-log "Deploy-скрипт: /opt/kpd/deploy.sh"
-
+# ── 9. SSH-ключ для CI ──────────────────────────────────────────────────────
+# CI вызывает деплой прямо из репо: bash /opt/kpd/app/deploy/server-deploy.sh
 if [ ! -f "$DEPLOY_KEY" ]; then
   log "Генерирую SSH-ключ для CI..."
   mkdir -p /root/.ssh
