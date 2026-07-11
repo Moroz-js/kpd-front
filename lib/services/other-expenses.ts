@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/db";
 import { logActivity } from "@/lib/audit/log";
 import { nearestPaymentDate } from "@/lib/iso-weeks";
-import { paginateSlice, type PaginatedResult } from "@/lib/pagination";
 import { assertExecutorEligibleForOtherExpense } from "@/lib/executor-personal-estimate";
 import {
   hasOtherExpensePayment,
@@ -33,66 +32,7 @@ export type UpdateOtherExpenseInput = Partial<Omit<CreateOtherExpenseInput, "res
   paymentStatus?: string | null;
 };
 
-export type OtherExpensesFilter = {
-  executionYear?: number[];
-  executionMonth?: number[];
-  projectId?: string[];
-  executorId?: string[];
-  workTypeId?: string[];
-  responsibleExecutorId?: string[];
-  responsibleExecutorIdHasEmpty?: boolean;
-  workStatus?: string[];
-  paymentStatus?: string[];
-  paymentStatusHasEmpty?: boolean;
-};
-
-export type OtherExpensesListQuery = {
-  filter?: OtherExpensesFilter;
-  page?: number;
-  pageSize?: number;
-};
-
-const otherExpenseInclude = {
-  project: { select: { id: true, name: true, shortName: true } },
-  executor: { select: { id: true, name: true } },
-  workType: { select: { id: true, name: true, segment: true } },
-  responsibleUser: { select: { id: true, fullName: true } },
-  responsibleExecutor: { select: { id: true, name: true } },
-  bankAccount: { select: { id: true, name: true } },
-} as const;
-
-export type OtherExpenseListRow = Awaited<ReturnType<typeof listOtherExpenses>>[number];
-
-function applyOtherExpensesFilter(
-  rows: OtherExpenseListRow[],
-  f: OtherExpensesFilter
-): OtherExpenseListRow[] {
-  return rows.filter((r) => {
-    if (f.executionYear?.length && !f.executionYear.includes(r.executionYear)) return false;
-    if (f.executionMonth?.length && !f.executionMonth.includes(r.executionMonth)) return false;
-    if (f.projectId?.length && !f.projectId.includes(r.projectId)) return false;
-    if (f.executorId?.length && !f.executorId.includes(r.executorId)) return false;
-    if (f.workTypeId?.length && !f.workTypeId.includes(r.workTypeId)) return false;
-    if (f.responsibleExecutorId?.length || f.responsibleExecutorIdHasEmpty) {
-      const token = r.responsibleExecutorId ?? "__empty__";
-      const allowed = [
-        ...(f.responsibleExecutorId ?? []),
-        ...(f.responsibleExecutorIdHasEmpty ? ["__empty__"] : []),
-      ];
-      if (!allowed.includes(token)) return false;
-    }
-    if (f.workStatus?.length && !f.workStatus.includes(r.workStatus)) return false;
-    if (f.paymentStatus?.length || f.paymentStatusHasEmpty) {
-      const token = r.paymentStatus ?? "__empty__";
-      const allowed = [
-        ...(f.paymentStatus ?? []),
-        ...(f.paymentStatusHasEmpty ? ["__empty__"] : []),
-      ];
-      if (!allowed.includes(token)) return false;
-    }
-    return true;
-  });
-}
+// ─── List ─────────────────────────────────────────────────────────────────────
 
 export async function listOtherExpenses(opts?: {
   scopeUserId?: string;
@@ -104,29 +44,26 @@ export async function listOtherExpenses(opts?: {
   const scoped = opts?.scopeUserId || opts?.scopeExecutorId;
   return prisma.otherExpense.findMany({
     where: scoped ? { OR: orFilters } : undefined,
-    include: otherExpenseInclude,
+    include: {
+      project: { select: { id: true, name: true, shortName: true } },
+      executor: { select: { id: true, name: true } },
+      workType: { select: { id: true, name: true, segment: true } },
+      responsibleUser: { select: { id: true, fullName: true } },
+      responsibleExecutor: { select: { id: true, name: true } },
+      bankAccount: { select: { id: true, name: true } },
+    },
     orderBy: { createdAt: "desc" },
   });
 }
 
-export async function listOtherExpensesPage(
-  query: OtherExpensesListQuery = {},
-  opts?: { scopeUserId?: string; scopeExecutorId?: string | null }
-): Promise<PaginatedResult<OtherExpenseListRow> & { totalAmount: number }> {
-  const filter = query.filter ?? {};
-  const page = query.page ?? 1;
-  const pageSize = query.pageSize ?? 100;
-  const filtered = applyOtherExpensesFilter(await listOtherExpenses(opts), filter);
-  const totalAmount = filtered.reduce((s, r) => s + (r.amount ?? 0), 0);
-  return { ...paginateSlice(filtered, page, pageSize), totalAmount };
-}
-
-export async function listOtherExpenseIds(
-  filter: OtherExpensesFilter = {},
-  opts?: { scopeUserId?: string; scopeExecutorId?: string | null }
-): Promise<string[]> {
-  return applyOtherExpensesFilter(await listOtherExpenses(opts), filter).map((r) => r.id);
-}
+const otherExpenseInclude = {
+  project: { select: { id: true, name: true, shortName: true } },
+  executor: { select: { id: true, name: true } },
+  workType: { select: { id: true, name: true, segment: true } },
+  responsibleUser: { select: { id: true, fullName: true } },
+  responsibleExecutor: { select: { id: true, name: true } },
+  bankAccount: { select: { id: true, name: true } },
+} as const;
 
 type Existing = Awaited<ReturnType<typeof prisma.otherExpense.findUniqueOrThrow>>;
 

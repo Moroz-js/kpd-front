@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { canAccessOtherExpenses } from "@/lib/permissions";
 import { prisma } from "@/lib/db";
-import { createOtherExpense, listOtherExpensesPage } from "@/lib/services/other-expenses";
-import { parseOtherExpensesListQuery } from "@/lib/services/otherExpensesQuery";
+import { createOtherExpense, listOtherExpenses } from "@/lib/services/other-expenses";
 import { prismaErrorMessage } from "@/lib/prisma-errors";
 import { z } from "zod";
 
@@ -24,11 +23,12 @@ const createSchema = z.object({
   comment: z.string().nullable().optional(),
 });
 
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   const user = await getSessionUser();
   if (!user || !canAccessOtherExpenses(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  const query = parseOtherExpensesListQuery(req.nextUrl.searchParams);
-  return NextResponse.json(await listOtherExpensesPage(query));
+  // Все, у кого есть доступ к «Прочим тратам», видят все записи.
+  const data = await listOtherExpenses();
+  return NextResponse.json(data);
 }
 
 export async function POST(req: NextRequest) {

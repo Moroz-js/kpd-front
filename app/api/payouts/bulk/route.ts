@@ -3,36 +3,16 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
 import { updatePayout } from "@/lib/services/payouts";
-import { listPayoutIds } from "@/lib/views/payouts";
-import type { PayoutsFilter } from "@/lib/views/payouts";
 
-const filterSchema = z.object({
-  periodYear: z.array(z.number()).optional(),
-  periodMonth: z.array(z.number()).optional(),
-  weekPlanFact: z.array(z.number()).optional(),
-  weekPlanFactHasEmpty: z.boolean().optional(),
-  executorId: z.array(z.string()).optional(),
-  paymentStatus: z.array(z.string()).optional(),
-  bankAccountId: z.array(z.string()).optional(),
-  bankAccountIdHasEmpty: z.boolean().optional(),
-  sourceType: z.array(z.enum(["personal", "other-expense"])).optional(),
+const bulkSchema = z.object({
+  ids: z.array(z.string()).min(1),
+  patch: z.object({
+    paymentStatus: z.enum(["planned", "sent", "paid"]).optional(),
+    plannedPayAt: z.string().nullable().optional(),
+    paidAt: z.string().nullable().optional(),
+    bankAccountId: z.string().nullable().optional(),
+  }),
 });
-
-const bulkSchema = z
-  .object({
-    ids: z.array(z.string()).optional(),
-    selectAll: z.boolean().optional(),
-    filter: filterSchema.optional(),
-    patch: z.object({
-      paymentStatus: z.enum(["planned", "sent", "paid"]).optional(),
-      plannedPayAt: z.string().nullable().optional(),
-      paidAt: z.string().nullable().optional(),
-      bankAccountId: z.string().nullable().optional(),
-    }),
-  })
-  .refine((d) => (d.ids?.length ?? 0) > 0 || d.selectAll === true, {
-    message: "Укажите ids или selectAll",
-  });
 
 function parseId(id: string): { sourceType: "personal" | "other-expense"; sourceId: string } | null {
   const idx = id.indexOf(":");
@@ -53,7 +33,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success)
     return NextResponse.json({ error: "Validation", details: parsed.error.flatten() }, { status: 400 });
 
-  const { ids: rawIds, selectAll, filter, patch } = parsed.data;
+  const { ids, patch } = parsed.data;
   if (Object.keys(patch).length === 0)
     return NextResponse.json({ updated: 0 });
 
@@ -62,10 +42,6 @@ export async function POST(req: NextRequest) {
     paidAt: patch.paidAt === undefined ? undefined : patch.paidAt ? new Date(patch.paidAt) : null,
     plannedPayAt: patch.plannedPayAt === undefined ? undefined : patch.plannedPayAt ? new Date(patch.plannedPayAt) : null,
   };
-
-  const ids = selectAll
-    ? await listPayoutIds((filter ?? {}) as PayoutsFilter)
-    : (rawIds ?? []);
 
   let updated = 0;
   const errors: string[] = [];

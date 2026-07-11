@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useCallback, useRef, useEffect } from "react";
-import useSWR from "swr";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -20,7 +19,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { formatMoney, formatMoneyRub, formatDateShort } from "@/lib/format";
+import { formatMoney, formatMoneyRub, formatDate, formatDateShort } from "@/lib/format";
 import { getISOWeek, getISOWeekYear, weekLabel, toLocalDateString } from "@/lib/iso-weeks";
 import { CHARGE_STATUSES, BADGE_TONE_CLASS } from "@/lib/statuses";
 import {
@@ -29,16 +28,10 @@ import {
 import { cn } from "@/lib/utils";
 import { stickyActionsHead, stickyActionsCell, stickyActionsInner, compactTable, compactHead, compactCell, compactCellClip } from "@/lib/table-styles";
 import { VirtualizedTableBody } from "@/components/ui-custom/VirtualizedTableBody";
-import { TablePagination } from "@/components/ui-custom/TablePagination";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
 import { useTableRowSelection } from "@/lib/useTableRowSelection";
-import { useServerTable } from "@/lib/useServerTable";
-import {
-  buildChargesSearchParams,
-  clientFiltersToChargesFilter,
-} from "@/lib/services/chargesQuery";
 
 const ACTIONS_COL_WIDTH = 96;
 /** table-fixed: фиксированные ширины, иначе текст залезает под sticky-действия */
@@ -116,31 +109,6 @@ type Props = {
   bankAccounts: BankAccount[];
   orders: Order[];
 };
-
-type ListResponse = {
-  items: Charge[];
-  total: number;
-  page: number;
-  pageSize: number;
-  totalAmount: number;
-};
-
-const fetcher = <T,>(url: string): Promise<T> =>
-  fetch(url).then((r) => {
-    if (!r.ok) throw new Error(String(r.status));
-    return r.json() as Promise<T>;
-  });
-
-function buildPayWeekOptions(): { value: string; label: string }[] {
-  const current = new Date().getFullYear();
-  const opts: { value: string; label: string }[] = [{ value: "__empty__", label: "Пусто" }];
-  for (let y = current + 1; y >= current - 3; y--) {
-    for (let w = 1; w <= 53; w++) {
-      opts.push({ value: `${y}-${w}`, label: `${weekLabel(w)} ${y}` });
-    }
-  }
-  return opts;
-}
 
 // ─── Вычисляемые поля ─────────────────────────────────────────────────────────
 
@@ -326,8 +294,6 @@ const ChargeTableRow = React.memo(function ChargeTableRow({
   onPatchPurpose,
 }: ChargeTableRowProps) {
   const pd = planDate(row);
-  const weekPF = payWeekPF(row);
-  const yearPF = payYearPF(row);
   const overdueH = isOverdueH(row);
   const missingM = isMissingM(row);
   const bankEmpty = cellEmpty(row.bankAccount?.name);
@@ -448,13 +414,13 @@ const ChargeTableRow = React.memo(function ChargeTableRow({
 // ─── Главный компонент ────────────────────────────────────────────────────────
 
 export function ChargesClient({ bankAccounts, orders }: Props) {
-  const { page, setPage, pageSize, setPageSize, onFilterChange } = useServerTable();
-
+  const [rows, setRows] = useState<Charge[]>([]);
+  const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Charge | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Charge | null>(null);
-  const [selectAllFiltered, setSelectAllFiltered] = useState(false);
 
+  // Фильтры
   const [fBankAccount, setFBankAccount] = useState<string[]>([]);
   const [fOrder, setFOrder] = useState<string[]>([]);
   const [fStatus, setFStatus] = useState<string[]>([]);
@@ -467,73 +433,90 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const filterState = React.useMemo(
-    () => ({
-      bankAccountId: fBankAccount,
-      orderId: fOrder,
-      status: fStatus,
-      clientId: fClient,
-      projectId: fProject,
-      payWeek: fWeek,
-      hidePaid,
-    }),
-    [fBankAccount, fOrder, fStatus, fClient, fProject, fWeek, hidePaid]
+  const fetchData = useCallback(async () => {
+    const r = await fetch("/api/charges");
+    if (!r.ok) throw new Error();
+    return r.json() as Promise<Charge[]>;
+  }, []);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try { setRows(await fetchData()); } catch { toast.error("Не удалось загрузить данные"); }
+    finally { setLoading(false); }
+  }, [fetchData]);
+
+  const silentLoad = useCallback(() => { fetchData().then(setRows).catch(() => {}); }, [fetchData]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = rows.filter(r => {
+    if (fBankAccount.length && (!r.bankAccountId || !fBankAccount.includes(r.bankAccountId))) return false;
+    if (fOrder.length && (!r.orderId || !fOrder.includes(r.orderId))) return false;
+    if (fStatus.length && !fStatus.includes(r.status)) return false;
+    if (fClient.length) {
+      const clientId = r.order?.project?.client?.id ?? "__empty__";
+      if (!fClient.includes(clientId)) return false;
+    }
+    if (fProject.length) {
+      const projectId = r.order?.project?.id ?? "__empty__";
+      if (!fProject.includes(projectId)) return false;
+    }
+    if (fWeek.length) {
+      const w = payWeekPF(r);
+      const y = payYearPF(r);
+      const key = w !== null && y !== null ? `${y}-${w}` : "__empty__";
+      if (!fWeek.includes(key)) return false;
+    }
+    return true;
+  });
+
+  const visible = React.useMemo(
+    () => (hidePaid ? filtered.filter((r) => r.status !== "paid") : filtered),
+    [filtered, hidePaid]
   );
 
-  const listUrl = React.useMemo(
-    () => `/api/charges?${buildChargesSearchParams({ filter: filterState, page, pageSize })}`,
-    [filterState, page, pageSize]
-  );
-
-  const { data, isLoading, mutate } = useSWR<ListResponse>(listUrl, fetcher);
-
-  const rows = data?.items ?? [];
-  const total = data?.total ?? 0;
-  const totalAmount = data?.totalAmount ?? 0;
-
-  const orderedRowIds = React.useMemo(() => rows.map((r) => r.id), [rows]);
+  const orderedRowIds = React.useMemo(() => visible.map((r) => r.id), [visible]);
   const { selectedIds, handleRowSelect, toggleAll, clearSelection } = useTableRowSelection(orderedRowIds);
 
-  React.useEffect(() => {
-    clearSelection();
-    setSelectAllFiltered(false);
-  }, [listUrl]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  function resetSelection() {
-    clearSelection();
-    setSelectAllFiltered(false);
-  }
-
-  const selectedSum = React.useMemo(() => {
-    if (selectAllFiltered) return totalAmount;
-    let sum = 0;
-    for (const r of rows) {
-      if (selectedIds.has(r.id)) sum += r.amount ?? 0;
-    }
-    return sum;
-  }, [rows, selectedIds, selectAllFiltered, totalAmount]);
-
-  const allPageSelected = rows.length > 0 && orderedRowIds.every((id) => selectedIds.has(id));
+  const selectedSum = React.useMemo(
+    () => rows.filter((r) => selectedIds.has(r.id)).reduce((s, r) => s + (r.amount ?? 0), 0),
+    [rows, selectedIds]
+  );
 
   const clientOptions = React.useMemo(() => {
     const map = new Map<string, string>();
+    // Полный список клиентов берём из заказов (стабильный источник),
+    // чтобы лейбл резолвился даже когда таблица начислений отфильтрована/пуста.
     for (const o of orders) {
       if (o.project?.client) map.set(o.project.client.id, o.project.client.name);
     }
-    map.set("__empty__", "Пусто");
+    if (rows.some((r) => !r.order?.project?.client)) map.set("__empty__", "Пусто");
     return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
-  }, [orders]);
+  }, [orders, rows]);
 
   const projectOptions = React.useMemo(() => {
     const map = new Map<string, string>();
     for (const o of orders) {
       if (o.project) map.set(o.project.id, o.project.name);
     }
-    map.set("__empty__", "Пусто");
+    if (rows.some((r) => !r.order?.project)) map.set("__empty__", "Пусто");
     return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
-  }, [orders]);
+  }, [orders, rows]);
 
-  const weekOptions = React.useMemo(() => buildPayWeekOptions(), []);
+  const weekOptions = React.useMemo(() => {
+    const map = new Map<string, string>();
+    for (const r of rows) {
+      const w = payWeekPF(r);
+      const y = payYearPF(r);
+      if (w !== null && y !== null) {
+        const key = `${y}-${String(w).padStart(2, "0")}`;
+        if (!map.has(key)) map.set(key, `${weekLabel(w)} ${y}`);
+      }
+    }
+    return Array.from(map.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([value, label]) => ({ value, label }));
+  }, [rows]);
 
   async function patchInlineStatus(id: string, status: string) {
     const res = await fetch(`/api/charges/${id}`, {
@@ -542,7 +525,7 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
       body: JSON.stringify({ status }),
     });
     if (!res.ok) return toast.error("Не удалось изменить статус");
-    mutate();
+    setRows(prev => prev.map(r => r.id === id ? { ...r, status } : r));
   }
 
   async function patchInlinePaidAt(id: string, paidAt: string) {
@@ -552,7 +535,8 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
       body: JSON.stringify({ paidAt: paidAt ? new Date(paidAt).toISOString() : null }),
     });
     if (!res.ok) return toast.error("Не удалось изменить дату");
-    mutate();
+    const updated = await res.json() as Charge;
+    setRows(prev => prev.map(r => r.id === id ? updated : r));
   }
 
   async function patchInlinePurpose(id: string, paymentPurpose: string) {
@@ -562,45 +546,35 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
       body: JSON.stringify({ paymentPurpose: paymentPurpose || null }),
     });
     if (!res.ok) return toast.error("Не удалось изменить назначение");
-    mutate();
+    setRows(prev => prev.map(r => r.id === id ? { ...r, paymentPurpose: paymentPurpose || null } : r));
   }
 
   async function handleBulkApply() {
     if (!bulkStatus) return toast.error("Выберите статус");
-    const body = selectAllFiltered
-      ? { selectAll: true, filter: clientFiltersToChargesFilter(filterState), patch: { status: bulkStatus } }
-      : { ids: Array.from(selectedIds), patch: { status: bulkStatus } };
+    const ids = Array.from(selectedIds);
     const res = await fetch("/api/charges/bulk", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ids, patch: { status: bulkStatus } }),
     });
     if (!res.ok) return toast.error("Ошибка массового обновления");
     const { updated } = await res.json() as { updated: number };
     toast.success(`Обновлено ${updated} начислений`);
-    resetSelection();
+    setRows(prev => prev.map(r => selectedIds.has(r.id) ? { ...r, status: bulkStatus } : r));
+    clearSelection();
     setBulkStatus("");
-    mutate();
-  }
-
-  function handleToggleAll() {
-    if (selectAllFiltered) {
-      resetSelection();
-      return;
-    }
-    toggleAll(orderedRowIds);
   }
 
   async function handleDelete(row: Charge) {
     setDeleteTarget(null);
+    setRows(prev => prev.filter(r => r.id !== row.id));
     try {
       const res = await fetch(`/api/charges/${row.id}`, { method: "DELETE" });
       if (!res.ok) throw new Error();
       toast.success("Начисление удалено");
-      mutate();
     } catch {
       toast.error("Не удалось удалить");
-      mutate();
+      silentLoad();
     }
   }
 
@@ -612,7 +586,7 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
 
   const renderRow = React.useCallback(
     (index: number) => {
-      const row = rows[index];
+      const row = visible[index];
       if (!row) return null;
       return (
         <ChargeTableRow
@@ -629,7 +603,7 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
         />
       );
     },
-    [rows, selectedIds, handleRowSelect, onEditCb, onDeleteCb, onPatchStatusCb, onPatchPaidAtCb, onPatchPurposeCb]
+    [visible, selectedIds, handleRowSelect, onEditCb, onDeleteCb, onPatchStatusCb, onPatchPaidAtCb, onPatchPurposeCb]
   );
 
   return (
@@ -647,59 +621,50 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
             label="Счёт получения"
             options={bankAccounts.map(b => ({ value: b.id, label: b.name }))}
             value={fBankAccount}
-            onChange={(v) => onFilterChange(setFBankAccount, v)}
+            onChange={setFBankAccount}
           />
           <MultiSelectFilter
             label="Клиент"
             options={clientOptions}
             value={fClient}
-            onChange={(v) => onFilterChange(setFClient, v)}
+            onChange={setFClient}
           />
           <MultiSelectFilter
             label="Проект"
             options={projectOptions}
             value={fProject}
-            onChange={(v) => onFilterChange(setFProject, v)}
+            onChange={setFProject}
           />
           <MultiSelectFilter
             label="Заказ"
             options={orders.map(o => ({ value: o.id, label: `№${o.orderNumber}${o.description ? ` ${o.description}` : ""}` }))}
             value={fOrder}
-            onChange={(v) => onFilterChange(setFOrder, v)}
+            onChange={setFOrder}
           />
           <MultiSelectFilter
             label="Статус"
             options={Object.entries(CHARGE_STATUSES).map(([v, s]) => ({ value: v, label: s.label }))}
             value={fStatus}
-            onChange={(v) => onFilterChange(setFStatus, v)}
+            onChange={setFStatus}
           />
           <MultiSelectFilter
             label="Неделя оплаты"
             options={weekOptions}
             value={fWeek}
-            onChange={(v) => onFilterChange(setFWeek, v)}
+            onChange={setFWeek}
           />
           <label className="flex items-center gap-2 rounded-md border border-neutral-200 bg-white px-2.5 py-1.5 text-xs text-neutral-700 cursor-pointer select-none">
-            <Checkbox checked={hidePaid} onCheckedChange={(v) => { onFilterChange(setHidePaid, v === true); }} />
+            <Checkbox checked={hidePaid} onCheckedChange={(v) => setHidePaid(v === true)} />
             Свернуть оплаченные
           </label>
         </div>
       </div>
 
-      {allPageSelected && total > rows.length && !selectAllFiltered && (
-        <div className="text-xs text-blue-700 px-1">
-          Выбраны все на странице.{" "}
-          <button type="button" className="underline hover:no-underline" onClick={() => setSelectAllFiltered(true)}>
-            Выбрать все {total} по фильтру
-          </button>
-        </div>
-      )}
-
       {/* Bulk toolbar */}
-      {(selectedIds.size > 0 || selectAllFiltered) && (
+      {selectedIds.size > 0 && (
         <div className="flex items-center gap-2 rounded-md border bg-blue-50 border-blue-200 px-3 py-2">
           <span className="text-xs text-blue-700 font-medium tabular-nums">
-            {chargeCountLabel(selectAllFiltered ? total : selectedIds.size)} на {formatMoneyRub(selectedSum)}
+            {chargeCountLabel(selectedIds.size)} на {formatMoneyRub(selectedSum)}
           </span>
           <Select value={bulkStatus} onValueChange={(v) => setBulkStatus(v ?? "")}>
             <SelectTrigger className="h-7 text-xs w-40 bg-white">
@@ -714,16 +679,16 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
           <Button size="sm" className="h-7" onClick={handleBulkApply} disabled={!bulkStatus}>
             Применить
           </Button>
-          <Button size="sm" variant="ghost" className="h-7 text-neutral-500" onClick={() => resetSelection()}>
+          <Button size="sm" variant="ghost" className="h-7 text-neutral-500" onClick={() => clearSelection()}>
             Сбросить
           </Button>
         </div>
       )}
 
       <div className="flex-1 min-h-0 min-w-0 flex flex-col">
-      {isLoading ? (
+      {loading ? (
         <div className="text-xs text-neutral-400 py-8 text-center">Загрузка...</div>
-      ) : rows.length === 0 ? (
+      ) : visible.length === 0 ? (
         <div className="text-xs text-neutral-400 py-8 text-center">Нет данных</div>
       ) : (
         <Table
@@ -742,8 +707,8 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
                 <TableHead className={cn(stickyCheckboxHead)} style={stickyColStyle(0, COL_CHECKBOX)}>
                   <div className="flex items-center justify-center">
                     <Checkbox
-                      checked={selectAllFiltered || (allPageSelected && rows.length > 0)}
-                      onCheckedChange={handleToggleAll}
+                      checked={visible.length > 0 && selectedIds.size === visible.length}
+                      onCheckedChange={() => toggleAll(orderedRowIds)}
                     />
                   </div>
                 </TableHead>
@@ -790,7 +755,7 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
             </TableHeader>
             <VirtualizedTableBody
               scrollRef={scrollRef}
-              rowCount={rows.length}
+              rowCount={visible.length}
               colSpan={18}
               renderRow={renderRow}
             />
@@ -798,27 +763,10 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
       )}
       </div>
 
-      <TablePagination
-        page={page}
-        pageSize={pageSize}
-        total={total}
-        onPageChange={setPage}
-        onPageSizeChange={(size) => {
-          setPageSize(size);
-          setPage(1);
-        }}
-      />
-
-      {total > 0 && (
-        <div className="text-xs text-neutral-500 px-1">
-          {total} записей · {formatMoneyRub(totalAmount)}
-        </div>
-      )}
-
       {createOpen && (
         <ChargeFormDialog bankAccounts={bankAccounts} orders={orders}
           onClose={() => setCreateOpen(false)}
-          onSaved={() => { setCreateOpen(false); mutate(); toast.success("Начисление создано"); }} />
+          onSaved={() => { setCreateOpen(false); silentLoad(); toast.success("Начисление создано"); }} />
       )}
 
       {editTarget && (
@@ -827,7 +775,7 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
           onClose={() => setEditTarget(null)}
           onSaved={() => {
             setEditTarget(null);
-            mutate();
+            silentLoad();
             toast.success("Сохранено");
           }} />
       )}

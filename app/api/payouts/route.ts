@@ -1,14 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
-import { listPayoutsPage } from "@/lib/views/payouts";
-import { parsePayoutsListQuery } from "@/lib/views/payoutsQuery";
+import { listPayouts } from "@/lib/views/payouts";
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   const me = await getSessionUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!isAdmin(me)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-  const query = parsePayoutsListQuery(req.nextUrl.searchParams);
-  return NextResponse.json(await listPayoutsPage(query));
+  return NextResponse.json(await listPayouts());
 }

@@ -8,21 +8,6 @@
 
 import { prisma } from "@/lib/db";
 import { getISOWeek } from "@/lib/iso-weeks";
-import { paginateSlice, type PaginatedResult } from "@/lib/pagination";
-
-export type IssuedWorksSortField =
-  | "weekPlanFact"
-  | "projectName"
-  | "executorName"
-  | "executionMonth"
-  | "executionYear"
-  | "workTypeName"
-  | "amount"
-  | "workStatus";
-
-export type SortDir = "asc" | "desc";
-
-export type IssuedWorksSort = { field: IssuedWorksSortField; dir: SortDir };
 
 export type IssuedWorkSource = "personal" | "other-expense";
 
@@ -61,11 +46,9 @@ export type IssuedWorkRow = {
 
 export type IssuedWorksFilter = {
   yearPlanFact?: number[];
-  yearPlanFactHasEmpty?: boolean;
   executionYear?: number[];
   executionMonth?: number[];
   weekPlanFact?: number[];
-  weekPlanFactHasEmpty?: boolean;
   executorId?: string[];
   projectId?: string[];
   workTypeId?: string[];
@@ -77,28 +60,15 @@ export type IssuedWorksFilter = {
   responsibleExecutorId?: string[];
 };
 
-export type IssuedWorksListQuery = {
-  filter?: IssuedWorksFilter;
-  sort?: IssuedWorksSort[];
-  page?: number;
-  pageSize?: number;
-};
-
-function compareIssuedRows(a: IssuedWorkRow, b: IssuedWorkRow, sort: IssuedWorksSort[]): number {
-  for (const s of sort) {
-    const av = a[s.field];
-    const bv = b[s.field];
-    const cmp =
-      typeof av === "number" && typeof bv === "number"
-        ? av - bv
-        : String(av ?? "").localeCompare(String(bv ?? ""), "ru");
-    const signed = s.dir === "asc" ? cmp : -cmp;
-    if (signed !== 0) return signed;
-  }
-  return 0;
+/** Извлечь даты (неделя/год план-факт) — facto если есть, иначе по plan. */
+function planFactWeek(plannedPayAt: Date | null, paidAt: Date | null): { week: number | null; year: number | null } {
+  const d = paidAt ?? plannedPayAt;
+  if (!d) return { week: null, year: null };
+  // Используем календарный год (getFullYear), а не ISO-год — иначе 31.12 попадает в следующий год
+  return { week: getISOWeek(d), year: d.getFullYear() };
 }
 
-async function fetchAllIssuedWorkRows(): Promise<IssuedWorkRow[]> {
+export async function listIssuedWorks(filter: IssuedWorksFilter = {}): Promise<IssuedWorkRow[]> {
   const [works, otherExpenses] = await Promise.all([
     prisma.work.findMany({
       include: {
@@ -182,36 +152,15 @@ async function fetchAllIssuedWorkRows(): Promise<IssuedWorkRow[]> {
     };
   });
 
-  return [...personal, ...other];
-}
-
-/** Извлечь даты (неделя/год план-факт) — facto если есть, иначе по plan. */
-function planFactWeek(plannedPayAt: Date | null, paidAt: Date | null): { week: number | null; year: number | null } {
-  const d = paidAt ?? plannedPayAt;
-  if (!d) return { week: null, year: null };
-  return { week: getISOWeek(d), year: d.getFullYear() };
+  return applyFilter([...personal, ...other], filter);
 }
 
 function applyFilter(rows: IssuedWorkRow[], f: IssuedWorksFilter): IssuedWorkRow[] {
   return rows.filter((r) => {
-    if (f.yearPlanFact?.length || f.yearPlanFactHasEmpty) {
-      const token = r.yearPlanFact === null ? "__empty__" : String(r.yearPlanFact);
-      const allowed = [
-        ...(f.yearPlanFact?.map(String) ?? []),
-        ...(f.yearPlanFactHasEmpty ? ["__empty__"] : []),
-      ];
-      if (!allowed.includes(token)) return false;
-    }
+    if (f.yearPlanFact?.length && (r.yearPlanFact == null || !f.yearPlanFact.includes(r.yearPlanFact))) return false;
     if (f.executionYear?.length && !f.executionYear.includes(r.executionYear)) return false;
     if (f.executionMonth?.length && !f.executionMonth.includes(r.executionMonth)) return false;
-    if (f.weekPlanFact?.length || f.weekPlanFactHasEmpty) {
-      const token = r.weekPlanFact === null ? "__empty__" : String(r.weekPlanFact);
-      const allowed = [
-        ...(f.weekPlanFact?.map(String) ?? []),
-        ...(f.weekPlanFactHasEmpty ? ["__empty__"] : []),
-      ];
-      if (!allowed.includes(token)) return false;
-    }
+    if (f.weekPlanFact?.length && (r.weekPlanFact == null || !f.weekPlanFact.includes(r.weekPlanFact))) return false;
     if (f.executorId?.length && !f.executorId.includes(r.executorId)) return false;
     if (f.projectId?.length && !f.projectId.includes(r.projectId)) return false;
     if (f.workTypeId?.length && !f.workTypeId.includes(r.workTypeId)) return false;
@@ -223,35 +172,4 @@ function applyFilter(rows: IssuedWorkRow[], f: IssuedWorksFilter): IssuedWorkRow
     if (f.responsibleExecutorId?.length && (r.responsibleExecutorId == null || !f.responsibleExecutorId.includes(r.responsibleExecutorId))) return false;
     return true;
   });
-}
-
-export async function listIssuedWorks(filter: IssuedWorksFilter = {}): Promise<IssuedWorkRow[]> {
-  return applyFilter(await fetchAllIssuedWorkRows(), filter);
-}
-
-export async function listIssuedWorksPage(
-  query: IssuedWorksListQuery = {}
-): Promise<PaginatedResult<IssuedWorkRow> & { totalAmount: number }> {
-  const filter = query.filter ?? {};
-  const sort = query.sort?.length
-    ? query.sort
-    : [
-        { field: "weekPlanFact" as const, dir: "desc" as const },
-        { field: "projectName" as const, dir: "asc" as const },
-        { field: "executorName" as const, dir: "asc" as const },
-        { field: "executionMonth" as const, dir: "desc" as const },
-      ];
-  const page = query.page ?? 1;
-  const pageSize = query.pageSize ?? 100;
-
-  const filtered = applyFilter(await fetchAllIssuedWorkRows(), filter);
-  const sorted = [...filtered].sort((a, b) => compareIssuedRows(a, b, sort));
-  const totalAmount = sorted.reduce((s, r) => s + r.amount, 0);
-  const slice = paginateSlice(sorted, page, pageSize);
-  return { ...slice, totalAmount };
-}
-
-export async function listIssuedWorkIds(filter: IssuedWorksFilter = {}): Promise<string[]> {
-  const rows = await listIssuedWorks(filter);
-  return rows.map((r) => `${r.sourceType}:${r.sourceId}`);
 }

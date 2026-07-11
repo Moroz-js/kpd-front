@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useCallback, useRef, useEffect } from "react";
-import useSWR from "swr";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, CheckCircle, RotateCcw, X, CircleDollarSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -23,15 +22,9 @@ import {
   Table, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { VirtualizedTableBody } from "@/components/ui-custom/VirtualizedTableBody";
-import { TablePagination } from "@/components/ui-custom/TablePagination";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
-import { useServerTable } from "@/lib/useServerTable";
-import {
-  buildOtherExpensesSearchParams,
-  clientFiltersToOtherExpensesFilter,
-} from "@/lib/services/otherExpensesQuery";
 import { WORK_STATUSES, PAYMENT_STATUSES } from "@/lib/statuses";
 import { formatMoney, formatMoneyRub, formatDate, formatDateShort, MONTHS } from "@/lib/format";
 import { getISOWeek, weekLabel, nearestPaymentDate, toLocalDateString } from "@/lib/iso-weeks";
@@ -116,28 +109,6 @@ type Props = {
   bankAccounts: Ref[];
 };
 
-type ListResponse = {
-  items: OtherExpense[];
-  total: number;
-  page: number;
-  pageSize: number;
-  totalAmount: number;
-};
-
-const fetcher = <T,>(url: string): Promise<T> =>
-  fetch(url).then((r) => {
-    if (!r.ok) throw new Error(String(r.status));
-    return r.json() as Promise<T>;
-  });
-
-function buildYearFilterOptions(): { value: string; label: string }[] {
-  const current = new Date().getFullYear();
-  return Array.from({ length: 8 }, (_, i) => current - i + 2).map((y) => ({
-    value: String(y),
-    label: `${y} год`,
-  }));
-}
-
 // ─── Утилиты ──────────────────────────────────────────────────────────────────
 
 async function readApiJson<T>(r: Response): Promise<T> {
@@ -152,8 +123,6 @@ async function readApiJson<T>(r: Response): Promise<T> {
     throw new Error(r.ok ? "Некорректный ответ сервера" : `Ошибка сервера (${r.status})`);
   }
 }
-
-// ─── Утилиты ──────────────────────────────────────────────────────────────────
 
 function payWeek(plannedPayAt: string | null, paidAt: string | null): string {
   const d = paidAt ?? plannedPayAt;
@@ -353,8 +322,8 @@ const OtherExpenseTableRow = React.memo(function OtherExpenseTableRow({
 });
 
 export function OtherExpensesClient({ isAdmin, userId, executorId, projects, executors, workTypes, permanentExecutors, bankAccounts }: Props) {
-  const { page, setPage, pageSize, setPageSize, onFilterChange } = useServerTable();
-
+  const [rows, setRows] = useState<OtherExpense[]>([]);
+  const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<OtherExpense | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<OtherExpense | null>(null);
@@ -362,8 +331,8 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
   const [reworkTarget, setReworkTarget] = useState<OtherExpense | null>(null);
   const [payTarget, setPayTarget] = useState<OtherExpense | null>(null);
   const [payDate, setPayDate] = useState("");
-  const [selectAllFiltered, setSelectAllFiltered] = useState(false);
 
+  // Bulk
   const [bulkWorkStatus, setBulkWorkStatus] = useState("");
   const [bulkPlannedPayAt, setBulkPlannedPayAt] = useState("");
   const [bulkPaidAt, setBulkPaidAt] = useState("");
@@ -374,6 +343,7 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Фильтры
   const [fYear, setFYear] = useState<string[]>([]);
   const [fMonth, setFMonth] = useState<string[]>([]);
   const [fProject, setFProject] = useState<string[]>([]);
@@ -383,71 +353,21 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
   const [fWorkStatus, setFWorkStatus] = useState<string[]>([]);
   const [fPayStatus, setFPayStatus] = useState<string[]>([]);
 
-  const filterState = React.useMemo(
-    () => ({
-      executionYear: fYear,
-      executionMonth: fMonth,
-      projectId: fProject,
-      executorId: fExecutor,
-      workTypeId: fWorkType,
-      responsibleExecutorId: fResponsible,
-      workStatus: fWorkStatus,
-      paymentStatus: fPayStatus,
-    }),
-    [fYear, fMonth, fProject, fExecutor, fWorkType, fResponsible, fWorkStatus, fPayStatus]
-  );
+  const fetchData = useCallback(async () => {
+    const r = await fetch("/api/other-expenses");
+    if (!r.ok) throw new Error();
+    return r.json() as Promise<OtherExpense[]>;
+  }, []);
 
-  const listUrl = React.useMemo(
-    () => `/api/other-expenses?${buildOtherExpensesSearchParams({ filter: filterState, page, pageSize })}`,
-    [filterState, page, pageSize]
-  );
+  const load = useCallback(async () => {
+    setLoading(true);
+    try { setRows(await fetchData()); } catch { toast.error("Не удалось загрузить данные"); }
+    finally { setLoading(false); }
+  }, [fetchData]);
 
-  const { data, isLoading, mutate } = useSWR<ListResponse>(listUrl, fetcher);
+  const silentLoad = useCallback(() => { fetchData().then(setRows).catch(() => {}); }, [fetchData]);
 
-  const rows = data?.items ?? [];
-  const total = data?.total ?? 0;
-  const totalAmount = data?.totalAmount ?? 0;
-
-  const orderedRowIds = React.useMemo(() => rows.map((r) => r.id), [rows]);
-  const { selectedIds, handleRowSelect, toggleAll, clearSelection } = useTableRowSelection(orderedRowIds);
-
-  React.useEffect(() => {
-    clearSelection();
-    setSelectAllFiltered(false);
-  }, [listUrl]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  function resetSelection() {
-    clearSelection();
-    setSelectAllFiltered(false);
-  }
-
-  const selectedSum = React.useMemo(() => {
-    if (selectAllFiltered) return totalAmount;
-    let sum = 0;
-    for (const r of rows) {
-      if (selectedIds.has(r.id)) sum += r.amount ?? 0;
-    }
-    return sum;
-  }, [rows, selectedIds, selectAllFiltered, totalAmount]);
-
-  const allPageSelected = rows.length > 0 && orderedRowIds.every((id) => selectedIds.has(id));
-  const yearOptions = React.useMemo(() => buildYearFilterOptions(), []);
-
-  const workTypeOpts = React.useMemo(
-    () =>
-      workTypes
-        .map((wt) => ({
-          value: wt.id,
-          label: wt.name,
-          group: (wt as Ref & { segment?: string }).segment ?? "",
-        }))
-        .sort(
-          (a, b) =>
-            (a.group ?? "").localeCompare(b.group ?? "", "ru") ||
-            a.label.localeCompare(b.label, "ru")
-        ),
-    [workTypes]
-  );
+  useEffect(() => { load(); }, [load]);
 
   function canEdit(row: OtherExpense) {
     if (isAdmin) return true;
@@ -466,7 +386,22 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
     return !!executorId && row.responsibleExecutorId === executorId;
   }
 
-  const filtered = rows;
+  const allYears = [...new Set(rows.map(r => r.executionYear))].sort();
+
+  const filtered = rows.filter(r => {
+    if (fYear.length && !fYear.includes(String(r.executionYear))) return false;
+    if (fMonth.length && !fMonth.includes(String(r.executionMonth))) return false;
+    if (fProject.length && !fProject.includes(r.projectId)) return false;
+    if (fExecutor.length && !fExecutor.includes(r.executorId)) return false;
+    if (fWorkType.length && !fWorkType.includes(r.workTypeId)) return false;
+    if (fResponsible.length && !fResponsible.includes(r.responsibleExecutorId ?? "__empty__")) return false;
+    if (fWorkStatus.length && !fWorkStatus.includes(r.workStatus)) return false;
+    if (fPayStatus.length && !fPayStatus.includes(r.paymentStatus ?? "__empty__")) return false;
+    return true;
+  });
+
+  const orderedRowIds = React.useMemo(() => filtered.map((r) => r.id), [filtered]);
+  const { selectedIds, handleRowSelect, toggleAll, clearSelection } = useTableRowSelection(orderedRowIds);
 
   async function patchRow(id: string, patch: Record<string, unknown>) {
     const res = await fetch(`/api/other-expenses/${id}`, {
@@ -479,7 +414,7 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
       throw new Error(d.error ?? "Ошибка");
     }
     const updated = await readApiJson<OtherExpense>(res);
-    mutate();
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...updated } : r)));
     return updated;
   }
 
@@ -508,25 +443,42 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
       setInlineEdit(null);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Ошибка");
-      mutate();
+      silentLoad();
     }
   }
 
   async function handleCheck(row: OtherExpense) {
     setCheckTarget(null);
+    const plannedIso = nearestPaymentDate().toISOString();
+    setRows((prev) =>
+      prev.map((r) =>
+        r.id === row.id
+          ? {
+              ...r,
+              workStatus: "checked",
+              checkedAt: new Date().toISOString(),
+              paymentStatus: "planned",
+              paymentAmount: r.amount,
+              plannedPayAt: plannedIso,
+            }
+          : r
+      )
+    );
     try {
       const res = await fetch(`/api/other-expenses/${row.id}/check`, { method: "POST" });
       if (!res.ok) { const d = await readApiJson<{ error?: string }>(res); throw new Error(d.error ?? "Ошибка"); }
+      const updated = await readApiJson<OtherExpense>(res);
+      setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, ...updated } : r)));
       toast.success("Работа проверена, выплата создана");
-      mutate();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Ошибка");
-      mutate();
+      silentLoad();
     }
   }
 
   async function handleRework(row: OtherExpense) {
     setReworkTarget(null);
+    setRows((prev) => prev.map((r) => r.id === row.id ? { ...r, workStatus: "rework" } : r));
     try {
       const res = await fetch(`/api/other-expenses/${row.id}`, {
         method: "PATCH",
@@ -534,78 +486,87 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
         body: JSON.stringify({ workStatus: "rework" }),
       });
       if (!res.ok) { const d = await readApiJson<{ error?: string }>(res); throw new Error(d.error ?? "Ошибка"); }
+      const updated = await readApiJson<OtherExpense>(res);
+      setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, ...updated } : r)));
       toast.success("Работа отправлена на доработку");
-      mutate();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Ошибка");
-      mutate();
+      silentLoad();
     }
   }
 
   async function handlePay(row: OtherExpense, date: string) {
     setPayTarget(null);
     const isoDate = new Date(date).toISOString();
+    setRows((prev) => prev.map((r) => r.id === row.id ? { ...r, paymentStatus: "paid", paidAt: isoDate, workStatus: "paid" } : r));
     try {
       await patchRow(row.id, { paymentStatus: "paid", paidAt: isoDate });
       toast.success("Выплата оплачена");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Ошибка");
-      mutate();
+      silentLoad();
     }
   }
 
   async function handleDelete(row: OtherExpense) {
     setDeleteTarget(null);
+    setRows(prev => prev.filter(r => r.id !== row.id));
     try {
       const res = await fetch(`/api/other-expenses/${row.id}`, { method: "DELETE" });
       if (!res.ok) throw new Error();
       toast.success("Строка удалена");
-      mutate();
     } catch {
       toast.error("Не удалось удалить");
-      mutate();
+      silentLoad();
     }
-  }
-
-  function handleToggleAll() {
-    if (selectAllFiltered) {
-      resetSelection();
-      return;
-    }
-    toggleAll(orderedRowIds);
   }
 
   async function handleBulkApply() {
+    const ids = Array.from(selectedIds);
     const patch: Record<string, unknown> = {};
     if (bulkWorkStatus) patch.workStatus = bulkWorkStatus;
     if (bulkPlannedPayAt) patch.plannedPayAt = new Date(bulkPlannedPayAt).toISOString();
     if (bulkPaidAt) patch.paidAt = new Date(bulkPaidAt).toISOString();
     if (bulkBankId && bulkBankId !== "__none__") patch.bankAccountId = bulkBankId;
     if (Object.keys(patch).length === 0) return toast.error("Выберите хотя бы одно поле");
-
-    const body = selectAllFiltered
-      ? { selectAll: true, filter: clientFiltersToOtherExpensesFilter(filterState), patch }
-      : { ids: Array.from(selectedIds), patch };
-
     setBulkSaving(true);
     const res = await fetch("/api/other-expenses/bulk", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ids, patch }),
     });
     setBulkSaving(false);
     if (!res.ok) return toast.error("Ошибка массового обновления");
     const { updated } = await res.json() as { updated: number };
     toast.success(`Обновлено ${updated} записей`);
-    resetSelection();
+    clearSelection();
     setBulkWorkStatus(""); setBulkPlannedPayAt(""); setBulkPaidAt(""); setBulkBankId("");
-    mutate();
+    silentLoad();
   }
 
   const th = "border border-neutral-200 px-2 py-1.5 text-left font-medium text-neutral-600 bg-neutral-50 text-xs whitespace-nowrap";
   const thr = th + " text-right";
   const td = "border border-neutral-200 px-2 py-1.5 text-xs";
   const tdr = td + " text-right";
+
+  const workTypeOpts = React.useMemo(() => {
+    const map = new Map<string, { label: string; group: string }>();
+    for (const r of rows) {
+      if (!map.has(r.workTypeId)) {
+        map.set(r.workTypeId, { label: r.workType.name, group: r.workType.segment ?? "" });
+      }
+    }
+    return Array.from(map.entries())
+      .sort((a, b) =>
+        (a[1].group ?? "").localeCompare(b[1].group ?? "", "ru") ||
+        a[1].label.localeCompare(b[1].label, "ru")
+      )
+      .map(([value, { label, group }]) => ({ value, label, group }));
+  }, [rows]);
+
+  const selectedSum = React.useMemo(() => {
+    return filtered.filter(r => selectedIds.has(r.id)).reduce((s, r) => s + (r.amount ?? 0), 0);
+  }, [filtered, selectedIds]);
 
   const onCheckCb = useCallback((row: OtherExpense) => setCheckTarget(row), []);
   const onReworkCb = useCallback((row: OtherExpense) => setReworkTarget(row), []);
@@ -685,21 +646,21 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
           {/* Фильтры */}
           <MultiSelectFilter
             label="Год"
-            options={yearOptions}
+            options={allYears.map(y => ({ value: String(y), label: `${y} год` }))}
             value={fYear}
-            onChange={(v) => onFilterChange(setFYear, v)}
+            onChange={setFYear}
           />
           <MultiSelectFilter
             label="Месяц"
             options={MONTHS.map(m => ({ value: m.value, label: m.label }))}
             value={fMonth}
-            onChange={(v) => onFilterChange(setFMonth, v)}
+            onChange={setFMonth}
           />
           <MultiSelectFilter
             label="Проект"
             options={projects.map(p => ({ value: p.id, label: p.name }))}
             value={fProject}
-            onChange={(v) => onFilterChange(setFProject, v)}
+            onChange={setFProject}
             popoverClassName="w-auto min-w-72 max-w-lg"
             optionLabelClassName="whitespace-normal"
           />
@@ -707,51 +668,39 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
             label="Исполнитель"
             options={executors.map(e => ({ value: e.id, label: e.name }))}
             value={fExecutor}
-            onChange={(v) => onFilterChange(setFExecutor, v)}
+            onChange={setFExecutor}
           />
           <MultiSelectFilter
             label="Вид работ"
             options={workTypeOpts}
             value={fWorkType}
-            onChange={(v) => onFilterChange(setFWorkType, v)}
+            onChange={setFWorkType}
           />
           <MultiSelectFilter
             label="Руководитель проекта"
-            options={[
-              { value: "__empty__", label: "Пусто" },
-              ...permanentExecutors.map(r => ({ value: r.id, label: r.name })),
-            ]}
+            options={permanentExecutors.map(r => ({ value: r.id, label: r.name }))}
             value={fResponsible}
-            onChange={(v) => onFilterChange(setFResponsible, v)}
+            onChange={setFResponsible}
           />
           <MultiSelectFilter
             label="Статус работы"
             options={Object.entries(WORK_STATUSES).map(([v, { label: l }]) => ({ value: v, label: l }))}
             value={fWorkStatus}
-            onChange={(v) => onFilterChange(setFWorkStatus, v)}
+            onChange={setFWorkStatus}
           />
           <MultiSelectFilter
             label="Статус выплаты"
             options={[{ value: "__empty__", label: "Пусто" }, ...Object.entries(PAYMENT_STATUSES).map(([v, { label: l }]) => ({ value: v, label: l }))]}
             value={fPayStatus}
-            onChange={(v) => onFilterChange(setFPayStatus, v)}
+            onChange={setFPayStatus}
           />
         </div>
       </div>
 
-      {allPageSelected && total > rows.length && !selectAllFiltered && (
-        <div className="text-xs text-blue-700 px-1">
-          Выбраны все на странице.{" "}
-          <button type="button" className="underline hover:no-underline" onClick={() => setSelectAllFiltered(true)}>
-            Выбрать все {total} по фильтру
-          </button>
-        </div>
-      )}
-
       {/* Bulk toolbar */}
-      {(selectedIds.size > 0 || selectAllFiltered) && (
+      {selectedIds.size > 0 && (
         <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200">
-          <span className="text-xs font-medium text-blue-700">{selectAllFiltered ? total : selectedIds.size} выбрано</span>
+          <span className="text-xs font-medium text-blue-700">{selectedIds.size} выбрано</span>
           <span className="text-xs tabular-nums font-semibold text-neutral-700">{formatMoneyRub(selectedSum)}</span>
           <Select value={bulkWorkStatus} onValueChange={(v) => v && setBulkWorkStatus(v)}>
             <SelectTrigger className="h-7 w-44 text-xs">
@@ -785,17 +734,17 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
           <Button size="sm" className="h-7 text-xs" onClick={handleBulkApply} disabled={bulkSaving}>
             {bulkSaving ? "..." : "Применить"}
           </Button>
-          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { resetSelection(); setBulkWorkStatus(""); setBulkPlannedPayAt(""); setBulkPaidAt(""); setBulkBankId(""); }}>
+          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { clearSelection(); setBulkWorkStatus(""); setBulkPlannedPayAt(""); setBulkPaidAt(""); setBulkBankId(""); }}>
             <X className="h-3.5 w-3.5" />
           </Button>
         </div>
       )}
 
-      {total > 0 && (
+      {filtered.length > 0 && (
         <div className="flex items-center gap-4 px-1 py-1 text-xs text-neutral-500 shrink-0">
-          <span>{total} записей</span>
+          <span>{filtered.length} записей</span>
           <span className="text-xs font-medium tabular-nums text-neutral-800">
-            {formatMoneyRub(totalAmount)}
+            {formatMoneyRub(filtered.reduce((s, r) => s + (r.amount ?? 0), 0))}
           </span>
         </div>
       )}
@@ -814,10 +763,7 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
           <TableHeader>
             <TableRow>
               <TableHead className="w-8">
-                <Checkbox
-                  checked={selectAllFiltered || (allPageSelected && filtered.length > 0)}
-                  onCheckedChange={handleToggleAll}
-                />
+                <Checkbox checked={selectedIds.size === filtered.length && filtered.length > 0} onCheckedChange={() => toggleAll(orderedRowIds)} />
               </TableHead>
               <TableHead className={compactPeriodHead}>Год выполнения</TableHead>
               <TableHead className={compactPeriodHead}>Месяц выполнения</TableHead>
@@ -844,7 +790,7 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
             scrollRef={scrollRef}
             rowCount={filtered.length}
             colSpan={18}
-            isLoading={isLoading}
+            isLoading={loading}
             loading={
               <TableRow>
                 <TableCell colSpan={18} className="text-center text-neutral-500 py-8">Загрузка...</TableCell>
@@ -860,17 +806,6 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
           />
         </Table>
 
-      <TablePagination
-        page={page}
-        pageSize={pageSize}
-        total={total}
-        onPageChange={setPage}
-        onPageSizeChange={(size) => {
-          setPageSize(size);
-          setPage(1);
-        }}
-      />
-
       {/* Диалоги */}
       {createOpen && (
         <OtherExpenseFormDialog
@@ -878,7 +813,7 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
           projects={projects} executors={executors} workTypes={workTypes}
           permanentExecutors={permanentExecutors} bankAccounts={bankAccounts}
           onClose={() => setCreateOpen(false)}
-          onSaved={() => { setCreateOpen(false); mutate(); toast.success("Создано"); }}
+          onSaved={() => { setCreateOpen(false); silentLoad(); toast.success("Создано"); }}
         />
       )}
 
@@ -890,7 +825,7 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
           permanentExecutors={permanentExecutors} bankAccounts={bankAccounts}
           initial={editTarget}
           onClose={() => setEditTarget(null)}
-          onSaved={() => { setEditTarget(null); mutate(); toast.success("Сохранено"); }}
+          onSaved={() => { setEditTarget(null); silentLoad(); toast.success("Сохранено"); }}
         />
       )}
 
