@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useCallback, useRef, useEffect } from "react";
+import useSWR from "swr";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, CheckCircle, RotateCcw, X, CircleDollarSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -21,10 +22,16 @@ import {
 import {
   Table, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { BulkSelectTableBody } from "@/components/ui-custom/BulkSelectTableBody";
+import { VirtualizedTableBody } from "@/components/ui-custom/VirtualizedTableBody";
+import { TablePagination } from "@/components/ui-custom/TablePagination";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
+import { useServerTable } from "@/lib/useServerTable";
+import {
+  buildOtherExpensesSearchParams,
+  clientFiltersToOtherExpensesFilter,
+} from "@/lib/services/otherExpensesQuery";
 import { WORK_STATUSES, PAYMENT_STATUSES } from "@/lib/statuses";
 import { formatMoney, formatMoneyRub, formatDate, formatDateShort, MONTHS } from "@/lib/format";
 import { getISOWeek, weekLabel, nearestPaymentDate, toLocalDateString } from "@/lib/iso-weeks";
@@ -109,6 +116,28 @@ type Props = {
   bankAccounts: Ref[];
 };
 
+type ListResponse = {
+  items: OtherExpense[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalAmount: number;
+};
+
+const fetcher = <T,>(url: string): Promise<T> =>
+  fetch(url).then((r) => {
+    if (!r.ok) throw new Error(String(r.status));
+    return r.json() as Promise<T>;
+  });
+
+function buildYearFilterOptions(): { value: string; label: string }[] {
+  const current = new Date().getFullYear();
+  return Array.from({ length: 8 }, (_, i) => current - i + 2).map((y) => ({
+    value: String(y),
+    label: `${y} год`,
+  }));
+}
+
 // ─── Утилиты ──────────────────────────────────────────────────────────────────
 
 async function readApiJson<T>(r: Response): Promise<T> {
@@ -126,9 +155,206 @@ async function readApiJson<T>(r: Response): Promise<T> {
 
 // ─── Утилиты ──────────────────────────────────────────────────────────────────
 
+function payWeek(plannedPayAt: string | null, paidAt: string | null): string {
+  const d = paidAt ?? plannedPayAt;
+  if (!d) return "—";
+  return weekLabel(getISOWeek(new Date(d)));
+}
+
+type OtherExpenseTableRowProps = {
+  row: OtherExpense;
+  rowIndex: number;
+  checked: boolean;
+  isAdmin: boolean;
+  canEditRow: boolean;
+  canReviewRow: boolean;
+  inlineActive: "plannedPayAt" | "paidAt" | null;
+  inlineVal: string;
+  onSelect: (index: number, id: string, shiftKey: boolean) => void;
+  onInlineValChange: (v: string) => void;
+  onStartInline: (row: OtherExpense, field: "plannedPayAt" | "paidAt") => void;
+  onCommitInline: (row: OtherExpense) => void;
+  onCancelInline: () => void;
+  onCheck: (row: OtherExpense) => void;
+  onRework: (row: OtherExpense) => void;
+  onPay: (row: OtherExpense) => void;
+  onEdit: (row: OtherExpense) => void;
+  onDelete: (row: OtherExpense) => void;
+};
+
+const OtherExpenseTableRow = React.memo(function OtherExpenseTableRow({
+  row,
+  rowIndex,
+  checked,
+  isAdmin,
+  canEditRow,
+  canReviewRow,
+  inlineActive,
+  inlineVal,
+  onSelect,
+  onInlineValChange,
+  onStartInline,
+  onCommitInline,
+  onCancelInline,
+  onCheck,
+  onRework,
+  onPay,
+  onEdit,
+  onDelete,
+}: OtherExpenseTableRowProps) {
+  return (
+    <TableRow className={checked ? "bg-blue-50" : ""}>
+      <TableCell>
+        <RowSelectCheckbox
+          checked={checked}
+          rowIndex={rowIndex}
+          rowId={row.id}
+          onSelect={onSelect}
+        />
+      </TableCell>
+      <TableCell>{row.executionYear}</TableCell>
+      <TableCell className="whitespace-nowrap">{MONTHS.find(m => m.value === String(row.executionMonth))?.label ?? row.executionMonth}</TableCell>
+      <TableCell>{payWeek(row.plannedPayAt, row.paidAt)}</TableCell>
+      <TableCell className={cn(cellClip, "whitespace-normal")}>
+        <ExpandableListCell items={[row.project.name]} />
+      </TableCell>
+      <TableCell className={cn(cellClip, "whitespace-normal")}>
+        <ExpandableListCell items={[row.executor.name]} />
+      </TableCell>
+      <TableCell className={cn(cellClip, "whitespace-normal")}>
+        <ExpandableListCell items={row.description ? [row.description] : []} />
+      </TableCell>
+      <TableCell className={cn(cellClip, "whitespace-normal")}>
+        <ExpandableListCell items={[row.workType.name]} />
+      </TableCell>
+      <TableCell className={cn(cellClip, "whitespace-normal")}>
+        <ExpandableListCell items={row.responsibleExecutor ? [row.responsibleExecutor.name] : []} />
+      </TableCell>
+      <TableCell className={cn(cellClip, "whitespace-normal")}>
+        {row.preferredPayMethod ? (
+          <ExpandableListCell items={[row.preferredPayMethod]} />
+        ) : (
+          <span className="text-neutral-400">—</span>
+        )}
+      </TableCell>
+      <TableCell className={cn(cellClip, "whitespace-nowrap")}>
+        {!row.paymentStatus ? (
+          <span className="text-neutral-300">—</span>
+        ) : inlineActive === "plannedPayAt" ? (
+          <input
+            autoFocus
+            type="date"
+            value={inlineVal}
+            onChange={(e) => onInlineValChange(e.target.value)}
+            onBlur={() => onCommitInline(row)}
+            onClick={(e) => { try { (e.target as HTMLInputElement).showPicker(); } catch { /**/ } }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") onCommitInline(row);
+              if (e.key === "Escape") onCancelInline();
+            }}
+            className="w-full h-6 rounded border border-blue-300 px-1 text-xs bg-blue-50 focus:outline-none cursor-pointer"
+          />
+        ) : (
+          <button
+            type="button"
+            className="text-xs text-neutral-600 hover:text-blue-700 hover:underline"
+            onClick={() => onStartInline(row, "plannedPayAt")}
+          >
+            {formatDateShort(row.plannedPayAt)}
+          </button>
+        )}
+      </TableCell>
+      <TableCell className={cn(cellClip, "text-right tabular-nums font-semibold whitespace-nowrap")}>
+        {formatMoney(row.amount)}
+      </TableCell>
+      <TableCell className={cn(cellClip, "whitespace-nowrap")}>
+        <StatusBadge dict={WORK_STATUSES} value={row.workStatus} />
+      </TableCell>
+      <TableCell className={cn(cellClip, "whitespace-nowrap")}>
+        {row.paymentStatus ? (
+          <StatusBadge dict={PAYMENT_STATUSES} value={row.paymentStatus} />
+        ) : (
+          <span className="text-neutral-300">—</span>
+        )}
+      </TableCell>
+      <TableCell className={cn(cellClip, "text-right tabular-nums whitespace-nowrap")}>
+        {row.paymentAmount != null ? formatMoney(row.paymentAmount) : "—"}
+      </TableCell>
+      <TableCell className={cn(cellClip, "whitespace-nowrap")}>
+        {inlineActive === "paidAt" ? (
+          <input
+            autoFocus
+            type="date"
+            value={inlineVal}
+            onChange={(e) => onInlineValChange(e.target.value)}
+            onBlur={() => onCommitInline(row)}
+            onClick={(e) => { try { (e.target as HTMLInputElement).showPicker(); } catch { /**/ } }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") onCommitInline(row);
+              if (e.key === "Escape") onCancelInline();
+            }}
+            className="w-full h-6 rounded border border-blue-300 px-1 text-xs bg-blue-50 focus:outline-none cursor-pointer"
+          />
+        ) : row.paymentStatus && isAdmin ? (
+          <button
+            type="button"
+            className="text-xs text-neutral-600 hover:text-blue-700 hover:underline"
+            title="Указать дату оплаты"
+            onClick={() => onStartInline(row, "paidAt")}
+          >
+            {row.paidAt ? formatDateShort(row.paidAt) : "—"}
+          </button>
+        ) : (
+          <span className="text-xs text-neutral-600">
+            {row.paidAt ? formatDateShort(row.paidAt) : "—"}
+          </span>
+        )}
+      </TableCell>
+      <TableCell className={cn(cellClip, "whitespace-normal pr-1")}>
+        <ExpandableListCell items={row.bankAccount?.name ? [row.bankAccount.name] : []} />
+      </TableCell>
+      <TableCell
+        className={cn(
+          stickyActionsCell,
+          "min-w-[128px] w-[128px] max-w-[128px]",
+          checked && "bg-blue-50"
+        )}
+      >
+        <div className="flex shrink-0 gap-0.5 items-center justify-end">
+          {canReviewRow && !row.paymentStatus && row.workStatus === "submitted" && (
+            <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="Проверить" onClick={() => onCheck(row)}>
+              <CheckCircle className="h-3.5 w-3.5 text-blue-600" />
+            </Button>
+          )}
+          {canReviewRow && !row.paymentStatus && row.workStatus === "submitted" && (
+            <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="На доработку" onClick={() => onRework(row)}>
+              <RotateCcw className="h-3.5 w-3.5 text-amber-500" />
+            </Button>
+          )}
+          {isAdmin && (row.paymentStatus === "planned" || row.paymentStatus === "sent") && (
+            <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="Оплатить" onClick={() => onPay(row)}>
+              <CircleDollarSign className="h-3.5 w-3.5 text-green-600" />
+            </Button>
+          )}
+          {canEditRow && (
+            <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="Редактировать" onClick={() => onEdit(row)}>
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          {canEditRow && (
+            <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="Удалить" onClick={() => onDelete(row)}>
+              <Trash2 className="h-3.5 w-3.5 text-red-400" />
+            </Button>
+          )}
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+});
+
 export function OtherExpensesClient({ isAdmin, userId, executorId, projects, executors, workTypes, permanentExecutors, bankAccounts }: Props) {
-  const [rows, setRows] = useState<OtherExpense[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { page, setPage, pageSize, setPageSize, onFilterChange } = useServerTable();
+
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<OtherExpense | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<OtherExpense | null>(null);
@@ -136,8 +362,8 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
   const [reworkTarget, setReworkTarget] = useState<OtherExpense | null>(null);
   const [payTarget, setPayTarget] = useState<OtherExpense | null>(null);
   const [payDate, setPayDate] = useState("");
+  const [selectAllFiltered, setSelectAllFiltered] = useState(false);
 
-  // Bulk
   const [bulkWorkStatus, setBulkWorkStatus] = useState("");
   const [bulkPlannedPayAt, setBulkPlannedPayAt] = useState("");
   const [bulkPaidAt, setBulkPaidAt] = useState("");
@@ -146,7 +372,8 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
   const [inlineEdit, setInlineEdit] = useState<{ rowId: string; field: "plannedPayAt" | "paidAt" } | null>(null);
   const [inlineVal, setInlineVal] = useState("");
 
-  // Фильтры
+  const scrollRef = useRef<HTMLDivElement>(null);
+
   const [fYear, setFYear] = useState<string[]>([]);
   const [fMonth, setFMonth] = useState<string[]>([]);
   const [fProject, setFProject] = useState<string[]>([]);
@@ -156,21 +383,71 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
   const [fWorkStatus, setFWorkStatus] = useState<string[]>([]);
   const [fPayStatus, setFPayStatus] = useState<string[]>([]);
 
-  const fetchData = useCallback(async () => {
-    const r = await fetch("/api/other-expenses");
-    if (!r.ok) throw new Error();
-    return r.json() as Promise<OtherExpense[]>;
-  }, []);
+  const filterState = React.useMemo(
+    () => ({
+      executionYear: fYear,
+      executionMonth: fMonth,
+      projectId: fProject,
+      executorId: fExecutor,
+      workTypeId: fWorkType,
+      responsibleExecutorId: fResponsible,
+      workStatus: fWorkStatus,
+      paymentStatus: fPayStatus,
+    }),
+    [fYear, fMonth, fProject, fExecutor, fWorkType, fResponsible, fWorkStatus, fPayStatus]
+  );
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try { setRows(await fetchData()); } catch { toast.error("Не удалось загрузить данные"); }
-    finally { setLoading(false); }
-  }, [fetchData]);
+  const listUrl = React.useMemo(
+    () => `/api/other-expenses?${buildOtherExpensesSearchParams({ filter: filterState, page, pageSize })}`,
+    [filterState, page, pageSize]
+  );
 
-  const silentLoad = useCallback(() => { fetchData().then(setRows).catch(() => {}); }, [fetchData]);
+  const { data, isLoading, mutate } = useSWR<ListResponse>(listUrl, fetcher);
 
-  useEffect(() => { load(); }, [load]);
+  const rows = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const totalAmount = data?.totalAmount ?? 0;
+
+  const orderedRowIds = React.useMemo(() => rows.map((r) => r.id), [rows]);
+  const { selectedIds, handleRowSelect, toggleAll, clearSelection } = useTableRowSelection(orderedRowIds);
+
+  React.useEffect(() => {
+    clearSelection();
+    setSelectAllFiltered(false);
+  }, [listUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function resetSelection() {
+    clearSelection();
+    setSelectAllFiltered(false);
+  }
+
+  const selectedSum = React.useMemo(() => {
+    if (selectAllFiltered) return totalAmount;
+    let sum = 0;
+    for (const r of rows) {
+      if (selectedIds.has(r.id)) sum += r.amount ?? 0;
+    }
+    return sum;
+  }, [rows, selectedIds, selectAllFiltered, totalAmount]);
+
+  const allPageSelected = rows.length > 0 && orderedRowIds.every((id) => selectedIds.has(id));
+  const yearOptions = React.useMemo(() => buildYearFilterOptions(), []);
+
+  const workTypeOpts = React.useMemo(
+    () =>
+      workTypes
+        .map((wt) => ({
+          value: wt.id,
+          label: wt.name,
+          group: (wt as Ref & { segment?: string }).segment ?? "",
+        }))
+        .sort(
+          (a, b) =>
+            (a.group ?? "").localeCompare(b.group ?? "", "ru") ||
+            a.label.localeCompare(b.label, "ru")
+        ),
+    [workTypes]
+  );
 
   function canEdit(row: OtherExpense) {
     if (isAdmin) return true;
@@ -189,22 +466,7 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
     return !!executorId && row.responsibleExecutorId === executorId;
   }
 
-  const allYears = [...new Set(rows.map(r => r.executionYear))].sort();
-
-  const filtered = rows.filter(r => {
-    if (fYear.length && !fYear.includes(String(r.executionYear))) return false;
-    if (fMonth.length && !fMonth.includes(String(r.executionMonth))) return false;
-    if (fProject.length && !fProject.includes(r.projectId)) return false;
-    if (fExecutor.length && !fExecutor.includes(r.executorId)) return false;
-    if (fWorkType.length && !fWorkType.includes(r.workTypeId)) return false;
-    if (fResponsible.length && !fResponsible.includes(r.responsibleExecutorId ?? "__empty__")) return false;
-    if (fWorkStatus.length && !fWorkStatus.includes(r.workStatus)) return false;
-    if (fPayStatus.length && !fPayStatus.includes(r.paymentStatus ?? "__empty__")) return false;
-    return true;
-  });
-
-  const orderedRowIds = React.useMemo(() => filtered.map((r) => r.id), [filtered]);
-  const { selectedIds, handleRowSelect, toggleAll, clearSelection } = useTableRowSelection(orderedRowIds);
+  const filtered = rows;
 
   async function patchRow(id: string, patch: Record<string, unknown>) {
     const res = await fetch(`/api/other-expenses/${id}`, {
@@ -217,7 +479,7 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
       throw new Error(d.error ?? "Ошибка");
     }
     const updated = await readApiJson<OtherExpense>(res);
-    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...updated } : r)));
+    mutate();
     return updated;
   }
 
@@ -246,75 +508,25 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
       setInlineEdit(null);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Ошибка");
-      silentLoad();
+      mutate();
     }
-  }
-
-  function renderPlanDateCell(row: OtherExpense) {
-    const editing = inlineEdit?.rowId === row.id && inlineEdit.field === "plannedPayAt";
-    if (!row.paymentStatus) {
-      return <span className="text-neutral-300">—</span>;
-    }
-    if (editing) {
-      return (
-        <input
-          autoFocus
-          type="date"
-          value={inlineVal}
-          onChange={(e) => setInlineVal(e.target.value)}
-          onBlur={() => commitInline(row)}
-          onClick={(e) => { try { (e.target as HTMLInputElement).showPicker(); } catch { /**/ } }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") commitInline(row);
-            if (e.key === "Escape") setInlineEdit(null);
-          }}
-          className="w-full h-6 rounded border border-blue-300 px-1 text-xs bg-blue-50 focus:outline-none cursor-pointer"
-        />
-      );
-    }
-    return (
-      <button
-        type="button"
-        className="text-xs text-neutral-600 hover:text-blue-700 hover:underline"
-        onClick={() => startInline(row, "plannedPayAt")}
-      >
-        {formatDateShort(row.plannedPayAt)}
-      </button>
-    );
   }
 
   async function handleCheck(row: OtherExpense) {
     setCheckTarget(null);
-    const plannedIso = nearestPaymentDate().toISOString();
-    setRows((prev) =>
-      prev.map((r) =>
-        r.id === row.id
-          ? {
-              ...r,
-              workStatus: "checked",
-              checkedAt: new Date().toISOString(),
-              paymentStatus: "planned",
-              paymentAmount: r.amount,
-              plannedPayAt: plannedIso,
-            }
-          : r
-      )
-    );
     try {
       const res = await fetch(`/api/other-expenses/${row.id}/check`, { method: "POST" });
       if (!res.ok) { const d = await readApiJson<{ error?: string }>(res); throw new Error(d.error ?? "Ошибка"); }
-      const updated = await readApiJson<OtherExpense>(res);
-      setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, ...updated } : r)));
       toast.success("Работа проверена, выплата создана");
+      mutate();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Ошибка");
-      silentLoad();
+      mutate();
     }
   }
 
   async function handleRework(row: OtherExpense) {
     setReworkTarget(null);
-    setRows((prev) => prev.map((r) => r.id === row.id ? { ...r, workStatus: "rework" } : r));
     try {
       const res = await fetch(`/api/other-expenses/${row.id}`, {
         method: "PATCH",
@@ -322,62 +534,72 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
         body: JSON.stringify({ workStatus: "rework" }),
       });
       if (!res.ok) { const d = await readApiJson<{ error?: string }>(res); throw new Error(d.error ?? "Ошибка"); }
-      const updated = await readApiJson<OtherExpense>(res);
-      setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, ...updated } : r)));
       toast.success("Работа отправлена на доработку");
+      mutate();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Ошибка");
-      silentLoad();
+      mutate();
     }
   }
 
   async function handlePay(row: OtherExpense, date: string) {
     setPayTarget(null);
     const isoDate = new Date(date).toISOString();
-    setRows((prev) => prev.map((r) => r.id === row.id ? { ...r, paymentStatus: "paid", paidAt: isoDate, workStatus: "paid" } : r));
     try {
       await patchRow(row.id, { paymentStatus: "paid", paidAt: isoDate });
       toast.success("Выплата оплачена");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Ошибка");
-      silentLoad();
+      mutate();
     }
   }
 
   async function handleDelete(row: OtherExpense) {
     setDeleteTarget(null);
-    setRows(prev => prev.filter(r => r.id !== row.id));
     try {
       const res = await fetch(`/api/other-expenses/${row.id}`, { method: "DELETE" });
       if (!res.ok) throw new Error();
       toast.success("Строка удалена");
+      mutate();
     } catch {
       toast.error("Не удалось удалить");
-      silentLoad();
+      mutate();
     }
   }
 
+  function handleToggleAll() {
+    if (selectAllFiltered) {
+      resetSelection();
+      return;
+    }
+    toggleAll(orderedRowIds);
+  }
+
   async function handleBulkApply() {
-    const ids = Array.from(selectedIds);
     const patch: Record<string, unknown> = {};
     if (bulkWorkStatus) patch.workStatus = bulkWorkStatus;
     if (bulkPlannedPayAt) patch.plannedPayAt = new Date(bulkPlannedPayAt).toISOString();
     if (bulkPaidAt) patch.paidAt = new Date(bulkPaidAt).toISOString();
     if (bulkBankId && bulkBankId !== "__none__") patch.bankAccountId = bulkBankId;
     if (Object.keys(patch).length === 0) return toast.error("Выберите хотя бы одно поле");
+
+    const body = selectAllFiltered
+      ? { selectAll: true, filter: clientFiltersToOtherExpensesFilter(filterState), patch }
+      : { ids: Array.from(selectedIds), patch };
+
     setBulkSaving(true);
     const res = await fetch("/api/other-expenses/bulk", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids, patch }),
+      body: JSON.stringify(body),
     });
     setBulkSaving(false);
     if (!res.ok) return toast.error("Ошибка массового обновления");
     const { updated } = await res.json() as { updated: number };
     toast.success(`Обновлено ${updated} записей`);
-    clearSelection();
+    resetSelection();
     setBulkWorkStatus(""); setBulkPlannedPayAt(""); setBulkPaidAt(""); setBulkBankId("");
-    silentLoad();
+    mutate();
   }
 
   const th = "border border-neutral-200 px-2 py-1.5 text-left font-medium text-neutral-600 bg-neutral-50 text-xs whitespace-nowrap";
@@ -385,30 +607,69 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
   const td = "border border-neutral-200 px-2 py-1.5 text-xs";
   const tdr = td + " text-right";
 
-  const workTypeOpts = React.useMemo(() => {
-    const map = new Map<string, { label: string; group: string }>();
-    for (const r of rows) {
-      if (!map.has(r.workTypeId)) {
-        map.set(r.workTypeId, { label: r.workType.name, group: r.workType.segment ?? "" });
-      }
-    }
-    return Array.from(map.entries())
-      .sort((a, b) =>
-        (a[1].group ?? "").localeCompare(b[1].group ?? "", "ru") ||
-        a[1].label.localeCompare(b[1].label, "ru")
-      )
-      .map(([value, { label, group }]) => ({ value, label, group }));
-  }, [rows]);
+  const onCheckCb = useCallback((row: OtherExpense) => setCheckTarget(row), []);
+  const onReworkCb = useCallback((row: OtherExpense) => setReworkTarget(row), []);
+  const onPayCb = useCallback((row: OtherExpense) => {
+    setPayDate(toLocalDateString(new Date()));
+    setPayTarget(row);
+  }, []);
+  const onEditCb = useCallback((row: OtherExpense) => setEditTarget(row), []);
+  const onDeleteCb = useCallback((row: OtherExpense) => setDeleteTarget(row), []);
+  const startInlineCb = useCallback(startInline, [isAdmin]);
+  const commitInlineCb = useCallback(commitInline, [inlineEdit, inlineVal]);
+  const cancelInlineCb = useCallback(() => setInlineEdit(null), []);
+  const onInlineValChangeCb = useCallback((v: string) => setInlineVal(v), []);
 
-  const selectedSum = React.useMemo(() => {
-    return filtered.filter(r => selectedIds.has(r.id)).reduce((s, r) => s + (r.amount ?? 0), 0);
-  }, [filtered, selectedIds]);
-
-  function payWeek(plannedPayAt: string | null, paidAt: string | null): string {
-    const d = paidAt ?? plannedPayAt;
-    if (!d) return "—";
-    return weekLabel(getISOWeek(new Date(d)));
-  }
+  const renderRow = React.useCallback(
+    (index: number) => {
+      const row = filtered[index];
+      if (!row) return null;
+      const inlineActive =
+        inlineEdit?.rowId === row.id ? inlineEdit.field : null;
+      return (
+        <OtherExpenseTableRow
+          key={row.id}
+          row={row}
+          rowIndex={index}
+          checked={selectedIds.has(row.id)}
+          isAdmin={isAdmin}
+          canEditRow={canEdit(row)}
+          canReviewRow={canReview(row)}
+          inlineActive={inlineActive}
+          inlineVal={inlineActive ? inlineVal : ""}
+          onSelect={handleRowSelect}
+          onInlineValChange={onInlineValChangeCb}
+          onStartInline={startInlineCb}
+          onCommitInline={commitInlineCb}
+          onCancelInline={cancelInlineCb}
+          onCheck={onCheckCb}
+          onRework={onReworkCb}
+          onPay={onPayCb}
+          onEdit={onEditCb}
+          onDelete={onDeleteCb}
+        />
+      );
+    },
+    [
+      filtered,
+      selectedIds,
+      inlineEdit,
+      inlineVal,
+      isAdmin,
+      handleRowSelect,
+      onInlineValChangeCb,
+      startInlineCb,
+      commitInlineCb,
+      cancelInlineCb,
+      onCheckCb,
+      onReworkCb,
+      onPayCb,
+      onEditCb,
+      onDeleteCb,
+      userId,
+      executorId,
+    ]
+  );
 
   return (
     <div className="flex flex-col gap-4 h-[calc(100vh-3rem)] min-h-0">
@@ -424,21 +685,21 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
           {/* Фильтры */}
           <MultiSelectFilter
             label="Год"
-            options={allYears.map(y => ({ value: String(y), label: `${y} год` }))}
+            options={yearOptions}
             value={fYear}
-            onChange={setFYear}
+            onChange={(v) => onFilterChange(setFYear, v)}
           />
           <MultiSelectFilter
             label="Месяц"
             options={MONTHS.map(m => ({ value: m.value, label: m.label }))}
             value={fMonth}
-            onChange={setFMonth}
+            onChange={(v) => onFilterChange(setFMonth, v)}
           />
           <MultiSelectFilter
             label="Проект"
             options={projects.map(p => ({ value: p.id, label: p.name }))}
             value={fProject}
-            onChange={setFProject}
+            onChange={(v) => onFilterChange(setFProject, v)}
             popoverClassName="w-auto min-w-72 max-w-lg"
             optionLabelClassName="whitespace-normal"
           />
@@ -446,39 +707,51 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
             label="Исполнитель"
             options={executors.map(e => ({ value: e.id, label: e.name }))}
             value={fExecutor}
-            onChange={setFExecutor}
+            onChange={(v) => onFilterChange(setFExecutor, v)}
           />
           <MultiSelectFilter
             label="Вид работ"
             options={workTypeOpts}
             value={fWorkType}
-            onChange={setFWorkType}
+            onChange={(v) => onFilterChange(setFWorkType, v)}
           />
           <MultiSelectFilter
             label="Руководитель проекта"
-            options={permanentExecutors.map(r => ({ value: r.id, label: r.name }))}
+            options={[
+              { value: "__empty__", label: "Пусто" },
+              ...permanentExecutors.map(r => ({ value: r.id, label: r.name })),
+            ]}
             value={fResponsible}
-            onChange={setFResponsible}
+            onChange={(v) => onFilterChange(setFResponsible, v)}
           />
           <MultiSelectFilter
             label="Статус работы"
             options={Object.entries(WORK_STATUSES).map(([v, { label: l }]) => ({ value: v, label: l }))}
             value={fWorkStatus}
-            onChange={setFWorkStatus}
+            onChange={(v) => onFilterChange(setFWorkStatus, v)}
           />
           <MultiSelectFilter
             label="Статус выплаты"
             options={[{ value: "__empty__", label: "Пусто" }, ...Object.entries(PAYMENT_STATUSES).map(([v, { label: l }]) => ({ value: v, label: l }))]}
             value={fPayStatus}
-            onChange={setFPayStatus}
+            onChange={(v) => onFilterChange(setFPayStatus, v)}
           />
         </div>
       </div>
 
+      {allPageSelected && total > rows.length && !selectAllFiltered && (
+        <div className="text-xs text-blue-700 px-1">
+          Выбраны все на странице.{" "}
+          <button type="button" className="underline hover:no-underline" onClick={() => setSelectAllFiltered(true)}>
+            Выбрать все {total} по фильтру
+          </button>
+        </div>
+      )}
+
       {/* Bulk toolbar */}
-      {selectedIds.size > 0 && (
+      {(selectedIds.size > 0 || selectAllFiltered) && (
         <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200">
-          <span className="text-xs font-medium text-blue-700">{selectedIds.size} выбрано</span>
+          <span className="text-xs font-medium text-blue-700">{selectAllFiltered ? total : selectedIds.size} выбрано</span>
           <span className="text-xs tabular-nums font-semibold text-neutral-700">{formatMoneyRub(selectedSum)}</span>
           <Select value={bulkWorkStatus} onValueChange={(v) => v && setBulkWorkStatus(v)}>
             <SelectTrigger className="h-7 w-44 text-xs">
@@ -512,17 +785,17 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
           <Button size="sm" className="h-7 text-xs" onClick={handleBulkApply} disabled={bulkSaving}>
             {bulkSaving ? "..." : "Применить"}
           </Button>
-          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { clearSelection(); setBulkWorkStatus(""); setBulkPlannedPayAt(""); setBulkPaidAt(""); setBulkBankId(""); }}>
+          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { resetSelection(); setBulkWorkStatus(""); setBulkPlannedPayAt(""); setBulkPaidAt(""); setBulkBankId(""); }}>
             <X className="h-3.5 w-3.5" />
           </Button>
         </div>
       )}
 
-      {filtered.length > 0 && (
+      {total > 0 && (
         <div className="flex items-center gap-4 px-1 py-1 text-xs text-neutral-500 shrink-0">
-          <span>{filtered.length} записей</span>
+          <span>{total} записей</span>
           <span className="text-xs font-medium tabular-nums text-neutral-800">
-            {formatMoneyRub(filtered.reduce((s, r) => s + (r.amount ?? 0), 0))}
+            {formatMoneyRub(totalAmount)}
           </span>
         </div>
       )}
@@ -531,6 +804,7 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
         className="table-fixed w-full"
         style={{ minWidth: TABLE_MIN_WIDTH }}
         containerClassName="rounded-md border bg-white flex-1 min-h-0 min-w-0 overflow-auto"
+        containerRef={scrollRef}
       >
           <colgroup>
             {COL_WIDTHS.map((w, i) => (
@@ -540,7 +814,10 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
           <TableHeader>
             <TableRow>
               <TableHead className="w-8">
-                <Checkbox checked={selectedIds.size === filtered.length && filtered.length > 0} onCheckedChange={() => toggleAll(orderedRowIds)} />
+                <Checkbox
+                  checked={selectAllFiltered || (allPageSelected && filtered.length > 0)}
+                  onCheckedChange={handleToggleAll}
+                />
               </TableHead>
               <TableHead className={compactPeriodHead}>Год выполнения</TableHead>
               <TableHead className={compactPeriodHead}>Месяц выполнения</TableHead>
@@ -563,147 +840,36 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
               <TableHead className={cn(stickyActionsHead, "w-[128px] min-w-[128px] max-w-[128px]")} />
             </TableRow>
           </TableHeader>
-          <BulkSelectTableBody>
-            {loading ? (
+          <VirtualizedTableBody
+            scrollRef={scrollRef}
+            rowCount={filtered.length}
+            colSpan={18}
+            isLoading={isLoading}
+            loading={
               <TableRow>
                 <TableCell colSpan={18} className="text-center text-neutral-500 py-8">Загрузка...</TableCell>
               </TableRow>
-            ) : filtered.length === 0 ? (
+            }
+            isEmpty={filtered.length === 0}
+            empty={
               <TableRow>
                 <TableCell colSpan={18} className="text-center text-neutral-500 py-8">Нет данных</TableCell>
               </TableRow>
-            ) : filtered.map((row, rowIndex) => (
-              <TableRow key={row.id} className={selectedIds.has(row.id) ? "bg-blue-50" : ""}>
-                <TableCell>
-                  <RowSelectCheckbox
-                    checked={selectedIds.has(row.id)}
-                    rowIndex={rowIndex}
-                    rowId={row.id}
-                    onSelect={handleRowSelect}
-                  />
-                </TableCell>
-                <TableCell>{row.executionYear}</TableCell>
-                <TableCell className="whitespace-nowrap">{MONTHS.find(m => m.value === String(row.executionMonth))?.label ?? row.executionMonth}</TableCell>
-                <TableCell>{payWeek(row.plannedPayAt, row.paidAt)}</TableCell>
-                <TableCell className={cn(cellClip, "whitespace-normal")}>
-                  <ExpandableListCell items={[row.project.name]} />
-                </TableCell>
-                <TableCell className={cn(cellClip, "whitespace-normal")}>
-                  <ExpandableListCell items={[row.executor.name]} />
-                </TableCell>
-                <TableCell className={cn(cellClip, "whitespace-normal")}>
-                  <ExpandableListCell items={row.description ? [row.description] : []} />
-                </TableCell>
-                <TableCell className={cn(cellClip, "whitespace-normal")}>
-                  <ExpandableListCell items={[row.workType.name]} />
-                </TableCell>
-                <TableCell className={cn(cellClip, "whitespace-normal")}>
-                  <ExpandableListCell items={row.responsibleExecutor ? [row.responsibleExecutor.name] : []} />
-                </TableCell>
-                <TableCell className={cn(cellClip, "whitespace-normal")}>
-                  {row.preferredPayMethod ? (
-                    <ExpandableListCell items={[row.preferredPayMethod]} />
-                  ) : (
-                    <span className="text-neutral-400">—</span>
-                  )}
-                </TableCell>
-                <TableCell className={cn(cellClip, "whitespace-nowrap")}>
-                  {renderPlanDateCell(row)}
-                </TableCell>
-                <TableCell className={cn(cellClip, "text-right tabular-nums font-semibold whitespace-nowrap")}>
-                  {formatMoney(row.amount)}
-                </TableCell>
-                <TableCell className={cn(cellClip, "whitespace-nowrap")}>
-                  <StatusBadge dict={WORK_STATUSES} value={row.workStatus} />
-                </TableCell>
-                <TableCell className={cn(cellClip, "whitespace-nowrap")}>
-                  {row.paymentStatus ? (
-                    <StatusBadge dict={PAYMENT_STATUSES} value={row.paymentStatus} />
-                  ) : (
-                    <span className="text-neutral-300">—</span>
-                  )}
-                </TableCell>
-                <TableCell className={cn(cellClip, "text-right tabular-nums whitespace-nowrap")}>
-                  {row.paymentAmount != null ? formatMoney(row.paymentAmount) : "—"}
-                </TableCell>
-                <TableCell className={cn(cellClip, "whitespace-nowrap")}>
-                  {inlineEdit?.rowId === row.id && inlineEdit.field === "paidAt" ? (
-                    <input
-                      autoFocus
-                      type="date"
-                      value={inlineVal}
-                      onChange={(e) => setInlineVal(e.target.value)}
-                      onBlur={() => commitInline(row)}
-                      onClick={(e) => { try { (e.target as HTMLInputElement).showPicker(); } catch { /**/ } }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") commitInline(row);
-                        if (e.key === "Escape") setInlineEdit(null);
-                      }}
-                      className="w-full h-6 rounded border border-blue-300 px-1 text-xs bg-blue-50 focus:outline-none cursor-pointer"
-                    />
-                  ) : row.paymentStatus && isAdmin ? (
-                    <button
-                      type="button"
-                      className="text-xs text-neutral-600 hover:text-blue-700 hover:underline"
-                      title="Указать дату оплаты"
-                      onClick={() => startInline(row, "paidAt")}
-                    >
-                      {row.paidAt ? formatDateShort(row.paidAt) : "—"}
-                    </button>
-                  ) : (
-                    <span className="text-xs text-neutral-600">
-                      {row.paidAt ? formatDateShort(row.paidAt) : "—"}
-                    </span>
-                  )}
-                </TableCell>
-                <TableCell className={cn(cellClip, "whitespace-normal pr-1")}>
-                  <ExpandableListCell items={row.bankAccount?.name ? [row.bankAccount.name] : []} />
-                </TableCell>
-                <TableCell
-                  className={cn(
-                    stickyActionsCell,
-                    "min-w-[128px] w-[128px] max-w-[128px]",
-                    selectedIds.has(row.id) && "bg-blue-50"
-                  )}
-                >
-                  <div className="flex shrink-0 gap-0.5 items-center justify-end">
-                    {canReview(row) && !row.paymentStatus && row.workStatus === "submitted" && (
-                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="Проверить" onClick={() => setCheckTarget(row)}>
-                        <CheckCircle className="h-3.5 w-3.5 text-blue-600" />
-                      </Button>
-                    )}
-                    {canReview(row) && !row.paymentStatus && row.workStatus === "submitted" && (
-                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="На доработку" onClick={() => setReworkTarget(row)}>
-                        <RotateCcw className="h-3.5 w-3.5 text-amber-500" />
-                      </Button>
-                    )}
-                    {isAdmin && (row.paymentStatus === "planned" || row.paymentStatus === "sent") && (
-                      <Button
-                        size="sm" variant="ghost" className="h-6 w-6 p-0" title="Оплатить"
-                        onClick={() => {
-                          setPayDate(toLocalDateString(new Date()));
-                          setPayTarget(row);
-                        }}
-                      >
-                        <CircleDollarSign className="h-3.5 w-3.5 text-green-600" />
-                      </Button>
-                    )}
-                    {canEdit(row) && (
-                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="Редактировать" onClick={() => setEditTarget(row)}>
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                    {canEdit(row) && (
-                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="Удалить" onClick={() => setDeleteTarget(row)}>
-                        <Trash2 className="h-3.5 w-3.5 text-red-400" />
-                      </Button>
-                    )}
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </BulkSelectTableBody>
+            }
+            renderRow={renderRow}
+          />
         </Table>
+
+      <TablePagination
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        onPageChange={setPage}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setPage(1);
+        }}
+      />
 
       {/* Диалоги */}
       {createOpen && (
@@ -712,7 +878,7 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
           projects={projects} executors={executors} workTypes={workTypes}
           permanentExecutors={permanentExecutors} bankAccounts={bankAccounts}
           onClose={() => setCreateOpen(false)}
-          onSaved={() => { setCreateOpen(false); silentLoad(); toast.success("Создано"); }}
+          onSaved={() => { setCreateOpen(false); mutate(); toast.success("Создано"); }}
         />
       )}
 
@@ -724,7 +890,7 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
           permanentExecutors={permanentExecutors} bankAccounts={bankAccounts}
           initial={editTarget}
           onClose={() => setEditTarget(null)}
-          onSaved={() => { setEditTarget(null); silentLoad(); toast.success("Сохранено"); }}
+          onSaved={() => { setEditTarget(null); mutate(); toast.success("Сохранено"); }}
         />
       )}
 

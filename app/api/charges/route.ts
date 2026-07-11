@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
-import { createCharge, listCharges } from "@/lib/services/charges";
+import { createCharge, listChargesPage } from "@/lib/services/charges";
+import { parseChargesListQuery } from "@/lib/services/chargesQuery";
 import { z } from "zod";
 
 const createSchema = z.object({
@@ -16,11 +17,11 @@ const createSchema = z.object({
   status: z.enum(["planned", "to_pay", "pending_approval", "paid"]).optional(),
 });
 
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   const user = await getSessionUser();
   if (!user || !isAdmin(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  const data = await listCharges();
-  return NextResponse.json(data);
+  const query = parseChargesListQuery(req.nextUrl.searchParams);
+  return NextResponse.json(await listChargesPage(query));
 }
 
 export async function POST(req: NextRequest) {

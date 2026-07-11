@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/db";
 import { logActivity } from "@/lib/audit/log";
+import { getISOWeek, getISOWeekYear } from "@/lib/iso-weeks";
+import { paginateSlice, type PaginatedResult } from "@/lib/pagination";
 
 // ─── Автогенерация номера начисления H001, H002, ... ─────────────────────────
 
@@ -30,30 +32,97 @@ export type CreateChargeInput = {
 
 export type UpdateChargeInput = Partial<CreateChargeInput>;
 
-// ─── List ─────────────────────────────────────────────────────────────────────
+// ─── List / pagination ────────────────────────────────────────────────────────
 
-export async function listCharges() {
-  return prisma.charge.findMany({
-    include: {
-      bankAccount: { select: { id: true, name: true, currency: true } },
-      order: {
+const chargeInclude = {
+  bankAccount: { select: { id: true, name: true, currency: true } },
+  order: {
+    select: {
+      id: true,
+      orderNumber: true,
+      description: true,
+      project: {
         select: {
           id: true,
-          orderNumber: true,
-          description: true,
-          project: {
-            select: {
-              id: true,
-              name: true,
-              shortName: true,
-              client: { select: { id: true, name: true } },
-            },
-          },
+          name: true,
+          shortName: true,
+          client: { select: { id: true, name: true } },
         },
       },
     },
+  },
+} as const;
+
+export type ChargeListRow = Awaited<ReturnType<typeof listCharges>>[number];
+
+export type ChargesFilter = {
+  bankAccountId?: string[];
+  orderId?: string[];
+  status?: string[];
+  clientId?: string[];
+  clientIdHasEmpty?: boolean;
+  projectId?: string[];
+  projectIdHasEmpty?: boolean;
+  payWeek?: string[];
+  hidePaid?: boolean;
+};
+
+export type ChargesListQuery = {
+  filter?: ChargesFilter;
+  page?: number;
+  pageSize?: number;
+};
+
+function chargePayWeekKey(charge: {
+  paidAt: Date | null;
+  paidPlanAt: Date | null;
+}): string {
+  const d = charge.paidAt ?? charge.paidPlanAt;
+  if (!d) return "__empty__";
+  return `${getISOWeekYear(d)}-${getISOWeek(d)}`;
+}
+
+function applyChargesFilter(rows: ChargeListRow[], f: ChargesFilter): ChargeListRow[] {
+  return rows.filter((r) => {
+    if (f.bankAccountId?.length && (!r.bankAccountId || !f.bankAccountId.includes(r.bankAccountId))) return false;
+    if (f.orderId?.length && (!r.orderId || !f.orderId.includes(r.orderId))) return false;
+    if (f.status?.length && !f.status.includes(r.status)) return false;
+    if (f.clientId?.length || f.clientIdHasEmpty) {
+      const token = r.order?.project?.client?.id ?? "__empty__";
+      const allowed = [...(f.clientId ?? []), ...(f.clientIdHasEmpty ? ["__empty__"] : [])];
+      if (!allowed.includes(token)) return false;
+    }
+    if (f.projectId?.length || f.projectIdHasEmpty) {
+      const token = r.order?.project?.id ?? "__empty__";
+      const allowed = [...(f.projectId ?? []), ...(f.projectIdHasEmpty ? ["__empty__"] : [])];
+      if (!allowed.includes(token)) return false;
+    }
+    if (f.payWeek?.length && !f.payWeek.includes(chargePayWeekKey(r))) return false;
+    if (f.hidePaid && r.status === "paid") return false;
+    return true;
+  });
+}
+
+export async function listCharges() {
+  return prisma.charge.findMany({
+    include: chargeInclude,
     orderBy: { chargeNumber: "desc" },
   });
+}
+
+export async function listChargesPage(
+  query: ChargesListQuery = {}
+): Promise<PaginatedResult<ChargeListRow> & { totalAmount: number }> {
+  const filter = query.filter ?? {};
+  const page = query.page ?? 1;
+  const pageSize = query.pageSize ?? 100;
+  const filtered = applyChargesFilter(await listCharges(), filter);
+  const totalAmount = filtered.reduce((s, r) => s + (r.amount ?? 0), 0);
+  return { ...paginateSlice(filtered, page, pageSize), totalAmount };
+}
+
+export async function listChargeIds(filter: ChargesFilter = {}): Promise<string[]> {
+  return applyChargesFilter(await listCharges(), filter).map((r) => r.id);
 }
 
 // ─── Create ───────────────────────────────────────────────────────────────────

@@ -9,10 +9,9 @@ import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import { WORK_STATUSES, WORK_STATUSES_SETTABLE } from "@/lib/statuses";
-import { formatMoney, formatMoneyRub, formatDate, formatDateShort, weekLabel, monthLabel, MONTHS } from "@/lib/format";
+import { formatMoney, formatMoneyRub, formatDateShort, weekLabel, monthLabel, MONTHS } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
 import { DateInput } from "@/components/ui-custom/DateInput";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -22,10 +21,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { BulkSelectTableBody } from "@/components/ui-custom/BulkSelectTableBody";
+import { VirtualizedTableBody } from "@/components/ui-custom/VirtualizedTableBody";
+import { TablePagination } from "@/components/ui-custom/TablePagination";
 import { SortableHead } from "@/components/ui-custom/SortableHead";
 import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
 import { useTableRowSelection } from "@/lib/useTableRowSelection";
+import { useServerTable } from "@/lib/useServerTable";
+import {
+  buildIssuedWorksSearchParams,
+  clientFiltersToIssuedWorksFilter,
+} from "@/lib/views/issuedWorksQuery";
+import type { IssuedWorksSort } from "@/lib/views/issuedWorks";
 import { cn } from "@/lib/utils";
 import { stickyActionsHead, stickyActionsCell, stickyActionsInner, compactTable, compactHead, compactPeriodHead, compactCell, compactCellClip } from "@/lib/table-styles";
 import { IssuedWorkEditDialog, type SmetaType } from "./IssuedWorkEditDialog";
@@ -61,7 +67,7 @@ export type IssuedWorkRowDTO = Row;
 
 type ProjectOption = { id: string; name: string; status: string };
 type ExecutorOption = { id: string; name: string; status: string };
-type WorkTypeOption = { id: string; name: string; status: string };
+type WorkTypeOption = { id: string; name: string; status: string; segment?: string };
 
 const fetcher = <T,>(url: string): Promise<T> =>
   fetch(url).then((r) => {
@@ -69,16 +75,34 @@ const fetcher = <T,>(url: string): Promise<T> =>
     return r.json() as Promise<T>;
   });
 
-type SortField =
-  | "weekPlanFact"
-  | "projectName"
-  | "executorName"
-  | "executionMonth"
-  | "executionYear"
-  | "workTypeName"
-  | "amount"
-  | "workStatus";
-type SortDir = "asc" | "desc";
+type ListResponse = {
+  items: Row[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalAmount: number;
+};
+
+function buildYearOptions(): { value: string; label: string }[] {
+  const current = new Date().getFullYear();
+  const years = Array.from({ length: 8 }, (_, i) => current - i + 2);
+  return [
+    { value: "__empty__", label: "Пусто" },
+    ...years.map((y) => ({ value: String(y), label: String(y) })),
+  ];
+}
+
+function buildWeekOptions(): { value: string; label: string }[] {
+  return [
+    { value: "__empty__", label: "Пусто" },
+    ...Array.from({ length: 53 }, (_, i) => {
+      const w = i + 1;
+      return { value: String(w), label: weekLabel(w) };
+    }),
+  ];
+}
+type SortField = IssuedWorksSort["field"];
+type SortDir = IssuedWorksSort["dir"];
 
 const SMETA_LABEL: Record<SmetaType, string> = {
   personal: "Личная смета",
@@ -102,11 +126,94 @@ function smetaTypeCell(row: Row) {
   return SMETA_LABEL["other-expense"];
 }
 
+function issuedWorkRowId(r: Row) {
+  return `${r.sourceType}:${r.sourceId}`;
+}
+
+type IssuedWorkRowProps = {
+  row: Row;
+  rowIndex: number;
+  checked: boolean;
+  onSelect: (index: number, id: string, shiftKey: boolean) => void;
+  onEdit: (row: Row) => void;
+  onCheck: (row: Row) => void;
+};
+
+const IssuedWorkRow = React.memo(function IssuedWorkRow({
+  row: r,
+  rowIndex,
+  checked,
+  onSelect,
+  onEdit,
+  onCheck,
+}: IssuedWorkRowProps) {
+  const id = issuedWorkRowId(r);
+  return (
+    <TableRow
+      className={`${checked ? "bg-blue-50" : ""} ${r.workStatus === "archived" ? "bg-neutral-50 text-neutral-400" : ""}`.trim()}
+    >
+      <TableCell>
+        <RowSelectCheckbox
+          checked={checked}
+          rowIndex={rowIndex}
+          rowId={id}
+          onSelect={onSelect}
+        />
+      </TableCell>
+      <TableCell className={cn(compactCell, "tabular-nums text-left", periodYearMonthClass)}>
+        {r.executionYear}
+      </TableCell>
+      <TableCell className={cn(compactCell, "whitespace-nowrap", periodYearMonthClass)}>
+        {monthLabel(r.executionMonth)}
+      </TableCell>
+      <TableCell className={cn(compactCell, "whitespace-nowrap", weekPayClass)}>
+        {r.weekPlanFact != null ? weekLabel(r.weekPlanFact) : "—"}
+      </TableCell>
+      <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>{r.executorName}</TableCell>
+      <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>
+        {r.responsibleExecutorName ?? "—"}
+      </TableCell>
+      <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>{r.projectName}</TableCell>
+      <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>{r.workTypeName}</TableCell>
+      <TableCell className={cn(compactCell, "text-right tabular-nums font-semibold")}>{formatMoney(r.amount)}</TableCell>
+      <TableCell className={compactCell}>
+        <StatusBadge dict={WORK_STATUSES} value={r.workStatus} />
+      </TableCell>
+      <TableCell className={compactCell}>{formatDateShort(r.checkedAt)}</TableCell>
+      <TableCell className={compactCell}>{formatDateShort(r.plannedPayAt)}</TableCell>
+      <TableCell className={cn(compactCell, r.workStatus === "paid" && !r.paidAt && "bg-red-100 text-red-700")}>
+        {formatDateShort(r.paidAt)}
+      </TableCell>
+      <TableCell className={compactCell}>{smetaTypeCell(r)}</TableCell>
+      <TableCell
+        className={cn(
+          stickyActionsCell,
+          checked && "bg-blue-50",
+          r.workStatus === "archived" && "bg-neutral-50"
+        )}
+      >
+        <div className={stickyActionsInner}>
+          <Button size="sm" variant="ghost" onClick={() => onEdit(r)} title="Редактировать">
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+          {r.workStatus === "submitted" && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => onCheck(r)}
+              title="Проставить «Проверено»"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+});
+
 export function IssuedWorksClient() {
-  const { data, isLoading, mutate } = useSWR<Row[]>("/api/issued-works", fetcher);
-  const { data: projects } = useSWR<ProjectOption[]>("/api/projects/options", fetcher);
-  const { data: executors } = useSWR<ExecutorOption[]>("/api/executors", fetcher);
-  const { data: workTypes } = useSWR<WorkTypeOption[]>("/api/work-types", fetcher);
+  const { page, setPage, pageSize, setPageSize, onFilterChange } = useServerTable();
 
   const [yearPlanFactFilter, setYearPlanFactFilter] = React.useState<string[]>([String(new Date().getFullYear())]);
   const [executionYearFilter, setExecutionYearFilter] = React.useState<string[]>([]);
@@ -118,154 +225,213 @@ export function IssuedWorksClient() {
   const [statusFilter, setStatusFilter] = React.useState<string[]>([]);
   const [smetaFilter, setSmetaFilter] = React.useState<string[]>([]);
 
-  const [sort, setSort] = React.useState<{ field: SortField; dir: SortDir }[]>([
+  const [sort, setSort] = React.useState<IssuedWorksSort[]>([
     { field: "weekPlanFact", dir: "desc" },
     { field: "projectName", dir: "asc" },
     { field: "executorName", dir: "asc" },
     { field: "executionMonth", dir: "desc" },
   ]);
 
+  const filterState = React.useMemo(
+    () => ({
+      yearPlanFact: yearPlanFactFilter,
+      executionYear: executionYearFilter,
+      executionMonth: executionMonthFilter,
+      weekPlanFact: weekFilter,
+      executorId: executorFilter,
+      projectId: projectFilter,
+      workTypeId: workTypeFilter,
+      workStatus: statusFilter,
+      smetaFilter,
+    }),
+    [
+      yearPlanFactFilter,
+      executionYearFilter,
+      executionMonthFilter,
+      weekFilter,
+      executorFilter,
+      projectFilter,
+      workTypeFilter,
+      statusFilter,
+      smetaFilter,
+    ]
+  );
+
+  const listUrl = React.useMemo(
+    () =>
+      `/api/issued-works?${buildIssuedWorksSearchParams({
+        filter: filterState,
+        sort,
+        page,
+        pageSize,
+      })}`,
+    [filterState, sort, page, pageSize]
+  );
+
+  const { data, isLoading, mutate } = useSWR<ListResponse>(listUrl, fetcher);
+  const { data: projects } = useSWR<ProjectOption[]>("/api/projects/options", fetcher);
+  const { data: executors } = useSWR<ExecutorOption[]>("/api/executors", fetcher);
+  const { data: workTypes } = useSWR<WorkTypeOption[]>("/api/work-types", fetcher);
+
   const [editing, setEditing] = React.useState<Row | null>(null);
+  const [selectAllFiltered, setSelectAllFiltered] = React.useState(false);
 
   // Bulk
   const [bulkStatus, setBulkStatus] = React.useState("");
   const [bulkPlannedPayAt, setBulkPlannedPayAt] = React.useState("");
   const [bulkSaving, setBulkSaving] = React.useState(false);
 
-  function rowId(r: Row) { return `${r.sourceType}:${r.sourceId}`; }
+  const scrollRef = React.useRef<HTMLDivElement>(null);
 
-  function compareRows(a: Row, b: Row): number {
-    for (const s of sort) {
-      const av = a[s.field];
-      const bv = b[s.field];
-      const cmp =
-        typeof av === "number" && typeof bv === "number"
-          ? av - bv
-          : String(av ?? "").localeCompare(String(bv ?? ""), "ru");
-      const signed = s.dir === "asc" ? cmp : -cmp;
-      if (signed !== 0) return signed;
-    }
-    return 0;
+  const rows = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const totalAmount = data?.totalAmount ?? 0;
+
+  const yearOptions = React.useMemo(() => buildYearOptions(), []);
+  const execYearOptions = yearOptions;
+  const monthOptions = MONTHS;
+  const weekOptions = React.useMemo(() => buildWeekOptions(), []);
+
+  const executorOptions = React.useMemo(
+    () =>
+      (executors ?? [])
+        .map((e) => ({ value: e.id, label: e.name }))
+        .sort((a, b) => a.label.localeCompare(b.label, "ru")),
+    [executors]
+  );
+  const projectOptions = React.useMemo(
+    () =>
+      (projects ?? [])
+        .map((p) => ({ value: p.id, label: p.name }))
+        .sort((a, b) => a.label.localeCompare(b.label, "ru")),
+    [projects]
+  );
+  const workTypeOptions = React.useMemo(
+    () =>
+      (workTypes ?? [])
+        .map((wt) => ({
+          value: wt.id,
+          label: wt.name,
+          group: wt.segment ?? "",
+        }))
+        .sort(
+          (a, b) =>
+            (a.group ?? "").localeCompare(b.group ?? "", "ru") ||
+            a.label.localeCompare(b.label, "ru")
+        ),
+    [workTypes]
+  );
+
+  const orderedRowIds = React.useMemo(() => rows.map(issuedWorkRowId), [rows]);
+  const { selectedIds, handleRowSelect, toggleAll, clearSelection } = useTableRowSelection(orderedRowIds);
+
+  React.useEffect(() => {
+    clearSelection();
+    setSelectAllFiltered(false);
+  }, [listUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function resetSelection() {
+    clearSelection();
+    setSelectAllFiltered(false);
   }
 
   function handleSort(field: string, dir: SortDir) {
     setSort([{ field: field as SortField, dir }]);
+    setPage(1);
+    resetSelection();
   }
 
-  const allRows = data ?? [];
-
-  const yearOptions = React.useMemo(() => {
-    const opts = Array.from(
-      new Set(allRows.map((r) => r.yearPlanFact).filter((v): v is number => v != null))
-    ).sort((a, b) => b - a).map((y) => ({ value: String(y), label: String(y) }));
-    const hasEmpty = allRows.some((r) => r.yearPlanFact === null);
-    return hasEmpty ? [{ value: "__empty__", label: "Пусто" }, ...opts] : opts;
-  }, [allRows]);
-  const execYearOptions = React.useMemo(
-    () =>
-      Array.from(new Set(allRows.map((r) => r.executionYear)))
-        .sort((a, b) => b - a)
-        .map((y) => ({ value: String(y), label: String(y) })),
-    [allRows]
-  );
-  const monthOptions = MONTHS;
-  const weekOptions = React.useMemo(() => {
-    const opts = Array.from(
-      new Set(allRows.map((r) => r.weekPlanFact).filter((v): v is number => v != null))
-    ).sort((a, b) => a - b).map((w) => ({ value: String(w), label: weekLabel(w) }));
-    const hasEmpty = allRows.some((r) => r.weekPlanFact === null);
-    return hasEmpty ? [{ value: "__empty__", label: "Пусто" }, ...opts] : opts;
-  }, [allRows]);
-  const executorOptions = React.useMemo(
-    () =>
-      Array.from(new Map(allRows.map((r) => [r.executorId, r.executorName])).entries())
-        .sort((a, b) => a[1].localeCompare(b[1], "ru"))
-        .map(([value, label]) => ({ value, label })),
-    [allRows]
-  );
-  const projectOptions = React.useMemo(
-    () =>
-      Array.from(new Map(allRows.map((r) => [r.projectId, r.projectName])).entries())
-        .sort((a, b) => a[1].localeCompare(b[1], "ru"))
-        .map(([value, label]) => ({ value, label })),
-    [allRows]
-  );
-  const workTypeOptions = React.useMemo(() => {
-    const map = new Map<string, { label: string; group: string }>();
-    for (const r of allRows) {
-      if (!map.has(r.workTypeId)) {
-        map.set(r.workTypeId, { label: r.workTypeName, group: r.workTypeSegment ?? "" });
+  const { displayCount, displaySum } = React.useMemo(() => {
+    if (selectAllFiltered) {
+      return { displayCount: total, displaySum: totalAmount };
+    }
+    if (selectedIds.size === 0) {
+      return { displayCount: total, displaySum: totalAmount };
+    }
+    let sum = 0;
+    let count = 0;
+    for (const r of rows) {
+      if (selectedIds.has(issuedWorkRowId(r))) {
+        sum += r.amount;
+        count += 1;
       }
     }
-    return Array.from(map.entries())
-      .sort((a, b) =>
-        (a[1].group ?? "").localeCompare(b[1].group ?? "", "ru") ||
-        a[1].label.localeCompare(b[1].label, "ru")
-      )
-      .map(([value, { label, group }]) => ({ value, label, group }));
-  }, [allRows]);
+    return { displayCount: count, displaySum: sum };
+  }, [rows, selectedIds, total, totalAmount, selectAllFiltered]);
 
-  const rows = React.useMemo(() => {
-    let list = allRows;
-    if (yearPlanFactFilter.length)
-      list = list.filter((r) => yearPlanFactFilter.includes(r.yearPlanFact === null ? "__empty__" : String(r.yearPlanFact)));
-    if (executionYearFilter.length)
-      list = list.filter((r) => executionYearFilter.includes(String(r.executionYear)));
-    if (executionMonthFilter.length)
-      list = list.filter((r) => executionMonthFilter.includes(String(r.executionMonth)));
-    if (weekFilter.length) list = list.filter((r) => weekFilter.includes(r.weekPlanFact === null ? "__empty__" : String(r.weekPlanFact)));
-    if (executorFilter.length) list = list.filter((r) => executorFilter.includes(r.executorId));
-    if (projectFilter.length) list = list.filter((r) => projectFilter.includes(r.projectId));
-    if (workTypeFilter.length) list = list.filter((r) => workTypeFilter.includes(r.workTypeId));
-    if (statusFilter.length) list = list.filter((r) => statusFilter.includes(r.workStatus));
-    if (smetaFilter.length) list = list.filter((r) => smetaFilter.includes(r.sourceType));
-    return [...list].sort(compareRows);
-  }, [
-    allRows,
-    yearPlanFactFilter,
-    executionYearFilter,
-    executionMonthFilter,
-    weekFilter,
-    executorFilter,
-    projectFilter,
-    workTypeFilter,
-    statusFilter,
-    smetaFilter,
-    sort,
-  ]);
+  const handleEdit = React.useCallback((row: Row) => setEditing(row), []);
 
-  const orderedRowIds = React.useMemo(() => rows.map(rowId), [rows]);
-  const { selectedIds, handleRowSelect, toggleAll, clearSelection } = useTableRowSelection(orderedRowIds);
+  const handleCheckRow = React.useCallback(
+    async (row: Row) => {
+      const compositeId = `${row.sourceType}:${row.sourceId}`;
+      const res = await fetch(`/api/issued-works/${compositeId}/check`, { method: "POST" });
+      if (!res.ok) return toast.error("Не удалось проставить «Проверено»");
+      toast.success("Работа проверена");
+      mutate();
+    },
+    [mutate]
+  );
+
+  const renderRow = React.useCallback(
+    (index: number) => {
+      const r = rows[index];
+      if (!r) return null;
+      const id = issuedWorkRowId(r);
+      return (
+        <IssuedWorkRow
+          key={id}
+          row={r}
+          rowIndex={index}
+          checked={selectedIds.has(id)}
+          onSelect={handleRowSelect}
+          onEdit={handleEdit}
+          onCheck={handleCheckRow}
+        />
+      );
+    },
+    [rows, selectedIds, handleRowSelect, handleEdit, handleCheckRow]
+  );
 
   async function handleBulkApply() {
-    const ids = Array.from(selectedIds);
     const patch: Record<string, unknown> = {};
     if (bulkStatus) patch.workStatus = bulkStatus;
     if (bulkPlannedPayAt) patch.plannedPayAt = new Date(bulkPlannedPayAt).toISOString();
     if (Object.keys(patch).length === 0) return toast.error("Выберите хотя бы одно поле");
+
+    const body = selectAllFiltered
+      ? {
+          selectAll: true,
+          filter: clientFiltersToIssuedWorksFilter(filterState),
+          patch,
+        }
+      : { ids: Array.from(selectedIds), patch };
+
     setBulkSaving(true);
     const res = await fetch("/api/issued-works/bulk", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids, patch }),
+      body: JSON.stringify(body),
     });
     setBulkSaving(false);
     if (!res.ok) return toast.error("Ошибка массового обновления");
     const { updated } = await res.json() as { updated: number };
     toast.success(`Обновлено ${updated} записей`);
-    clearSelection();
+    resetSelection();
     setBulkStatus("");
     setBulkPlannedPayAt("");
     mutate();
   }
 
-  async function handleCheck(row: Row) {
-    const compositeId = `${row.sourceType}:${row.sourceId}`;
-    const res = await fetch(`/api/issued-works/${compositeId}/check`, { method: "POST" });
-    if (!res.ok) return toast.error("Не удалось проставить «Проверено»");
-    toast.success("Работа проверена");
-    mutate();
+  function handleToggleAll() {
+    if (selectAllFiltered) {
+      resetSelection();
+      return;
+    }
+    toggleAll(orderedRowIds);
   }
+
+  const allPageSelected =
+    rows.length > 0 && orderedRowIds.every((id) => selectedIds.has(id));
 
   function activeSortField(): SortField {
     return sort[0]?.field ?? "weekPlanFact";
@@ -274,12 +440,6 @@ export function IssuedWorksClient() {
   function activeSortDir(): SortDir {
     return sort[0]?.dir ?? "desc";
   }
-
-  const displayRows = selectedIds.size > 0
-    ? rows.filter(r => selectedIds.has(rowId(r)))
-    : rows;
-  const displaySum = displayRows.reduce((s, r) => s + r.amount, 0);
-  const displayCount = displayRows.length;
 
   return (
     <div className="flex flex-col h-[calc(100vh-3rem)] min-h-0">
@@ -290,49 +450,49 @@ export function IssuedWorksClient() {
           label="Год оплаты план-факт"
           options={yearOptions}
           value={yearPlanFactFilter}
-          onChange={setYearPlanFactFilter}
+          onChange={(v) => onFilterChange(setYearPlanFactFilter, v)}
         />
         <MultiSelectFilter
           label="Год выполнения"
           options={execYearOptions}
           value={executionYearFilter}
-          onChange={setExecutionYearFilter}
+          onChange={(v) => onFilterChange(setExecutionYearFilter, v)}
         />
         <MultiSelectFilter
           label="Месяц"
           options={monthOptions}
           value={executionMonthFilter}
-          onChange={setExecutionMonthFilter}
+          onChange={(v) => onFilterChange(setExecutionMonthFilter, v)}
         />
         <MultiSelectFilter
           label="Неделя"
           options={weekOptions}
           value={weekFilter}
-          onChange={setWeekFilter}
+          onChange={(v) => onFilterChange(setWeekFilter, v)}
         />
         <MultiSelectFilter
           label="Исполнитель"
           options={executorOptions}
           value={executorFilter}
-          onChange={setExecutorFilter}
+          onChange={(v) => onFilterChange(setExecutorFilter, v)}
         />
         <MultiSelectFilter
           label="Проект"
           options={projectOptions}
           value={projectFilter}
-          onChange={setProjectFilter}
+          onChange={(v) => onFilterChange(setProjectFilter, v)}
         />
         <MultiSelectFilter
           label="Вид работ"
           options={workTypeOptions}
           value={workTypeFilter}
-          onChange={setWorkTypeFilter}
+          onChange={(v) => onFilterChange(setWorkTypeFilter, v)}
         />
         <MultiSelectFilter
           label="Статус"
           options={Object.entries(WORK_STATUSES).map(([value, { label }]) => ({ value, label }))}
           value={statusFilter}
-          onChange={setStatusFilter}
+          onChange={(v) => onFilterChange(setStatusFilter, v)}
         />
         <MultiSelectFilter
           label="Тип сметы"
@@ -341,23 +501,41 @@ export function IssuedWorksClient() {
             { value: "other-expense", label: "Прочие траты" },
           ]}
           value={smetaFilter}
-          onChange={setSmetaFilter}
+          onChange={(v) => onFilterChange(setSmetaFilter, v)}
         />
       </div>
 
-      {(rows.length > 0 || selectedIds.size > 0) && (
+      {(total > 0 || selectedIds.size > 0 || selectAllFiltered) && (
         <div className="flex items-center gap-4 px-1 py-1.5 text-xs text-neutral-500">
-          <span>{displayCount} {selectedIds.size > 0 ? "выбрано" : "записей"}</span>
+          <span>
+            {displayCount}{" "}
+            {selectAllFiltered || selectedIds.size > 0 ? "выбрано" : "записей"}
+          </span>
           <span className="text-xs font-medium tabular-nums text-neutral-800">
             {formatMoneyRub(displaySum)}
           </span>
         </div>
       )}
 
+      {allPageSelected && total > rows.length && !selectAllFiltered && (
+        <div className="mb-2 px-1 text-xs text-blue-700">
+          Выбраны все записи на странице.{" "}
+          <button
+            type="button"
+            className="underline hover:no-underline"
+            onClick={() => setSelectAllFiltered(true)}
+          >
+            Выбрать все {total} по фильтру
+          </button>
+        </div>
+      )}
+
       {/* Bulk toolbar */}
-      {selectedIds.size > 0 && (
+      {(selectedIds.size > 0 || selectAllFiltered) && (
         <div className="flex flex-wrap items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200">
-          <span className="text-xs font-medium text-blue-700">{selectedIds.size} выбрано</span>
+          <span className="text-xs font-medium text-blue-700">
+            {selectAllFiltered ? total : selectedIds.size} выбрано
+          </span>
           <Select value={bulkStatus} onValueChange={(v) => v && setBulkStatus(v)}>
             <SelectTrigger className="h-7 w-44 text-xs">
               <SelectValue>{bulkStatus ? (WORK_STATUSES[bulkStatus as keyof typeof WORK_STATUSES]?.label ?? "Статус") : "Статус"}</SelectValue>
@@ -375,7 +553,7 @@ export function IssuedWorksClient() {
           <Button size="sm" className="h-7 text-xs" onClick={handleBulkApply} disabled={bulkSaving}>
             {bulkSaving ? "..." : "Применить"}
           </Button>
-          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { clearSelection(); setBulkStatus(""); setBulkPlannedPayAt(""); }}>
+          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { resetSelection(); setBulkStatus(""); setBulkPlannedPayAt(""); }}>
             <X className="h-3.5 w-3.5" />
           </Button>
         </div>
@@ -384,11 +562,15 @@ export function IssuedWorksClient() {
       <Table
         className={cn(compactTable, "min-w-[1680px]")}
         containerClassName="rounded-md border bg-white flex-1 min-h-0 overflow-auto"
+        containerRef={scrollRef}
       >
           <TableHeader>
             <TableRow>
               <TableHead className="w-8">
-                <Checkbox checked={selectedIds.size === rows.length && rows.length > 0} onCheckedChange={() => toggleAll(orderedRowIds)} />
+                <Checkbox
+                  checked={selectAllFiltered || (allPageSelected && rows.length > 0)}
+                  onCheckedChange={handleToggleAll}
+                />
               </TableHead>
               <SortableHead
                 field="executionYear"
@@ -482,82 +664,41 @@ export function IssuedWorksClient() {
               <TableHead className={stickyActionsHead} />
             </TableRow>
           </TableHeader>
-          <BulkSelectTableBody>
-            {isLoading ? (
+          <VirtualizedTableBody
+            scrollRef={scrollRef}
+            rowCount={rows.length}
+            colSpan={15}
+            isLoading={isLoading}
+            loading={
               <TableRow>
                 <TableCell colSpan={15} className="text-center text-neutral-500 py-8">
                   Загрузка...
                 </TableCell>
               </TableRow>
-            ) : rows.length === 0 ? (
+            }
+            isEmpty={rows.length === 0}
+            empty={
               <TableRow>
                 <TableCell colSpan={15} className="text-center text-neutral-500 py-12">
                   Пока нет ни одной работы. Они появятся после создания строк в Личных сметах
                   и Прочих тратах (Phase 3).
                 </TableCell>
               </TableRow>
-            ) : (
-              rows.map((r, rowIndex) => (
-                <TableRow key={`${r.sourceType}:${r.sourceId}`} className={`${selectedIds.has(rowId(r)) ? "bg-blue-50" : ""} ${r.workStatus === "archived" ? "bg-neutral-50 text-neutral-400" : ""}`.trim()}>
-                  <TableCell>
-                    <RowSelectCheckbox
-                      checked={selectedIds.has(rowId(r))}
-                      rowIndex={rowIndex}
-                      rowId={rowId(r)}
-                      onSelect={handleRowSelect}
-                    />
-                  </TableCell>
-                  <TableCell className={cn(compactCell, "tabular-nums text-left", periodYearMonthClass)}>
-                    {r.executionYear}
-                  </TableCell>
-                  <TableCell className={cn(compactCell, "whitespace-nowrap", periodYearMonthClass)}>
-                    {monthLabel(r.executionMonth)}
-                  </TableCell>
-                  <TableCell className={cn(compactCell, "whitespace-nowrap", weekPayClass)}>
-                    {r.weekPlanFact != null ? weekLabel(r.weekPlanFact) : "—"}
-                  </TableCell>
-                  <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>{r.executorName}</TableCell>
-                  <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>
-                    {r.responsibleExecutorName ?? "—"}
-                  </TableCell>
-                  <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>{r.projectName}</TableCell>
-                  <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>{r.workTypeName}</TableCell>
-                  <TableCell className={cn(compactCell, "text-right tabular-nums font-semibold")}>{formatMoney(r.amount)}</TableCell>
-                  <TableCell className={compactCell}>
-                    <StatusBadge dict={WORK_STATUSES} value={r.workStatus} />
-                  </TableCell>
-                  <TableCell className={compactCell}>{formatDateShort(r.checkedAt)}</TableCell>
-                  <TableCell className={compactCell}>{formatDateShort(r.plannedPayAt)}</TableCell>
-                  <TableCell className={cn(compactCell, r.workStatus === "paid" && !r.paidAt && "bg-red-100 text-red-700")}>{formatDateShort(r.paidAt)}</TableCell>
-                  <TableCell className={compactCell}>{smetaTypeCell(r)}</TableCell>
-                  <TableCell
-                    className={cn(
-                      stickyActionsCell,
-                      selectedIds.has(rowId(r)) && "bg-blue-50",
-                      r.workStatus === "archived" && "bg-neutral-50"
-                    )}
-                  >
-                    <div className={stickyActionsInner}>
-                      <Button size="sm" variant="ghost" onClick={() => setEditing(r)} title="Редактировать">
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      {r.workStatus === "submitted" && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleCheck(r)}
-                          title="Проставить «Проверено»"
-                        >
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                        </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </BulkSelectTableBody>
+            }
+            renderRow={renderRow}
+          />
         </Table>
+
+      <TablePagination
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        onPageChange={setPage}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setPage(1);
+        }}
+      />
 
       {editing && (
         <IssuedWorkEditDialog
