@@ -9,7 +9,7 @@
 #   4. (опция) Импортирует дамп с Neon, если задан NEON_DATABASE_URL (всегда перезаливает)
 #   5. Собирает приложение, применяет схему Prisma
 #   6. Создаёт systemd-юнит kpd-frontend (Next.js на 127.0.0.1:3000)
-#   7. Подключает домен invoices.kpd.moscow через существующий Traefik
+#   7. Подключает домен kpd.kpd.moscow через существующий Traefik
 #      (только добавляет dynamic-конфиг, конфиги n8n не трогает)
 #   8. Настраивает ежедневный pg_dump-бэкап
 #   9. Генерирует SSH-ключ для CI-деплоя и выводит приватный ключ
@@ -20,7 +20,7 @@
 set -euo pipefail
 
 # ── Параметры ───────────────────────────────────────────────────────────────
-DOMAIN="${DOMAIN:-invoices.kpd.moscow}"
+DOMAIN="${DOMAIN:-kpd.kpd.moscow}"
 REPO_URL="${REPO_URL:-https://github.com/Moroz-js/kpd-front.git}"
 BRANCH="${BRANCH:-main}"
 APP_DIR="/opt/kpd/app"
@@ -223,6 +223,11 @@ else
   ensure_env "NEXTAUTH_URL" "https://$DOMAIN"
   ensure_env "AUTH_URL" "https://$DOMAIN"
   ensure_env "AUTH_TRUST_HOST" "true"
+  for key in NEXTAUTH_URL AUTH_URL; do
+    if grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
+      sed -i "s|^${key}=.*|${key}=https://$DOMAIN|" "$ENV_FILE"
+    fi
+  done
 fi
 
 log "npm ci..."
@@ -391,33 +396,33 @@ setup_traefik() {
   [ -z "$CERT_RESOLVER" ] && { warn "certresolver не определён — использую 'letsencrypt' (проверь при необходимости)"; CERT_RESOLVER="letsencrypt"; }
 
   mkdir -p "$DYNAMIC_DIR"
-  local CONF="$DYNAMIC_DIR/invoices-kpd.yml"
+  local CONF="$DYNAMIC_DIR/kpd-app.yml"
   log "Пишу dynamic-конфиг Traefik: $CONF (certresolver=$CERT_RESOLVER, backend=$TARGET_IP:$APP_PORT, SSL + redirect)"
   cat > "$CONF" <<EOF
-# invoices.kpd.moscow → KPD frontend (server-setup.sh; конфиги n8n не затронуты)
+# kpd.kpd.moscow → KPD frontend (server-setup.sh; конфиги n8n не затронуты)
 http:
   routers:
-    kpd-invoices:
+    kpd-app:
       rule: "Host(\`$DOMAIN\`)"
       entryPoints:
         - websecure
-      service: kpd-invoices
+      service: kpd-app
       tls:
         certResolver: $CERT_RESOLVER
-    kpd-invoices-http:
+    kpd-app-http:
       rule: "Host(\`$DOMAIN\`)"
       entryPoints:
         - web
       middlewares:
-        - kpd-invoices-redirect
-      service: kpd-invoices
+        - kpd-app-redirect
+      service: kpd-app
   middlewares:
-    kpd-invoices-redirect:
+    kpd-app-redirect:
       redirectScheme:
         scheme: https
         permanent: true
   services:
-    kpd-invoices:
+    kpd-app:
       loadBalancer:
         servers:
           - url: "http://$TARGET_IP:$APP_PORT"
