@@ -25,6 +25,7 @@ import { RecipientTypesPicker } from "@/components/ui-custom/RecipientTypesPicke
 import { CompanyStatusPicker } from "@/components/ui-custom/CompanyStatusPicker";
 import { EXECUTOR_TYPES, parseCompanyStatus, serializeCompanyStatus } from "@/lib/statuses";
 import { normalizeExecutorType } from "@/lib/executor-type";
+import { sortByNameRu, sortByRu } from "@/lib/sort";
 import type { ExecutorRow } from "./ExecutorsClient";
 
 type BankOption = { id: string; name: string; status: string };
@@ -33,8 +34,8 @@ type WorkTypeOption = { id: string; name: string; status: string; segment?: stri
 
 export function ExecutorEditDialog({
   row,
-  bankAccounts,
-  responsibles,
+  bankAccounts: bankAccountsProp,
+  responsibles: responsiblesProp,
   workTypes,
   onClose,
   onSaved,
@@ -46,6 +47,8 @@ export function ExecutorEditDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const bankAccounts = React.useMemo(() => sortByNameRu(bankAccountsProp), [bankAccountsProp]);
+  const responsibles = React.useMemo(() => sortByRu(responsiblesProp, (r) => r.fullName), [responsiblesProp]);
   const [name, setName] = React.useState(row.name);
   const [companyStatuses, setCompanyStatuses] = React.useState<string[]>(() =>
     parseCompanyStatus(row.companyStatus)

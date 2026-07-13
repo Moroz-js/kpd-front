@@ -34,6 +34,7 @@ import { VerificationTab } from "./VerificationTab";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { sortByNameRu, sortByRu } from "@/lib/sort";
 
 type Row = {
   id: string;
@@ -153,7 +154,9 @@ export function ProjectsClient({ scope }: { scope: "all" | "mine" }) {
       const name = r.responsibleName ?? "— Без руководителя —";
       map.set(id, name);
     }
-    return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
+    return Array.from(map.entries())
+      .sort((a, b) => a[1].localeCompare(b[1], "ru"))
+      .map(([value, label]) => ({ value, label }));
   }, [data]);
 
   const clientOptions = React.useMemo(() => {
@@ -450,11 +453,12 @@ function ProjectEditDialog({
     setResponsibleUserId(row?.responsibleUserId ?? "");
   }, [row]);
 
-  const activeClients = clients.filter(
-    (c) => c.status === "active" || c.id === row?.clientId
+  const activeClients = sortByNameRu(
+    clients.filter((c) => c.status === "active" || c.id === row?.clientId)
   );
-  const activeResponsibles = responsibles.filter(
-    (r) => r.isActive || r.id === row?.responsibleUserId
+  const activeResponsibles = sortByRu(
+    responsibles.filter((r) => r.isActive || r.id === row?.responsibleUserId),
+    (r) => r.fullName
   );
 
   const selectedClient = clients.find((c) => c.id === clientId);

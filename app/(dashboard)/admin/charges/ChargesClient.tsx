@@ -493,7 +493,9 @@ export function ChargesClient({ bankAccounts: bankAccountsProp, orders }: Props)
       if (o.project?.client) map.set(o.project.client.id, o.project.client.name);
     }
     if (rows.some((r) => !r.order?.project?.client)) map.set("__empty__", "Пусто");
-    return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
+    return Array.from(map.entries())
+      .sort((a, b) => a[1].localeCompare(b[1], "ru"))
+      .map(([value, label]) => ({ value, label }));
   }, [orders, rows]);
 
   const projectOptions = React.useMemo(() => {
@@ -502,7 +504,9 @@ export function ChargesClient({ bankAccounts: bankAccountsProp, orders }: Props)
       if (o.project) map.set(o.project.id, o.project.name);
     }
     if (rows.some((r) => !r.order?.project)) map.set("__empty__", "Пусто");
-    return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
+    return Array.from(map.entries())
+      .sort((a, b) => a[1].localeCompare(b[1], "ru"))
+      .map(([value, label]) => ({ value, label }));
   }, [orders, rows]);
 
   const weekOptions = React.useMemo(() => {

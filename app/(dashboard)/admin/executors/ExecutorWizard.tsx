@@ -24,6 +24,7 @@ import { serializeCompanyStatus } from "@/lib/statuses";
 import { RecipientTypesPicker } from "@/components/ui-custom/RecipientTypesPicker";
 import { CompanyStatusPicker } from "@/components/ui-custom/CompanyStatusPicker";
 import type { ExecutorType } from "@/lib/statuses";
+import { sortByNameRu, sortByRu } from "@/lib/sort";
 
 function generatePassword(): string {
   const chars = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789!@#$%";
@@ -34,8 +35,8 @@ type BankOption = { id: string; name: string; status: string };
 type ResponsibleOption = { id: string; fullName: string; isActive: boolean };
 
 export function ExecutorWizard({
-  bankAccounts,
-  responsibles,
+  bankAccounts: bankAccountsProp,
+  responsibles: responsiblesProp,
   onClose,
   onCreated,
 }: {
@@ -44,6 +45,8 @@ export function ExecutorWizard({
   onClose: () => void;
   onCreated: () => void;
 }) {
+  const bankAccounts = React.useMemo(() => sortByNameRu(bankAccountsProp), [bankAccountsProp]);
+  const responsibles = React.useMemo(() => sortByRu(responsiblesProp, (r) => r.fullName), [responsiblesProp]);
   const [step, setStep] = React.useState<"type" | "details">("type");
   const [type, setType] = React.useState<ExecutorType | null>(null);
 

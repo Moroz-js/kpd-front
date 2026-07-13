@@ -51,6 +51,9 @@ export function WorkTypesMultiSelect({
       const sa = SEGMENT_ORDER.get(a.segment as (typeof WORK_TYPE_SEGMENTS)[number]) ?? 999;
       const sb = SEGMENT_ORDER.get(b.segment as (typeof WORK_TYPE_SEGMENTS)[number]) ?? 999;
       if (sa !== sb) return sa - sb;
+      if (sa === 999 && (a.segment ?? "") !== (b.segment ?? "")) {
+        return (a.segment ?? "").localeCompare(b.segment ?? "", "ru");
+      }
       return a.name.localeCompare(b.name, "ru");
     });
   }, [options]);
@@ -77,7 +80,8 @@ export function WorkTypesMultiSelect({
     const entries = Array.from(map.entries()).sort(([a], [b]) => {
       const ia = SEGMENT_ORDER.get(a as (typeof WORK_TYPE_SEGMENTS)[number]) ?? 999;
       const ib = SEGMENT_ORDER.get(b as (typeof WORK_TYPE_SEGMENTS)[number]) ?? 999;
-      return ia - ib;
+      if (ia !== ib) return ia - ib;
+      return a.localeCompare(b, "ru");
     });
     return entries.map(([group, opts]) => ({ group: group || null, opts }));
   }, [filtered]);

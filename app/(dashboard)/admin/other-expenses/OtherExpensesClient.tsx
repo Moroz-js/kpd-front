@@ -65,10 +65,11 @@ function EditableColHead({
 // ─── Константы ────────────────────────────────────────────────────────────────
 
 const PREFERRED_PAY_METHODS = [
-  "З/П", "Крипта", "Самозанятый", "ИП", "Карта физлица РФ",
-  "Карта физлица другой страны", "Р/С контрагента РФ", "Р/С контрагента КЗ",
-  "Р/С контрагента ЧГ", "Р/С контрагента ЕС", "Бизнес-картой РФ",
-  "Бизнес-картой КЗ", "Бизнес-картой ЧГ", "Бизнес-картой СЛ", "4DEV", "ГПХ",
+  "4DEV", "Бизнес-картой КЗ", "Бизнес-картой РФ", "Бизнес-картой СЛ",
+  "Бизнес-картой ЧГ", "ГПХ", "З/П", "ИП",
+  "Карта физлица другой страны", "Карта физлица РФ", "Крипта",
+  "Р/С контрагента ЕС", "Р/С контрагента КЗ", "Р/С контрагента РФ",
+  "Р/С контрагента ЧГ", "Самозанятый",
 ];
 
 // ─── Типы ─────────────────────────────────────────────────────────────────────
@@ -1152,9 +1153,9 @@ function OtherExpenseFormDialog({
                     <SelectValue>{WORK_STATUSES[(revertStatus ?? "checked") as keyof typeof WORK_STATUSES]?.label ?? (revertStatus ?? "checked")}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="checked">{WORK_STATUSES.checked.label}</SelectItem>
                     <SelectItem value="submitted">{WORK_STATUSES.submitted.label}</SelectItem>
                     <SelectItem value="rework">{WORK_STATUSES.rework.label}</SelectItem>
+                    <SelectItem value="checked">{WORK_STATUSES.checked.label}</SelectItem>
                   </SelectContent>
                 </Select>
                 {revertStatus && (
@@ -1195,9 +1196,9 @@ function OtherExpenseFormDialog({
                     <SelectValue>{PAYMENT_STATUSES[editPaymentStatus as keyof typeof PAYMENT_STATUSES]?.label ?? editPaymentStatus}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="sent">{PAYMENT_STATUSES.sent.label}</SelectItem>
-                    <SelectItem value="paid">{PAYMENT_STATUSES.paid.label}</SelectItem>
                     <SelectItem value="planned">{PAYMENT_STATUSES.planned.label}</SelectItem>
+                    <SelectItem value="paid">{PAYMENT_STATUSES.paid.label}</SelectItem>
+                    <SelectItem value="sent">{PAYMENT_STATUSES.sent.label}</SelectItem>
                   </SelectContent>
                 </Select>
               )}

@@ -17,3 +17,8 @@ export function sortByNameRu<T extends { name: string }>(items: T[]): T[] {
 export function sortByLabelRu<T extends { label: string }>(items: T[]): T[] {
   return [...items].sort((a, b) => compareRu(a.label, b.label));
 }
+
+/** Возвращает новый массив, отсортированный по произвольному строковому ключу (алфавит, ru). */
+export function sortByRu<T>(items: T[], getKey: (item: T) => string): T[] {
+  return [...items].sort((a, b) => compareRu(getKey(a), getKey(b)));
+}

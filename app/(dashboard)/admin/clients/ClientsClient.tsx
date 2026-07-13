@@ -83,7 +83,7 @@ export function ClientsClient() {
   const companyOptions = React.useMemo(() => {
     const list = data ?? [];
     return Array.from(new Set(list.map((r) => r.company)))
-      .sort()
+      .sort((a, b) => a.localeCompare(b, "ru"))
       .map((c) => ({ value: c, label: c }));
   }, [data]);
 

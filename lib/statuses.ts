@@ -22,33 +22,35 @@ export const BADGE_TONE_CLASS: Record<BadgeTone, string> = {
 };
 
 // ─── WORK STATUSES ────────────────────────────────────────────
+// Порядок ключей = алфавитный порядок русских label — так все выпадашки
+// автоматически показывают опции по алфавиту (Object.entries сохраняет порядок).
 export const WORK_STATUSES = {
   submitted: { label: "Выставлено",      tone: "gray"   as BadgeTone },
-  checked:   { label: "Проверено",       tone: "yellow" as BadgeTone },
-  paid:      { label: "Оплачено",        tone: "green"  as BadgeTone },
   rework:    { label: "Нужно доработать", tone: "red"   as BadgeTone },
+  paid:      { label: "Оплачено",        tone: "green"  as BadgeTone },
+  checked:   { label: "Проверено",       tone: "yellow" as BadgeTone },
 } as const;
 export type WorkStatus = keyof typeof WORK_STATUSES;
 
 /** Статусы работы, доступные для ручной смены (без «Оплачено» — только из выплаты). */
-export const WORK_STATUSES_SETTABLE = ["submitted", "checked", "rework"] as const;
+export const WORK_STATUSES_SETTABLE = ["submitted", "rework", "checked"] as const;
 export type WorkStatusSettable = (typeof WORK_STATUSES_SETTABLE)[number];
 
 // ─── PAYMENT STATUSES ─────────────────────────────────────────
 export const PAYMENT_STATUSES = {
   planned: { label: "Запланировано", tone: "gray" as BadgeTone },
-  sent:    { label: "Отправлено",    tone: "yellow" as BadgeTone },
   paid:    { label: "Оплачено",      tone: "green" as BadgeTone },
+  sent:    { label: "Отправлено",    tone: "yellow" as BadgeTone },
 } as const;
 export type PaymentStatus = keyof typeof PAYMENT_STATUSES;
 
 // ─── TASK STATUSES ────────────────────────────────────────────
 export const TASK_STATUSES = {
-  pending:     { label: "Поставлена",  tone: "gray" as BadgeTone },
   in_progress: { label: "В работе",    tone: "yellow" as BadgeTone },
-  paused:      { label: "На паузе",    tone: "blue" as BadgeTone },
-  review:      { label: "На проверке", tone: "yellow" as BadgeTone },
   done:        { label: "Выполнено",   tone: "green" as BadgeTone },
+  review:      { label: "На проверке", tone: "yellow" as BadgeTone },
+  paused:      { label: "На паузе",    tone: "blue" as BadgeTone },
+  pending:     { label: "Поставлена",  tone: "gray" as BadgeTone },
 } as const;
 export type TaskStatus = keyof typeof TASK_STATUSES;
 
@@ -80,24 +82,24 @@ export type ChargeStatus = keyof typeof CHARGE_STATUSES;
 
 // ─── EXECUTOR TYPES ───────────────────────────────────────────
 export const EXECUTOR_TYPES = {
-  permanent: "Постоянный",
-  external: "Внешний",
-  service: "Сервис",
   bank: "Банки",
+  external: "Внешний",
+  permanent: "Постоянный",
+  service: "Сервис",
 } as const;
 export type ExecutorType = keyof typeof EXECUTOR_TYPES;
 
 export const EXECUTOR_TYPE_FILTER_GROUPS: Record<string, ExecutorType[]> = {
-  Постоянный: ["permanent"],
-  Внешний: ["external"],
-  Сервис: ["service"],
   Банки: ["bank"],
+  Внешний: ["external"],
+  Постоянный: ["permanent"],
+  Сервис: ["service"],
 };
 
 // «Статус в компании» (для permanent).
 export const EXECUTOR_COMPANY_STATUSES = {
-  core:  "Ядро",
   orbit: "Орбита",
+  core:  "Ядро",
 } as const;
 
 /** «core,orbit» → «Ядро, Орбита» для UI */
@@ -122,42 +124,42 @@ export function serializeCompanyStatus(values: string[]): string | null {
   return unique.length ? unique.join(",") : null;
 }
 
-// «Тип получателя» (I) — 16 значений, см. TDNB-18 §Тип получателя.
+// «Тип получателя» (I) — 16 значений, см. TDNB-18 §Тип получателя. По алфавиту.
 export const RECIPIENT_TYPES = [
-  "Сервис заруб.",
-  "Сервис в РФ",
-  "Филиал ГПХ",
-  "ИП в РФ",
-  "Криптокошелёк",
-  "Юрлицо в РФ",
   "З/П в РФ налог 15%",
   "З/П в РФ налог 30%",
-  "Самозанятый в РФ",
-  "Юрлицо в КЗ",
-  "Юрлицо в ЧГ",
-  "Юрлицо в ЕС",
+  "ИП в РФ",
   "ИП зарубежный",
+  "Криптокошелёк",
+  "Самозанятый в РФ",
   "Самозанятый заруб.",
-  "Физлицо на карту РФ",
+  "Сервис в РФ",
+  "Сервис заруб.",
   "Физлицо на заруб. карту",
+  "Физлицо на карту РФ",
+  "Филиал ГПХ",
+  "Юрлицо в ЕС",
+  "Юрлицо в КЗ",
+  "Юрлицо в РФ",
+  "Юрлицо в ЧГ",
 ] as const;
 export type RecipientType = (typeof RECIPIENT_TYPES)[number];
 
-// Тип юрлица (для external-legal).
-export const LEGAL_FORMS = ["ООО", "ИП", "АО", "ОАО", "ПАО"] as const;
+// Тип юрлица (для external-legal). По алфавиту.
+export const LEGAL_FORMS = ["АО", "ИП", "ОАО", "ООО", "ПАО"] as const;
 
-// ─── WORK TYPE SEGMENTS ──────────────────────────────────────
+// ─── WORK TYPE SEGMENTS ─────────────────────────────────────── По алфавиту.
 export const WORK_TYPE_SEGMENTS = [
-  "Транзитные платежи",
-  "Видео",
-  "Аналитика",
-  "Продвижение",
-  "Экспертиза",
-  "Сервисы",
-  "Менеджмент",
-  "Визуал",
-  "Текст",
   "IT",
+  "Аналитика",
+  "Видео",
+  "Визуал",
+  "Менеджмент",
+  "Продвижение",
+  "Сервисы",
+  "Текст",
+  "Транзитные платежи",
+  "Экспертиза",
 ] as const;
 export type WorkTypeSegment = (typeof WORK_TYPE_SEGMENTS)[number];
 
@@ -167,15 +169,15 @@ export const PROJECT_TYPES = {
   client:   "Клиентский",
 } as const;
 
-// ─── CLIENT DEPARTMENTS (TDNB-21) ─────────────────────────────
+// ─── CLIENT DEPARTMENTS (TDNB-21) ───────────────────────────── По алфавиту.
 export const CLIENT_DEPARTMENTS = [
-  "PR",
   "Intercom",
-  "Непроектные расходы",
-  "СБ",
-  "Общепроектные расходы",
-  "Маркетинг",
+  "PR",
   "SM",
+  "Маркетинг",
+  "Непроектные расходы",
+  "Общепроектные расходы",
+  "СБ",
 ] as const;
 
 // ─── PALETTE FOR ACTIVITY LOG ACTIONS ─────────────────────────

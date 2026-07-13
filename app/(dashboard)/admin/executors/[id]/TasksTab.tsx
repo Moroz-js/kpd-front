@@ -56,11 +56,11 @@ type Props = {
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  pending: "Поставлена",
   in_progress: "В работе",
-  paused: "На паузе",
-  review: "На проверке",
   done: "Выполнено",
+  review: "На проверке",
+  paused: "На паузе",
+  pending: "Поставлена",
 };
 
 function TaskStatusBadge({ status }: { status: string }) {

@@ -106,9 +106,9 @@ const PAYMENT_STATUS_LABELS: Record<string, string> = {
 
 /** Статусы работы, доступные для ручной смены (без «Оплачено»). */
 const WORK_STATUS_SETTABLE: [string, string][] = [
+  ["rework", "Нужно доработать"],
   ["submitted", "Работа выставлена"],
   ["checked", "Работа проверена"],
-  ["rework", "Нужно доработать"],
 ];
 
 function StatusBadge({ status, type }: { status: string; type: "work" | "payment" }) {
@@ -223,7 +223,8 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts: bankAccou
     ]),
   ].sort();
 
-  const projectOptions = Array.from(new Map(works.map((w) => [w.projectId, w.project])).entries());
+  const projectOptions = Array.from(new Map(works.map((w) => [w.projectId, w.project])).entries())
+    .sort((a, b) => a[1].name.localeCompare(b[1].name, "ru"));
 
   const weekOptions = Array.from(
     new Set([
@@ -1516,8 +1517,8 @@ function EditPaymentDialog({
                 <SelectTrigger><SelectValue>{PAYMENT_STATUS_LABELS[paymentStatus] ?? paymentStatus}</SelectValue></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="planned">Выплата запланирована</SelectItem>
-                  <SelectItem value="sent">Выплата отправлена</SelectItem>
                   <SelectItem value="paid">Выплата оплачена</SelectItem>
+                  <SelectItem value="sent">Выплата отправлена</SelectItem>
                 </SelectContent>
               </Select>
             </div>
