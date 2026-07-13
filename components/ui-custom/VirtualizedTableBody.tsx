@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useLayoutEffect } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { BulkSelectTableBody } from "@/components/ui-custom/BulkSelectTableBody";
 import { TableCell, TableRow } from "@/components/ui/table";
@@ -33,12 +34,34 @@ export function VirtualizedTableBody({
   empty,
   renderRow,
 }: VirtualizedTableBodyProps) {
+  const [scrollEl, setScrollEl] = React.useState<HTMLDivElement | null>(null);
+
+  // ref на scroll-контейнере появляется после commit — подхватываем явно
+  useLayoutEffect(() => {
+    if (scrollRef.current) {
+      setScrollEl(scrollRef.current);
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      if (scrollRef.current) setScrollEl(scrollRef.current);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [scrollRef, rowCount]);
+
   const virtualizer = useVirtualizer({
     count: rowCount,
-    getScrollElement: () => scrollRef.current,
+    getScrollElement: () => scrollEl,
     estimateSize: () => estimateRowHeight,
     overscan,
   });
+
+  useLayoutEffect(() => {
+    if (!scrollEl || rowCount <= 0) return;
+    virtualizer.measure();
+    const ro = new ResizeObserver(() => virtualizer.measure());
+    ro.observe(scrollEl);
+    return () => ro.disconnect();
+  }, [scrollEl, rowCount, virtualizer]);
 
   if (isLoading && loading) {
     return <BulkSelectTableBody>{loading}</BulkSelectTableBody>;
@@ -48,7 +71,20 @@ export function VirtualizedTableBody({
     return <BulkSelectTableBody>{empty}</BulkSelectTableBody>;
   }
 
-  const items = virtualizer.getVirtualItems();
+  let items = virtualizer.getVirtualItems();
+
+  // Пока virtualizer не успел измерить контейнер — показываем верх окна строк
+  if (items.length === 0 && rowCount > 0) {
+    const fallbackCount = Math.min(rowCount, overscan * 2 + 1);
+    return (
+      <BulkSelectTableBody>
+        {Array.from({ length: fallbackCount }, (_, index) => (
+          <React.Fragment key={index}>{renderRow(index)}</React.Fragment>
+        ))}
+      </BulkSelectTableBody>
+    );
+  }
+
   const paddingTop = items.length > 0 ? items[0].start : 0;
   const paddingBottom =
     items.length > 0 ? virtualizer.getTotalSize() - items[items.length - 1].end : 0;
