@@ -33,6 +33,7 @@ import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
 import { useTableRowSelection } from "@/lib/useTableRowSelection";
 import { ExpandableListCell } from "@/components/ui-custom/ExpandableListCell";
 import { stickyActionsHead, stickyActionsCell, compactHead, compactPeriodHead } from "@/lib/table-styles";
+import { sortByNameRu } from "@/lib/sort";
 
 /** Ширины колонок (18) — table-fixed, иначе правые колонки сжимаются и наезжают друг на друга */
 const ACTIONS_COL_WIDTH = 128;
@@ -321,7 +322,12 @@ const OtherExpenseTableRow = React.memo(function OtherExpenseTableRow({
   );
 });
 
-export function OtherExpensesClient({ isAdmin, userId, executorId, projects, executors, workTypes, permanentExecutors, bankAccounts }: Props) {
+export function OtherExpensesClient({ isAdmin, userId, executorId, projects: projectsProp, executors: executorsProp, workTypes: workTypesProp, permanentExecutors: permanentExecutorsProp, bankAccounts: bankAccountsProp }: Props) {
+  const projects = React.useMemo(() => sortByNameRu(projectsProp), [projectsProp]);
+  const executors = React.useMemo(() => sortByNameRu(executorsProp), [executorsProp]);
+  const workTypes = React.useMemo(() => sortByNameRu(workTypesProp), [workTypesProp]);
+  const permanentExecutors = React.useMemo(() => sortByNameRu(permanentExecutorsProp), [permanentExecutorsProp]);
+  const bankAccounts = React.useMemo(() => sortByNameRu(bankAccountsProp), [bankAccountsProp]);
   const [rows, setRows] = useState<OtherExpense[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);

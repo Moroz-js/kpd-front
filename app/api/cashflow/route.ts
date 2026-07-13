@@ -100,8 +100,9 @@ export async function GET(req: NextRequest) {
     ...works.map(w => ({ ...w })),
     ...otherExpenses.map(o => ({ ...o })),
   ];
+  // Агрегаты по работам считаем по всем проектам независимо от статуса —
+  // построчные данные в таблице всё равно строятся только по активным.
   for (const r of allSources) {
-    if (!activeProjectIds.has(r.projectId)) continue;
     const pf = issuedWeekPF(r);
     if (!pf || pf.year !== year) continue;
     const wi = pf.week - 1;

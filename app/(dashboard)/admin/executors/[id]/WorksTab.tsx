@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/select";
 import { formatMoney, formatDate, monthFullLabel, MONTHS } from "@/lib/format";
 import { WORK_STATUSES, PAYMENT_STATUSES, BADGE_TONE_CLASS } from "@/lib/statuses";
+import { sortByNameRu } from "@/lib/sort";
 import { nearestPaymentDate, toLocalDateString, getISOWeek, getISOWeekYear, weekLabel } from "@/lib/iso-weeks";
 import { cn } from "@/lib/utils";
 import { stickyActionsHead, stickyActionsCell, stickyActionsInner } from "@/lib/table-styles";
@@ -151,7 +152,8 @@ function worksCountLabel(n: number): string {
 const PAID_STATUSES_WORK = new Set(["paid"]);
 const PAID_STATUSES_PAYMENT = new Set(["paid", "sent"]);
 
-export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) {
+export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts: bankAccountsProp }: Props) {
+  const bankAccounts = React.useMemo(() => sortByNameRu(bankAccountsProp), [bankAccountsProp]);
   const [works, setWorks] = useState<WorkRow[]>([]);
   const [allPayments, setAllPayments] = useState<AllPaymentRow[]>([]);
   const [permanentExecutors, setPermanentExecutors] = useState<ExecutorRef[]>([]);
@@ -294,10 +296,10 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts }: Props) 
   // Проверенные непривязанные работы — для формирования выплат (§4)
   const checkedUnlinked = works.filter((w) => w.workStatus === "checked" && !w.paymentId);
 
-  // Сумма неоплаченных: все работы у которых нет оплаченной выплаты
+  // «К выплате»: только работы со статусом «Проверено» без оплаченной выплаты
   const unpaidTotal = works
     .filter((w) => {
-      if (w.workStatus === "paid") return false;
+      if (w.workStatus !== "checked") return false;
       if (w.paymentId && w.payment?.paymentStatus === "paid") return false;
       return true;
     })

@@ -169,6 +169,15 @@ model BankAccount {
   @@map("bank_accounts")
 }
 
+// ─────────────────── ВАЛЮТЫ (централизованный справочник) ───────────────────
+
+model Currency {
+  code      String   @id // ISO-подобный код: RUB, USD, EUR, GEL, ...
+  createdAt DateTime @default(now())
+
+  @@map("currencies")
+}
+
 // ─────────────────── ВИДЫ РАБОТ ───────────────────
 
 model WorkType {

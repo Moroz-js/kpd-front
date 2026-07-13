@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,7 @@ import {
   normalizeExecutorType,
 } from "@/lib/executor-type";
 import type { ExecutorType } from "@/lib/statuses";
+import { sortByNameRu } from "@/lib/sort";
 import { RefreshCw, X } from "lucide-react";
 
 function generatePassword(): string {
@@ -75,13 +76,14 @@ type Props = {
 export function SettingsTab({
   executorId,
   executor,
-  bankAccounts,
+  bankAccounts: bankAccountsProp,
   allWorkTypes,
   onChanged,
   isAdmin = false,
   viewerIsSuperAdmin = false,
   canEdit = true,
 }: Props) {
+  const bankAccounts = useMemo(() => sortByNameRu(bankAccountsProp), [bankAccountsProp]);
   const [executorType, setExecutorType] = useState<ExecutorType>(() =>
     normalizeExecutorType(executor.type)
   );

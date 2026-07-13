@@ -28,6 +28,7 @@ import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
 import { useTableRowSelection } from "@/lib/useTableRowSelection";
 import { cn } from "@/lib/utils";
 import { stickyActionsHead, stickyActionsCell, stickyActionsInner } from "@/lib/table-styles";
+import { sortByNameRu } from "@/lib/sort";
 import { PayoutEditDialog } from "./PayoutEditDialog";
 
 type Row = {
@@ -332,7 +333,7 @@ export function PayoutsClient() {
   const { selectedIds, handleRowSelect, toggleAll, clearSelection } = useTableRowSelection(orderedRowIds);
 
   const activeBanks = React.useMemo(
-    () => (banks ?? []).filter((b) => b.status === "active"),
+    () => sortByNameRu((banks ?? []).filter((b) => b.status === "active")),
     [banks]
   );
 
@@ -704,7 +705,9 @@ function MarkPaidDialog({
   onConfirm: (paidAt: string, bankAccountId: string | null) => void;
 }) {
   const [paidAt, setPaidAt] = React.useState(toLocalDate());
-  const activeBanks = banks.filter((b) => b.status === "active" || b.id === row.bankAccountId);
+  const activeBanks = sortByNameRu(
+    banks.filter((b) => b.status === "active" || b.id === row.bankAccountId)
+  );
   const defaultBank = activeBanks.find((b) => b.isDefault)?.id ?? activeBanks[0]?.id ?? "";
   const [bankAccountId, setBankAccountId] = React.useState(row.bankAccountId ?? defaultBank);
   const ref = React.useRef<HTMLInputElement>(null);

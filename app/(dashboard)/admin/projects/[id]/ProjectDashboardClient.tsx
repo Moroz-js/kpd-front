@@ -42,6 +42,69 @@ function overspendValueClass(v: number): string {
   return "text-red-600 font-medium";
 }
 
+/** Редактируемый «Стартовый баланс» проекта (аналог OpeningBalanceInput в общем кэшфлоу). */
+function StartBalanceInput({
+  projectId,
+  initial,
+  onSaved,
+}: {
+  projectId: string;
+  initial: number;
+  onSaved: (v: number) => void;
+}) {
+  const [numericValue, setNumericValue] = useState(initial || 0);
+  const [display, setDisplay] = useState(formatMoneyInput(initial || 0));
+  const [lastInitial, setLastInitial] = useState(initial);
+
+  // Синхронизация с обновлённым initial (после mutate) без useEffect
+  if (initial !== lastInitial) {
+    setLastInitial(initial);
+    setNumericValue(initial || 0);
+    setDisplay(formatMoneyInput(initial || 0));
+  }
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const raw = e.target.value;
+    const stripped = raw.replace(/[^\d,.-]/g, "").replace(",", ".");
+    const parsed = parseFloat(stripped);
+    const num = isNaN(parsed) ? 0 : parsed;
+    setNumericValue(num);
+    if (stripped.endsWith(".") || stripped === "-" || stripped === "") {
+      setDisplay(raw.replace(/[^\d,.-]/g, ""));
+    } else {
+      setDisplay(formatMoneyInput(num));
+    }
+  }
+
+  async function save() {
+    setDisplay(formatMoneyInput(numericValue));
+    if (numericValue === (initial || 0)) return;
+    const res = await fetch(`/api/projects/${projectId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cashflowInitial: numericValue }),
+    });
+    if (res.ok) { onSaved(numericValue); toast.success("Стартовый баланс сохранён"); }
+    else toast.error("Ошибка сохранения");
+  }
+
+  return (
+    <input
+      className="w-20 text-right text-[11px] leading-snug tabular-nums italic bg-transparent border border-neutral-300 rounded px-1 py-0 outline-none focus:border-blue-400 focus:bg-white"
+      value={display}
+      onChange={handleChange}
+      onFocus={e => setTimeout(() => e.target.select(), 0)}
+      onBlur={save}
+      onKeyDown={e => { if (e.key === "Enter") { (e.target as HTMLInputElement).blur(); } }}
+    />
+  );
+}
+
+function formatMoneyInput(n: number): string {
+  if (!n && n !== 0) return "";
+  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(n);
+}
+
 type WeekHeader = { week: number; month: number; monthName: string };
 
 type SummaryKey = "cashflow" | "incomePlanFact" | "incomeFact" | "incomePlan" | "incomeCumulative" | "marginPct" | "expenses" | "expensePlan" | "overspend";
@@ -282,8 +345,6 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
   const [confirmRow, setConfirmRow] = useState<PlanLineRow | null>(null);
   const [deletingRowId, setDeletingRowId] = useState<string | null>(null);
   const [showOldWeeks, setShowOldWeeks] = useState(false);
-  const [cashflowInitialEdit, setCashflowInitialEdit] = useState<string | null>(null);
-  const [savingCashflow, setSavingCashflow] = useState(false);
 
   // Сворачиваемые секции ДП (localStorage)
   const [summaryExpanded, toggleSummary] = useSectionCollapsed("summary", true);
@@ -320,21 +381,6 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
     setDeletingRowId(null);
     mutate();
     toast.success("Строка плана удалена");
-  }
-
-  async function saveCashflowInitial(raw: string) {
-    const val = parseInt(raw.replace(/\s/g, ""), 10);
-    if (isNaN(val)) { setCashflowInitialEdit(null); return; }
-    setSavingCashflow(true);
-    const res = await fetch(`/api/projects/${projectId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cashflowInitial: val }),
-    });
-    setSavingCashflow(false);
-    setCashflowInitialEdit(null);
-    if (res.ok) { mutate(); toast.success("Кэшфлоу сохранён"); }
-    else toast.error("Ошибка сохранения");
   }
 
   const { data, mutate } = useSWR<DashboardData>(
@@ -520,6 +566,27 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                 <td className={cn(stickyTotal, "bg-neutral-50")} />
                 <td colSpan={visibleWeeks.length} className="bg-neutral-50" />
               </tr>
+              {/* Стартовый баланс: редактируемый input в ячейке первой недели */}
+              {summaryExpanded && (
+                <tr className="hover:bg-neutral-50 border-b border-neutral-100">
+                  <td className={cn(stickyLbl, "font-normal italic text-neutral-500")}>Стартовый баланс</td>
+                  <td className={stickyTotal}>{fmt(project.cashflowInitial ?? 0)}</td>
+                  {visibleWeekIndices.map((idx, vi) => {
+                    const wh = visibleWeeks[vi];
+                    return (
+                      <td key={idx} className={cn(tdCls,
+                        wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50" : wh?.week < currentISOWeek && year === currentYear ? "bg-neutral-50/40" : "",
+                      )}>
+                        {idx === 0
+                          ? (isAdmin
+                              ? <StartBalanceInput projectId={projectId} initial={project.cashflowInitial ?? 0} onSaved={() => mutate()} />
+                              : fmt(project.cashflowInitial ?? 0))
+                          : ""}
+                      </td>
+                    );
+                  })}
+                </tr>
+              )}
               {summaryExpanded && SUMMARY_DEFS.map(({ key, label, signed, highlight }) => {
                 const arr = summary[key] ?? [];
                 const totalRaw: number | null =
@@ -539,27 +606,7 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                   )}>
                     <td className={cn(stickyLbl, !highlight && "font-normal italic text-neutral-500")}>{label}</td>
                     <td className={cn(stickyTotal, highlight && "font-semibold")}>
-                      {key === "cashflow" && isAdmin ? (
-                        cashflowInitialEdit !== null ? (
-                          <input
-                            autoFocus
-                            className="w-24 text-right text-xs tabular-nums bg-white border border-blue-400 rounded px-1 outline-none"
-                            value={cashflowInitialEdit}
-                            onChange={e => setCashflowInitialEdit(e.target.value)}
-                            onBlur={e => saveCashflowInitial(e.target.value)}
-                            onKeyDown={e => { if (e.key === "Enter") { (e.target as HTMLInputElement).blur(); } else if (e.key === "Escape") { setCashflowInitialEdit(null); } }}
-                            disabled={savingCashflow}
-                          />
-                        ) : (
-                          <span
-                            className="cursor-pointer hover:bg-blue-50 rounded px-1 py-0.5"
-                            title="Нажмите для редактирования начального баланса"
-                            onClick={() => setCashflowInitialEdit(String(project.cashflowInitial ?? 0))}
-                          >
-                            {totalRaw === null ? "—" : cellVal(totalRaw)}
-                          </span>
-                        )
-                      ) : totalRaw === null ? "—" : cellVal(totalRaw)}
+                      {totalRaw === null ? "—" : cellVal(totalRaw)}
                     </td>
                     {visibleWeekIndices.map((idx, vi) => {
                       const v = arr[idx] ?? 0;
@@ -576,30 +623,7 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                 );
               })}
 
-              {/* Несхождение план-факт = paidWorks − expensePlan */}
-              {summaryExpanded && (
-                <tr className="hover:bg-neutral-50 border-b border-neutral-100">
-                  <td className={cn(stickyLbl, "font-normal italic text-neutral-500")}>Несхождение план-факт</td>
-                  <td className={cn(stickyTotal, rowTotal(summary.paidWorks ?? []) - rowTotal(summary.expensePlan ?? []) !== 0 && "text-red-600 font-medium")}>
-                    {fmtSign(rowTotal(summary.paidWorks ?? []) - rowTotal(summary.expensePlan ?? []))}
-                  </td>
-                  {visibleWeekIndices.map((idx, vi) => {
-                    const wh = visibleWeeks[vi];
-                    const v = ((summary.paidWorks ?? [])[idx] ?? 0) - ((summary.expensePlan ?? [])[idx] ?? 0);
-                    const isNonZero = Math.round(v) !== 0;
-                    return (
-                      <td key={idx} className={cn(tdCls,
-                        wh?.week === currentISOWeek && year === currentYear ? "bg-blue-50" : wh?.week < currentISOWeek && year === currentYear ? "bg-neutral-50/40" : "",
-                        isNonZero && "text-red-600 font-medium",
-                      )}>
-                        {fmtSign(v)}
-                      </td>
-                    );
-                  })}
-                </tr>
-              )}
-
-              {/* Block 2: Расходы из смет (только оплаченные работы) — итоги в строке заголовка */}
+              {/* Block 2: Расходы из смет (все статусы работ) — итоги в строке заголовка */}
               <tr className="bg-neutral-50 border-t-2 border-b border-neutral-200 font-semibold">
                 <td className={cn(stickyHdr, "cursor-pointer select-none")} onClick={toggleExpenses}>
                   <span className="inline-flex items-center gap-1">
@@ -607,10 +631,10 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                     Расходы из смет
                   </span>
                 </td>
-                <td className={cn(stickyTotal, "font-semibold")}>{fmt(rowTotal(summary.paidWorks ?? []))}</td>
+                <td className={cn(stickyTotal, "font-semibold")}>{fmt(rowTotal(summary.expenses ?? []))}</td>
                 {visibleWeekIndices.map((idx, vi) => {
                   const wh = visibleWeeks[vi];
-                  const v = (summary.paidWorks ?? [])[idx] ?? 0;
+                  const v = (summary.expenses ?? [])[idx] ?? 0;
                   return (
                     <td key={idx} className={cn(tdCls, "bg-neutral-50", wh?.week === currentISOWeek && year === currentYear ? "!bg-blue-50" : "")}>
                       {fmt(v)}

@@ -9,7 +9,7 @@ import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import { ConfirmDialog } from "@/components/ui-custom/ConfirmDialog";
 import { ENTITY_STATUSES } from "@/lib/statuses";
-import { formatMoneyWithCurrency } from "@/lib/format";
+import { formatMoney } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
@@ -39,6 +39,20 @@ type Row = {
 };
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json() as Promise<Row[]>);
+
+/** Сумма жирным + код валюты мелким серым (единый стиль с таблицей начислений). */
+function MoneyWithCurrency({ amount, currency }: { amount: number | null | undefined; currency: string }) {
+  const base = formatMoney(amount);
+  if (base === "—") return <>—</>;
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="font-semibold">{base}</span>
+      <span className="text-[10px] font-normal text-neutral-400 tracking-wide">
+        {(currency ?? "RUB").toUpperCase()}
+      </span>
+    </span>
+  );
+}
 
 type SortField = "name" | "status" | "paymentSum" | "chargeSum";
 type SortDir = "asc" | "desc";
@@ -201,9 +215,9 @@ export function BankAccountsClient() {
                   <TableCell className="text-right tabular-nums">{r.paymentCount}</TableCell>
                   <TableCell className="text-right tabular-nums">{r.chargeCount}</TableCell>
                   <TableCell className="text-right tabular-nums">{r.operationCount}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMoneyWithCurrency(r.paymentSum, r.currency)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMoneyWithCurrency(r.operationSum, r.currency)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMoneyWithCurrency(r.chargeSum, r.currency)}</TableCell>
+                  <TableCell className="text-right tabular-nums"><MoneyWithCurrency amount={r.paymentSum} currency={r.currency} /></TableCell>
+                  <TableCell className="text-right tabular-nums"><MoneyWithCurrency amount={r.operationSum} currency={r.currency} /></TableCell>
+                  <TableCell className="text-right tabular-nums"><MoneyWithCurrency amount={r.chargeSum} currency={r.currency} /></TableCell>
                   <TableCell>
                     <StatusBadge dict={ENTITY_STATUSES} value={r.status} />
                   </TableCell>
@@ -317,6 +331,21 @@ function BankAccountEditDialog({
       .catch(() => {});
   }, []);
 
+  // Новая валюта сохраняется в централизованный справочник —
+  // сразу доступна в выпадающих списках всех счетов.
+  async function handleAddCurrency(code: string) {
+    setCurrencyOptions((prev) => [...new Set([...prev, code])]);
+    const res = await fetch("/api/bank-accounts/currencies", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.error ?? "Не удалось добавить валюту");
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) {
@@ -378,7 +407,7 @@ function BankAccountEditDialog({
               value={currency}
               onValueChange={setCurrency}
               options={currencyOptions}
-              onAddOption={(code) => setCurrencyOptions((prev) => [...new Set([...prev, code])])}
+              onAddOption={handleAddCurrency}
             />
           </div>
           <DialogFooter>

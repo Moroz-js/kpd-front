@@ -5,10 +5,10 @@
 
 export const DEFAULT_CURRENCIES = ["RUB", "USD", "EUR", "GEL"] as const;
 
-/** Объединяет дефолты + коды из БД (distinct). Без дублей, uppercase. */
+/** Объединяет дефолты + коды из БД (distinct). Без дублей, uppercase, по алфавиту. */
 export function mergeCurrencyOptions(fromDb: string[]): string[] {
   const set = new Set([...DEFAULT_CURRENCIES, ...fromDb.map((c) => c.toUpperCase())]);
-  return [...set];
+  return [...set].sort((a, b) => a.localeCompare(b));
 }
 
 /** Нормализация кода — uppercase, trim. */

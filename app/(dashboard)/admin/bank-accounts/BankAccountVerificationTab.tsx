@@ -644,6 +644,34 @@ export function BankAccountVerificationTab() {
               </tr>
             </thead>
             <tbody>
+              {/* Итоговая строка: сумма остатков по всем счетам в рублях за неделю */}
+              {allAccounts.length > 0 && (
+                <tr className="bg-neutral-100 border-b-2 border-neutral-300 font-semibold">
+                  <td className="sticky left-0 z-10 bg-neutral-100 border-r border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-800">
+                    Итого (руб)
+                  </td>
+                  {reconciliations.map((v) => {
+                    const total = v.results.reduce((sum, r) => sum + (r.amount ?? 0), 0);
+                    const hasAny = v.results.some((r) => r.amount !== null);
+                    return (
+                      <React.Fragment key={v.id}>
+                        <td className={`py-1.5 ${RECON_COL_FX}`} />
+                        <td className={`py-1.5 ${RECON_COL_RATE}`} />
+                        <td className={`py-1.5 ${RECON_COL_RUB}`}>
+                          <span
+                            className="block text-[11px] tabular-nums px-1 text-right truncate font-semibold text-neutral-900"
+                            title={hasAny ? total.toLocaleString("ru-RU", { maximumFractionDigits: 0 }) : undefined}
+                          >
+                            {hasAny
+                              ? total.toLocaleString("ru-RU", { maximumFractionDigits: 0 })
+                              : "—"}
+                          </span>
+                        </td>
+                      </React.Fragment>
+                    );
+                  })}
+                </tr>
+              )}
               {allAccounts.map(([bankAccountId, bankAccountName], rowIdx) => (
                 <tr
                   key={bankAccountId}

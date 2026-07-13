@@ -32,6 +32,7 @@ import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
 import { useTableRowSelection } from "@/lib/useTableRowSelection";
+import { sortByNameRu } from "@/lib/sort";
 
 const ACTIONS_COL_WIDTH = 96;
 /** table-fixed: фиксированные ширины, иначе текст залезает под sticky-действия */
@@ -413,7 +414,8 @@ const ChargeTableRow = React.memo(function ChargeTableRow({
 
 // ─── Главный компонент ────────────────────────────────────────────────────────
 
-export function ChargesClient({ bankAccounts, orders }: Props) {
+export function ChargesClient({ bankAccounts: bankAccountsProp, orders }: Props) {
+  const bankAccounts = React.useMemo(() => sortByNameRu(bankAccountsProp), [bankAccountsProp]);
   const [rows, setRows] = useState<Charge[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
