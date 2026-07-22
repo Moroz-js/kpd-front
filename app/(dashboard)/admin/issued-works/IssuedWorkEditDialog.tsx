@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { MONTHS, formatDate } from "@/lib/format";
+import { sortByNameRu } from "@/lib/sort";
 import { WORK_STATUSES, WORK_STATUSES_SETTABLE, EXECUTOR_TYPES, PROJECT_TYPES } from "@/lib/statuses";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import type { IssuedWorkRowDTO } from "./IssuedWorksClient";
@@ -67,9 +68,15 @@ export function IssuedWorkEditDialog({
   const [workStatus, setWorkStatus] = React.useState(row.workStatus);
   const [submitting, setSubmitting] = React.useState(false);
 
-  const activeProjects = projects.filter((p) => p.status === "active" || p.id === row.projectId);
-  const activeExecutors = executors.filter((e) => e.status === "active" || e.id === row.executorId);
-  const activeWorkTypes = workTypes.filter((w) => w.status === "active" || w.id === row.workTypeId);
+  const activeProjects = sortByNameRu(
+    projects.filter((p) => p.status === "active" || p.id === row.projectId)
+  );
+  const activeExecutors = sortByNameRu(
+    executors.filter((e) => e.status === "active" || e.id === row.executorId)
+  );
+  const activeWorkTypes = sortByNameRu(
+    workTypes.filter((w) => w.status === "active" || w.id === row.workTypeId)
+  );
   const statusLocked = row.workStatus === "paid";
 
   async function submit(e: React.FormEvent) {

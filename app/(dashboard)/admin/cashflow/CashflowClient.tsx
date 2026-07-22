@@ -5,6 +5,7 @@ import useSWR from "swr";
 import Link from "next/link";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { getISOWeek, getISOWeekYear, firstVisibleCashflowWeek } from "@/lib/iso-weeks";
@@ -303,12 +304,12 @@ export function CashflowClient() {
     "px-2 py-0.5 text-right text-[11px] leading-snug tabular-nums whitespace-nowrap border-r border-neutral-100 last:border-0";
   const thCls =
     "px-2 py-0.5 text-center text-xs leading-snug font-medium text-neutral-500 border-r border-neutral-100 whitespace-nowrap";
-  const stickyLbl = "sticky left-0 z-10 bg-white px-3 py-1 text-xs border-r border-neutral-200 whitespace-nowrap overflow-hidden text-ellipsis w-[240px] min-w-[200px] max-w-[240px] shadow-[1px_0_0_0_#e5e7eb]";
+  const stickyLbl = "sticky left-0 z-10 bg-white px-3 py-1 text-[10px] leading-snug border-r border-neutral-200 whitespace-nowrap overflow-hidden text-ellipsis w-[240px] min-w-[200px] max-w-[240px] shadow-[1px_0_0_0_#e5e7eb]";
   const compactLbl =
-    "sticky left-0 z-10 bg-white px-2.5 py-0.5 text-[11px] leading-snug border-r border-neutral-200 whitespace-nowrap overflow-hidden text-ellipsis w-[240px] min-w-[200px] max-w-[240px] shadow-[1px_0_0_0_#e5e7eb]";
-  const stickyHdr = "sticky left-0 z-[15] bg-neutral-50 border-r border-neutral-200 shadow-[1px_0_0_0_#e5e7eb] px-3 py-1 text-xs font-semibold text-neutral-500 tracking-wide uppercase whitespace-nowrap overflow-hidden text-ellipsis w-[240px] min-w-[200px] max-w-[240px]";
+    "sticky left-0 z-10 bg-white px-2.5 py-0.5 text-[10px] leading-snug border-r border-neutral-200 whitespace-nowrap overflow-hidden text-ellipsis w-[240px] min-w-[200px] max-w-[240px] shadow-[1px_0_0_0_#e5e7eb]";
+  const stickyHdr = "sticky left-0 z-[15] bg-neutral-50 border-r border-neutral-200 shadow-[1px_0_0_0_#e5e7eb] px-3 py-1 text-[10px] leading-snug font-semibold text-neutral-500 tracking-wide uppercase whitespace-nowrap overflow-hidden text-ellipsis w-[240px] min-w-[200px] max-w-[240px]";
   const compactHdr =
-    "sticky left-0 z-[15] bg-neutral-50 border-r border-neutral-200 shadow-[1px_0_0_0_#e5e7eb] px-2.5 py-0.5 text-[11px] font-semibold text-neutral-500 tracking-wide uppercase whitespace-nowrap overflow-hidden text-ellipsis w-[240px] min-w-[200px] max-w-[240px]";
+    "sticky left-0 z-[15] bg-neutral-50 border-r border-neutral-200 shadow-[1px_0_0_0_#e5e7eb] px-2.5 py-0.5 text-[10px] font-semibold text-neutral-500 tracking-wide uppercase whitespace-nowrap overflow-hidden text-ellipsis w-[240px] min-w-[200px] max-w-[240px]";
   const stickyTotalHdr = "sticky left-[240px] z-30 bg-neutral-100 px-2 py-0.5 text-right text-xs font-semibold text-neutral-600 whitespace-nowrap min-w-[104px] border-r border-neutral-200 shadow-[1px_0_0_0_#e5e7eb]";
   const stickyTotal = "sticky left-[240px] z-10 bg-neutral-50 px-2 py-0.5 text-right text-[11px] tabular-nums whitespace-nowrap font-medium border-r border-neutral-200 min-w-[104px] shadow-[1px_0_0_0_#e5e7eb]";
   const isFuture = (wIdx: number) =>
@@ -592,11 +593,17 @@ export function CashflowClient() {
 
               {/* Несхождение = Баланс (сметы/ДП) − Баланс на счетах */}
               <tr className={cn(ROW_BORDER_STRONG, "hover:bg-neutral-50")}>
-                <td
-                  className={cn(compactLbl, "text-right font-normal italic text-neutral-500")}
-                  title="Несхождение расчётного баланса и фактического остатка на счетах"
-                >
-                  Несхождение
+                <td className={cn(compactLbl, "text-right font-normal italic text-neutral-500")}>
+                  <TooltipProvider delay={200}>
+                    <Tooltip>
+                      <TooltipTrigger className="cursor-help underline decoration-dotted underline-offset-2">
+                        Несхождение
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="max-w-xs">
+                        Несхождение расчётного баланса и фактического остатка на счетах
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </td>
                 <td className={cn(stickyTotal)}>
                   {fmtNullable(
@@ -772,7 +779,13 @@ export function CashflowClient() {
                       return (
                         <tr key={`${blockKey}-${p.id}`} className="border-b border-neutral-100 hover:bg-neutral-50">
                           <td className={cn(stickyLbl, "font-normal")} title={p.name}>
-                            <span className="block truncate">{p.name}</span>
+                            <Link
+                              href={`/admin/projects/${p.id}`}
+                              target="_blank"
+                              className="block truncate hover:text-blue-600 hover:underline"
+                            >
+                              {p.name}
+                            </Link>
                           </td>
                           <td className={cn(stickyTotal, "font-medium")}>
                             {fmt(rowTotal(arr))}
@@ -797,7 +810,13 @@ export function CashflowClient() {
                       return (
                         <tr key={`${blockKey}-${p.id}`} className="border-b border-neutral-100 hover:bg-neutral-50">
                           <td className={cn(stickyLbl, "font-normal text-neutral-500")} title={p.name}>
-                            <span className="block truncate">{p.name}</span>
+                            <Link
+                              href={`/admin/projects/${p.id}`}
+                              target="_blank"
+                              className="block truncate hover:text-blue-600 hover:underline"
+                            >
+                              {p.name}
+                            </Link>
                           </td>
                           <td className={cn(stickyTotal, "font-medium text-neutral-500")}>
                             {fmt(rowTotal(arr))}

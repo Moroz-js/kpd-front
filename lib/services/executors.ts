@@ -550,12 +550,31 @@ export async function grantExecutorAccess(id: string, userId: string) {
 }
 
 export async function revokeExecutorAccess(id: string, userId: string) {
-  const exec = await prisma.executor.findUnique({ where: { id } });
-  if (!exec) throw new Error("Executor not found");
-  const updated = await prisma.executor.update({
+  const exec = await prisma.executor.findUnique({
     where: { id },
-    data: { accessRevokedAt: new Date() },
+    include: { user: { select: { id: true, email: true } } },
   });
+  if (!exec) throw new Error("Executor not found");
+
+  // Полностью отвязываем учётку: email очищается в интерфейсе,
+  // а сам User деактивируется и его email освобождается (unique),
+  // чтобы позже можно было выдать доступ с новым (или тем же) email.
+  const updated = await prisma.$transaction(async (tx) => {
+    if (exec.user) {
+      await tx.user.update({
+        where: { id: exec.user.id },
+        data: {
+          isActive: false,
+          email: `revoked+${Date.now()}+${exec.user.email}`,
+        },
+      });
+    }
+    return tx.executor.update({
+      where: { id },
+      data: { accessRevokedAt: new Date(), userId: null },
+    });
+  });
+
   await logActivity({
     userId,
     action: "access_revoke",

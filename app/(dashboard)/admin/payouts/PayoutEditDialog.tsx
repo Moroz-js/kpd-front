@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select";
 import { MONTHS } from "@/lib/format";
 import { PAYMENT_STATUSES } from "@/lib/statuses";
+import { sortByNameRu } from "@/lib/sort";
 import type { PayoutRowDTO } from "./PayoutsClient";
 
 type ExecutorOption = { id: string; name: string; status: string };
@@ -64,8 +65,12 @@ export function PayoutEditDialog({
   const [periodYear, setPeriodYear] = React.useState(String(row.periodYear));
   const [submitting, setSubmitting] = React.useState(false);
 
-  const activeBanks = banks.filter((b) => b.status === "active" || b.id === row.bankAccountId);
-  const activeExecutors = executors.filter((e) => e.status === "active" || e.id === row.executorId);
+  const activeBanks = sortByNameRu(
+    banks.filter((b) => b.status === "active" || b.id === row.bankAccountId)
+  );
+  const activeExecutors = sortByNameRu(
+    executors.filter((e) => e.status === "active" || e.id === row.executorId)
+  );
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

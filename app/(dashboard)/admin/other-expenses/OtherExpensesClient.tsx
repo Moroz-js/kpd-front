@@ -21,7 +21,7 @@ import {
 import {
   Table, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { BulkSelectTableBody } from "@/components/ui-custom/BulkSelectTableBody";
+import { VirtualizedTableBody } from "@/components/ui-custom/VirtualizedTableBody";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
@@ -33,6 +33,7 @@ import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
 import { useTableRowSelection } from "@/lib/useTableRowSelection";
 import { ExpandableListCell } from "@/components/ui-custom/ExpandableListCell";
 import { stickyActionsHead, stickyActionsCell, compactHead, compactPeriodHead } from "@/lib/table-styles";
+import { sortByNameRu } from "@/lib/sort";
 
 /** Ширины колонок (18) — table-fixed, иначе правые колонки сжимаются и наезжают друг на друга */
 const ACTIONS_COL_WIDTH = 128;
@@ -64,10 +65,11 @@ function EditableColHead({
 // ─── Константы ────────────────────────────────────────────────────────────────
 
 const PREFERRED_PAY_METHODS = [
-  "З/П", "Крипта", "Самозанятый", "ИП", "Карта физлица РФ",
-  "Карта физлица другой страны", "Р/С контрагента РФ", "Р/С контрагента КЗ",
-  "Р/С контрагента ЧГ", "Р/С контрагента ЕС", "Бизнес-картой РФ",
-  "Бизнес-картой КЗ", "Бизнес-картой ЧГ", "Бизнес-картой СЛ", "4DEV", "ГПХ",
+  "4DEV", "Бизнес-картой КЗ", "Бизнес-картой РФ", "Бизнес-картой СЛ",
+  "Бизнес-картой ЧГ", "ГПХ", "З/П", "ИП",
+  "Карта физлица другой страны", "Карта физлица РФ", "Крипта",
+  "Р/С контрагента ЕС", "Р/С контрагента КЗ", "Р/С контрагента РФ",
+  "Р/С контрагента ЧГ", "Самозанятый",
 ];
 
 // ─── Типы ─────────────────────────────────────────────────────────────────────
@@ -124,9 +126,209 @@ async function readApiJson<T>(r: Response): Promise<T> {
   }
 }
 
-// ─── Утилиты ──────────────────────────────────────────────────────────────────
+function payWeek(plannedPayAt: string | null, paidAt: string | null): string {
+  const d = paidAt ?? plannedPayAt;
+  if (!d) return "—";
+  return weekLabel(getISOWeek(new Date(d)));
+}
 
-export function OtherExpensesClient({ isAdmin, userId, executorId, projects, executors, workTypes, permanentExecutors, bankAccounts }: Props) {
+type OtherExpenseTableRowProps = {
+  row: OtherExpense;
+  rowIndex: number;
+  checked: boolean;
+  isAdmin: boolean;
+  canEditRow: boolean;
+  canReviewRow: boolean;
+  inlineActive: "plannedPayAt" | "paidAt" | null;
+  inlineVal: string;
+  onSelect: (index: number, id: string, shiftKey: boolean) => void;
+  onInlineValChange: (v: string) => void;
+  onStartInline: (row: OtherExpense, field: "plannedPayAt" | "paidAt") => void;
+  onCommitInline: (row: OtherExpense) => void;
+  onCancelInline: () => void;
+  onCheck: (row: OtherExpense) => void;
+  onRework: (row: OtherExpense) => void;
+  onPay: (row: OtherExpense) => void;
+  onEdit: (row: OtherExpense) => void;
+  onDelete: (row: OtherExpense) => void;
+};
+
+const OtherExpenseTableRow = React.memo(function OtherExpenseTableRow({
+  row,
+  rowIndex,
+  checked,
+  isAdmin,
+  canEditRow,
+  canReviewRow,
+  inlineActive,
+  inlineVal,
+  onSelect,
+  onInlineValChange,
+  onStartInline,
+  onCommitInline,
+  onCancelInline,
+  onCheck,
+  onRework,
+  onPay,
+  onEdit,
+  onDelete,
+}: OtherExpenseTableRowProps) {
+  return (
+    <TableRow className={checked ? "bg-blue-50" : ""}>
+      <TableCell>
+        <RowSelectCheckbox
+          checked={checked}
+          rowIndex={rowIndex}
+          rowId={row.id}
+          onSelect={onSelect}
+        />
+      </TableCell>
+      <TableCell>{row.executionYear}</TableCell>
+      <TableCell className="whitespace-nowrap">{MONTHS.find(m => m.value === String(row.executionMonth))?.label ?? row.executionMonth}</TableCell>
+      <TableCell>{payWeek(row.plannedPayAt, row.paidAt)}</TableCell>
+      <TableCell className={cn(cellClip, "whitespace-normal")}>
+        <ExpandableListCell items={[row.project.name]} />
+      </TableCell>
+      <TableCell className={cn(cellClip, "whitespace-normal")}>
+        <ExpandableListCell items={[row.executor.name]} />
+      </TableCell>
+      <TableCell className={cn(cellClip, "whitespace-normal")}>
+        <ExpandableListCell items={row.description ? [row.description] : []} />
+      </TableCell>
+      <TableCell className={cn(cellClip, "whitespace-normal")}>
+        <ExpandableListCell items={[row.workType.name]} />
+      </TableCell>
+      <TableCell className={cn(cellClip, "whitespace-normal")}>
+        <ExpandableListCell items={row.responsibleExecutor ? [row.responsibleExecutor.name] : []} />
+      </TableCell>
+      <TableCell className={cn(cellClip, "whitespace-normal")}>
+        {row.preferredPayMethod ? (
+          <ExpandableListCell items={[row.preferredPayMethod]} />
+        ) : (
+          <span className="text-neutral-400">—</span>
+        )}
+      </TableCell>
+      <TableCell className={cn(cellClip, "whitespace-nowrap")}>
+        {!row.paymentStatus ? (
+          <span className="text-neutral-300">—</span>
+        ) : inlineActive === "plannedPayAt" ? (
+          <input
+            autoFocus
+            type="date"
+            value={inlineVal}
+            onChange={(e) => onInlineValChange(e.target.value)}
+            onBlur={() => onCommitInline(row)}
+            onClick={(e) => { try { (e.target as HTMLInputElement).showPicker(); } catch { /**/ } }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") onCommitInline(row);
+              if (e.key === "Escape") onCancelInline();
+            }}
+            className="w-full h-6 rounded border border-blue-300 px-1 text-xs bg-blue-50 focus:outline-none cursor-pointer"
+          />
+        ) : (
+          <button
+            type="button"
+            className="text-xs text-neutral-600 hover:text-blue-700 hover:underline"
+            onClick={() => onStartInline(row, "plannedPayAt")}
+          >
+            {formatDateShort(row.plannedPayAt)}
+          </button>
+        )}
+      </TableCell>
+      <TableCell className={cn(cellClip, "text-right tabular-nums font-semibold whitespace-nowrap")}>
+        {formatMoney(row.amount)}
+      </TableCell>
+      <TableCell className={cn(cellClip, "whitespace-nowrap")}>
+        <StatusBadge dict={WORK_STATUSES} value={row.workStatus} />
+      </TableCell>
+      <TableCell className={cn(cellClip, "whitespace-nowrap")}>
+        {row.paymentStatus ? (
+          <StatusBadge dict={PAYMENT_STATUSES} value={row.paymentStatus} />
+        ) : (
+          <span className="text-neutral-300">—</span>
+        )}
+      </TableCell>
+      <TableCell className={cn(cellClip, "text-right tabular-nums whitespace-nowrap")}>
+        {row.paymentAmount != null ? formatMoney(row.paymentAmount) : "—"}
+      </TableCell>
+      <TableCell className={cn(cellClip, "whitespace-nowrap")}>
+        {inlineActive === "paidAt" ? (
+          <input
+            autoFocus
+            type="date"
+            value={inlineVal}
+            onChange={(e) => onInlineValChange(e.target.value)}
+            onBlur={() => onCommitInline(row)}
+            onClick={(e) => { try { (e.target as HTMLInputElement).showPicker(); } catch { /**/ } }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") onCommitInline(row);
+              if (e.key === "Escape") onCancelInline();
+            }}
+            className="w-full h-6 rounded border border-blue-300 px-1 text-xs bg-blue-50 focus:outline-none cursor-pointer"
+          />
+        ) : row.paymentStatus && isAdmin ? (
+          <button
+            type="button"
+            className="text-xs text-neutral-600 hover:text-blue-700 hover:underline"
+            title="Указать дату оплаты"
+            onClick={() => onStartInline(row, "paidAt")}
+          >
+            {row.paidAt ? formatDateShort(row.paidAt) : "—"}
+          </button>
+        ) : (
+          <span className="text-xs text-neutral-600">
+            {row.paidAt ? formatDateShort(row.paidAt) : "—"}
+          </span>
+        )}
+      </TableCell>
+      <TableCell className={cn(cellClip, "whitespace-normal pr-1")}>
+        <ExpandableListCell items={row.bankAccount?.name ? [row.bankAccount.name] : []} />
+      </TableCell>
+      <TableCell
+        className={cn(
+          stickyActionsCell,
+          "min-w-[128px] w-[128px] max-w-[128px]",
+          checked && "bg-blue-50"
+        )}
+      >
+        <div className="flex shrink-0 gap-0.5 items-center justify-end">
+          {canReviewRow && !row.paymentStatus && row.workStatus === "submitted" && (
+            <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="Проверить" onClick={() => onCheck(row)}>
+              <CheckCircle className="h-3.5 w-3.5 text-blue-600" />
+            </Button>
+          )}
+          {canReviewRow && !row.paymentStatus && row.workStatus === "submitted" && (
+            <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="На доработку" onClick={() => onRework(row)}>
+              <RotateCcw className="h-3.5 w-3.5 text-amber-500" />
+            </Button>
+          )}
+          {isAdmin && (row.paymentStatus === "planned" || row.paymentStatus === "sent") && (
+            <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="Оплатить" onClick={() => onPay(row)}>
+              <CircleDollarSign className="h-3.5 w-3.5 text-green-600" />
+            </Button>
+          )}
+          {canEditRow && (
+            <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="Редактировать" onClick={() => onEdit(row)}>
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          {canEditRow && (
+            <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="Удалить" onClick={() => onDelete(row)}>
+              <Trash2 className="h-3.5 w-3.5 text-red-400" />
+            </Button>
+          )}
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+});
+
+export function OtherExpensesClient({ isAdmin, userId, executorId, projects: projectsProp, executors: executorsProp, workTypes: workTypesProp, permanentExecutors: permanentExecutorsProp, bankAccounts: bankAccountsProp }: Props) {
+  const projects = React.useMemo(() => sortByNameRu(projectsProp), [projectsProp]);
+  const executors = React.useMemo(() => sortByNameRu(executorsProp), [executorsProp]);
+  const workTypes = React.useMemo(() => sortByNameRu(workTypesProp), [workTypesProp]);
+  const permanentExecutors = React.useMemo(() => sortByNameRu(permanentExecutorsProp), [permanentExecutorsProp]);
+  const bankAccounts = React.useMemo(() => sortByNameRu(bankAccountsProp), [bankAccountsProp]);
   const [rows, setRows] = useState<OtherExpense[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
@@ -145,6 +347,8 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
   const [bulkSaving, setBulkSaving] = useState(false);
   const [inlineEdit, setInlineEdit] = useState<{ rowId: string; field: "plannedPayAt" | "paidAt" } | null>(null);
   const [inlineVal, setInlineVal] = useState("");
+
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   // Фильтры
   const [fYear, setFYear] = useState<string[]>([]);
@@ -248,39 +452,6 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
       toast.error(e instanceof Error ? e.message : "Ошибка");
       silentLoad();
     }
-  }
-
-  function renderPlanDateCell(row: OtherExpense) {
-    const editing = inlineEdit?.rowId === row.id && inlineEdit.field === "plannedPayAt";
-    if (!row.paymentStatus) {
-      return <span className="text-neutral-300">—</span>;
-    }
-    if (editing) {
-      return (
-        <input
-          autoFocus
-          type="date"
-          value={inlineVal}
-          onChange={(e) => setInlineVal(e.target.value)}
-          onBlur={() => commitInline(row)}
-          onClick={(e) => { try { (e.target as HTMLInputElement).showPicker(); } catch { /**/ } }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") commitInline(row);
-            if (e.key === "Escape") setInlineEdit(null);
-          }}
-          className="w-full h-6 rounded border border-blue-300 px-1 text-xs bg-blue-50 focus:outline-none cursor-pointer"
-        />
-      );
-    }
-    return (
-      <button
-        type="button"
-        className="text-xs text-neutral-600 hover:text-blue-700 hover:underline"
-        onClick={() => startInline(row, "plannedPayAt")}
-      >
-        {formatDateShort(row.plannedPayAt)}
-      </button>
-    );
   }
 
   async function handleCheck(row: OtherExpense) {
@@ -404,11 +575,69 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
     return filtered.filter(r => selectedIds.has(r.id)).reduce((s, r) => s + (r.amount ?? 0), 0);
   }, [filtered, selectedIds]);
 
-  function payWeek(plannedPayAt: string | null, paidAt: string | null): string {
-    const d = paidAt ?? plannedPayAt;
-    if (!d) return "—";
-    return weekLabel(getISOWeek(new Date(d)));
-  }
+  const onCheckCb = useCallback((row: OtherExpense) => setCheckTarget(row), []);
+  const onReworkCb = useCallback((row: OtherExpense) => setReworkTarget(row), []);
+  const onPayCb = useCallback((row: OtherExpense) => {
+    setPayDate(toLocalDateString(new Date()));
+    setPayTarget(row);
+  }, []);
+  const onEditCb = useCallback((row: OtherExpense) => setEditTarget(row), []);
+  const onDeleteCb = useCallback((row: OtherExpense) => setDeleteTarget(row), []);
+  const startInlineCb = useCallback(startInline, [isAdmin]);
+  const commitInlineCb = useCallback(commitInline, [inlineEdit, inlineVal]);
+  const cancelInlineCb = useCallback(() => setInlineEdit(null), []);
+  const onInlineValChangeCb = useCallback((v: string) => setInlineVal(v), []);
+
+  const renderRow = React.useCallback(
+    (index: number) => {
+      const row = filtered[index];
+      if (!row) return null;
+      const inlineActive =
+        inlineEdit?.rowId === row.id ? inlineEdit.field : null;
+      return (
+        <OtherExpenseTableRow
+          key={row.id}
+          row={row}
+          rowIndex={index}
+          checked={selectedIds.has(row.id)}
+          isAdmin={isAdmin}
+          canEditRow={canEdit(row)}
+          canReviewRow={canReview(row)}
+          inlineActive={inlineActive}
+          inlineVal={inlineActive ? inlineVal : ""}
+          onSelect={handleRowSelect}
+          onInlineValChange={onInlineValChangeCb}
+          onStartInline={startInlineCb}
+          onCommitInline={commitInlineCb}
+          onCancelInline={cancelInlineCb}
+          onCheck={onCheckCb}
+          onRework={onReworkCb}
+          onPay={onPayCb}
+          onEdit={onEditCb}
+          onDelete={onDeleteCb}
+        />
+      );
+    },
+    [
+      filtered,
+      selectedIds,
+      inlineEdit,
+      inlineVal,
+      isAdmin,
+      handleRowSelect,
+      onInlineValChangeCb,
+      startInlineCb,
+      commitInlineCb,
+      cancelInlineCb,
+      onCheckCb,
+      onReworkCb,
+      onPayCb,
+      onEditCb,
+      onDeleteCb,
+      userId,
+      executorId,
+    ]
+  );
 
   return (
     <div className="flex flex-col gap-4 h-[calc(100vh-3rem)] min-h-0">
@@ -531,6 +760,7 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
         className="table-fixed w-full"
         style={{ minWidth: TABLE_MIN_WIDTH }}
         containerClassName="rounded-md border bg-white flex-1 min-h-0 min-w-0 overflow-auto"
+        containerRef={scrollRef}
       >
           <colgroup>
             {COL_WIDTHS.map((w, i) => (
@@ -563,146 +793,24 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects, exe
               <TableHead className={cn(stickyActionsHead, "w-[128px] min-w-[128px] max-w-[128px]")} />
             </TableRow>
           </TableHeader>
-          <BulkSelectTableBody>
-            {loading ? (
+          <VirtualizedTableBody
+            scrollRef={scrollRef}
+            rowCount={filtered.length}
+            colSpan={18}
+            isLoading={loading}
+            loading={
               <TableRow>
                 <TableCell colSpan={18} className="text-center text-neutral-500 py-8">Загрузка...</TableCell>
               </TableRow>
-            ) : filtered.length === 0 ? (
+            }
+            isEmpty={filtered.length === 0}
+            empty={
               <TableRow>
                 <TableCell colSpan={18} className="text-center text-neutral-500 py-8">Нет данных</TableCell>
               </TableRow>
-            ) : filtered.map((row, rowIndex) => (
-              <TableRow key={row.id} className={selectedIds.has(row.id) ? "bg-blue-50" : ""}>
-                <TableCell>
-                  <RowSelectCheckbox
-                    checked={selectedIds.has(row.id)}
-                    rowIndex={rowIndex}
-                    rowId={row.id}
-                    onSelect={handleRowSelect}
-                  />
-                </TableCell>
-                <TableCell>{row.executionYear}</TableCell>
-                <TableCell className="whitespace-nowrap">{MONTHS.find(m => m.value === String(row.executionMonth))?.label ?? row.executionMonth}</TableCell>
-                <TableCell>{payWeek(row.plannedPayAt, row.paidAt)}</TableCell>
-                <TableCell className={cn(cellClip, "whitespace-normal")}>
-                  <ExpandableListCell items={[row.project.name]} />
-                </TableCell>
-                <TableCell className={cn(cellClip, "whitespace-normal")}>
-                  <ExpandableListCell items={[row.executor.name]} />
-                </TableCell>
-                <TableCell className={cn(cellClip, "whitespace-normal")}>
-                  <ExpandableListCell items={row.description ? [row.description] : []} />
-                </TableCell>
-                <TableCell className={cn(cellClip, "whitespace-normal")}>
-                  <ExpandableListCell items={[row.workType.name]} />
-                </TableCell>
-                <TableCell className={cn(cellClip, "whitespace-normal")}>
-                  <ExpandableListCell items={row.responsibleExecutor ? [row.responsibleExecutor.name] : []} />
-                </TableCell>
-                <TableCell className={cn(cellClip, "whitespace-normal")}>
-                  {row.preferredPayMethod ? (
-                    <ExpandableListCell items={[row.preferredPayMethod]} />
-                  ) : (
-                    <span className="text-neutral-400">—</span>
-                  )}
-                </TableCell>
-                <TableCell className={cn(cellClip, "whitespace-nowrap")}>
-                  {renderPlanDateCell(row)}
-                </TableCell>
-                <TableCell className={cn(cellClip, "text-right tabular-nums font-semibold whitespace-nowrap")}>
-                  {formatMoney(row.amount)}
-                </TableCell>
-                <TableCell className={cn(cellClip, "whitespace-nowrap")}>
-                  <StatusBadge dict={WORK_STATUSES} value={row.workStatus} />
-                </TableCell>
-                <TableCell className={cn(cellClip, "whitespace-nowrap")}>
-                  {row.paymentStatus ? (
-                    <StatusBadge dict={PAYMENT_STATUSES} value={row.paymentStatus} />
-                  ) : (
-                    <span className="text-neutral-300">—</span>
-                  )}
-                </TableCell>
-                <TableCell className={cn(cellClip, "text-right tabular-nums whitespace-nowrap")}>
-                  {row.paymentAmount != null ? formatMoney(row.paymentAmount) : "—"}
-                </TableCell>
-                <TableCell className={cn(cellClip, "whitespace-nowrap")}>
-                  {inlineEdit?.rowId === row.id && inlineEdit.field === "paidAt" ? (
-                    <input
-                      autoFocus
-                      type="date"
-                      value={inlineVal}
-                      onChange={(e) => setInlineVal(e.target.value)}
-                      onBlur={() => commitInline(row)}
-                      onClick={(e) => { try { (e.target as HTMLInputElement).showPicker(); } catch { /**/ } }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") commitInline(row);
-                        if (e.key === "Escape") setInlineEdit(null);
-                      }}
-                      className="w-full h-6 rounded border border-blue-300 px-1 text-xs bg-blue-50 focus:outline-none cursor-pointer"
-                    />
-                  ) : row.paymentStatus && isAdmin ? (
-                    <button
-                      type="button"
-                      className="text-xs text-neutral-600 hover:text-blue-700 hover:underline"
-                      title="Указать дату оплаты"
-                      onClick={() => startInline(row, "paidAt")}
-                    >
-                      {row.paidAt ? formatDateShort(row.paidAt) : "—"}
-                    </button>
-                  ) : (
-                    <span className="text-xs text-neutral-600">
-                      {row.paidAt ? formatDateShort(row.paidAt) : "—"}
-                    </span>
-                  )}
-                </TableCell>
-                <TableCell className={cn(cellClip, "whitespace-normal pr-1")}>
-                  <ExpandableListCell items={row.bankAccount?.name ? [row.bankAccount.name] : []} />
-                </TableCell>
-                <TableCell
-                  className={cn(
-                    stickyActionsCell,
-                    "min-w-[128px] w-[128px] max-w-[128px]",
-                    selectedIds.has(row.id) && "bg-blue-50"
-                  )}
-                >
-                  <div className="flex shrink-0 gap-0.5 items-center justify-end">
-                    {canReview(row) && !row.paymentStatus && row.workStatus === "submitted" && (
-                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="Проверить" onClick={() => setCheckTarget(row)}>
-                        <CheckCircle className="h-3.5 w-3.5 text-blue-600" />
-                      </Button>
-                    )}
-                    {canReview(row) && !row.paymentStatus && row.workStatus === "submitted" && (
-                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="На доработку" onClick={() => setReworkTarget(row)}>
-                        <RotateCcw className="h-3.5 w-3.5 text-amber-500" />
-                      </Button>
-                    )}
-                    {isAdmin && (row.paymentStatus === "planned" || row.paymentStatus === "sent") && (
-                      <Button
-                        size="sm" variant="ghost" className="h-6 w-6 p-0" title="Оплатить"
-                        onClick={() => {
-                          setPayDate(toLocalDateString(new Date()));
-                          setPayTarget(row);
-                        }}
-                      >
-                        <CircleDollarSign className="h-3.5 w-3.5 text-green-600" />
-                      </Button>
-                    )}
-                    {canEdit(row) && (
-                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="Редактировать" onClick={() => setEditTarget(row)}>
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                    {canEdit(row) && (
-                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="Удалить" onClick={() => setDeleteTarget(row)}>
-                        <Trash2 className="h-3.5 w-3.5 text-red-400" />
-                      </Button>
-                    )}
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </BulkSelectTableBody>
+            }
+            renderRow={renderRow}
+          />
         </Table>
 
       {/* Диалоги */}
@@ -1045,9 +1153,9 @@ function OtherExpenseFormDialog({
                     <SelectValue>{WORK_STATUSES[(revertStatus ?? "checked") as keyof typeof WORK_STATUSES]?.label ?? (revertStatus ?? "checked")}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="checked">{WORK_STATUSES.checked.label}</SelectItem>
                     <SelectItem value="submitted">{WORK_STATUSES.submitted.label}</SelectItem>
                     <SelectItem value="rework">{WORK_STATUSES.rework.label}</SelectItem>
+                    <SelectItem value="checked">{WORK_STATUSES.checked.label}</SelectItem>
                   </SelectContent>
                 </Select>
                 {revertStatus && (
@@ -1088,9 +1196,9 @@ function OtherExpenseFormDialog({
                     <SelectValue>{PAYMENT_STATUSES[editPaymentStatus as keyof typeof PAYMENT_STATUSES]?.label ?? editPaymentStatus}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="sent">{PAYMENT_STATUSES.sent.label}</SelectItem>
-                    <SelectItem value="paid">{PAYMENT_STATUSES.paid.label}</SelectItem>
                     <SelectItem value="planned">{PAYMENT_STATUSES.planned.label}</SelectItem>
+                    <SelectItem value="paid">{PAYMENT_STATUSES.paid.label}</SelectItem>
+                    <SelectItem value="sent">{PAYMENT_STATUSES.sent.label}</SelectItem>
                   </SelectContent>
                 </Select>
               )}

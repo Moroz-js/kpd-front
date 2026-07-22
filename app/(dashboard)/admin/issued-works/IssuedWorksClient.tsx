@@ -9,10 +9,9 @@ import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import { WORK_STATUSES, WORK_STATUSES_SETTABLE } from "@/lib/statuses";
-import { formatMoney, formatMoneyRub, formatDate, formatDateShort, weekLabel, monthLabel, MONTHS } from "@/lib/format";
+import { formatMoney, formatMoneyRub, formatDateShort, weekLabel, monthLabel, MONTHS } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
 import { DateInput } from "@/components/ui-custom/DateInput";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -22,7 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { BulkSelectTableBody } from "@/components/ui-custom/BulkSelectTableBody";
+import { VirtualizedTableBody } from "@/components/ui-custom/VirtualizedTableBody";
 import { SortableHead } from "@/components/ui-custom/SortableHead";
 import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
 import { useTableRowSelection } from "@/lib/useTableRowSelection";
@@ -102,6 +101,92 @@ function smetaTypeCell(row: Row) {
   return SMETA_LABEL["other-expense"];
 }
 
+function issuedWorkRowId(r: Row) {
+  return `${r.sourceType}:${r.sourceId}`;
+}
+
+type IssuedWorkRowProps = {
+  row: Row;
+  rowIndex: number;
+  checked: boolean;
+  onSelect: (index: number, id: string, shiftKey: boolean) => void;
+  onEdit: (row: Row) => void;
+  onCheck: (row: Row) => void;
+};
+
+const IssuedWorkRow = React.memo(function IssuedWorkRow({
+  row: r,
+  rowIndex,
+  checked,
+  onSelect,
+  onEdit,
+  onCheck,
+}: IssuedWorkRowProps) {
+  const id = issuedWorkRowId(r);
+  return (
+    <TableRow
+      className={`${checked ? "bg-blue-50" : ""} ${r.workStatus === "archived" ? "bg-neutral-50 text-neutral-400" : ""}`.trim()}
+    >
+      <TableCell>
+        <RowSelectCheckbox
+          checked={checked}
+          rowIndex={rowIndex}
+          rowId={id}
+          onSelect={onSelect}
+        />
+      </TableCell>
+      <TableCell className={cn(compactCell, "tabular-nums text-left", periodYearMonthClass)}>
+        {r.executionYear}
+      </TableCell>
+      <TableCell className={cn(compactCell, "whitespace-nowrap", periodYearMonthClass)}>
+        {monthLabel(r.executionMonth)}
+      </TableCell>
+      <TableCell className={cn(compactCell, "whitespace-nowrap", weekPayClass)}>
+        {r.weekPlanFact != null ? weekLabel(r.weekPlanFact) : "—"}
+      </TableCell>
+      <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>{r.executorName}</TableCell>
+      <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>
+        {r.responsibleExecutorName ?? "—"}
+      </TableCell>
+      <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>{r.projectName}</TableCell>
+      <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>{r.workTypeName}</TableCell>
+      <TableCell className={cn(compactCell, "text-right tabular-nums font-semibold")}>{formatMoney(r.amount)}</TableCell>
+      <TableCell className={compactCell}>
+        <StatusBadge dict={WORK_STATUSES} value={r.workStatus} />
+      </TableCell>
+      <TableCell className={compactCell}>{formatDateShort(r.checkedAt)}</TableCell>
+      <TableCell className={compactCell}>{formatDateShort(r.plannedPayAt)}</TableCell>
+      <TableCell className={cn(compactCell, r.workStatus === "paid" && !r.paidAt && "bg-red-100 text-red-700")}>
+        {formatDateShort(r.paidAt)}
+      </TableCell>
+      <TableCell className={compactCell}>{smetaTypeCell(r)}</TableCell>
+      <TableCell
+        className={cn(
+          stickyActionsCell,
+          checked && "bg-blue-50",
+          r.workStatus === "archived" && "bg-neutral-50"
+        )}
+      >
+        <div className={stickyActionsInner}>
+          <Button size="sm" variant="ghost" onClick={() => onEdit(r)} title="Редактировать">
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+          {r.workStatus === "submitted" && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => onCheck(r)}
+              title="Проставить «Проверено»"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+});
+
 export function IssuedWorksClient() {
   const { data, isLoading, mutate } = useSWR<Row[]>("/api/issued-works", fetcher);
   const { data: projects } = useSWR<ProjectOption[]>("/api/projects/options", fetcher);
@@ -132,7 +217,7 @@ export function IssuedWorksClient() {
   const [bulkPlannedPayAt, setBulkPlannedPayAt] = React.useState("");
   const [bulkSaving, setBulkSaving] = React.useState(false);
 
-  function rowId(r: Row) { return `${r.sourceType}:${r.sourceId}`; }
+  const scrollRef = React.useRef<HTMLDivElement>(null);
 
   function compareRows(a: Row, b: Row): number {
     for (const s of sort) {
@@ -234,8 +319,58 @@ export function IssuedWorksClient() {
     sort,
   ]);
 
-  const orderedRowIds = React.useMemo(() => rows.map(rowId), [rows]);
+  const orderedRowIds = React.useMemo(() => rows.map(issuedWorkRowId), [rows]);
   const { selectedIds, handleRowSelect, toggleAll, clearSelection } = useTableRowSelection(orderedRowIds);
+
+  const { displayCount, displaySum } = React.useMemo(() => {
+    if (selectedIds.size === 0) {
+      let sum = 0;
+      for (const r of rows) sum += r.amount;
+      return { displayCount: rows.length, displaySum: sum };
+    }
+    let sum = 0;
+    let count = 0;
+    for (const r of rows) {
+      if (selectedIds.has(issuedWorkRowId(r))) {
+        sum += r.amount;
+        count += 1;
+      }
+    }
+    return { displayCount: count, displaySum: sum };
+  }, [rows, selectedIds]);
+
+  const handleEdit = React.useCallback((row: Row) => setEditing(row), []);
+
+  const handleCheckRow = React.useCallback(
+    async (row: Row) => {
+      const compositeId = `${row.sourceType}:${row.sourceId}`;
+      const res = await fetch(`/api/issued-works/${compositeId}/check`, { method: "POST" });
+      if (!res.ok) return toast.error("Не удалось проставить «Проверено»");
+      toast.success("Работа проверена");
+      mutate();
+    },
+    [mutate]
+  );
+
+  const renderRow = React.useCallback(
+    (index: number) => {
+      const r = rows[index];
+      if (!r) return null;
+      const id = issuedWorkRowId(r);
+      return (
+        <IssuedWorkRow
+          key={id}
+          row={r}
+          rowIndex={index}
+          checked={selectedIds.has(id)}
+          onSelect={handleRowSelect}
+          onEdit={handleEdit}
+          onCheck={handleCheckRow}
+        />
+      );
+    },
+    [rows, selectedIds, handleRowSelect, handleEdit, handleCheckRow]
+  );
 
   async function handleBulkApply() {
     const ids = Array.from(selectedIds);
@@ -259,14 +394,6 @@ export function IssuedWorksClient() {
     mutate();
   }
 
-  async function handleCheck(row: Row) {
-    const compositeId = `${row.sourceType}:${row.sourceId}`;
-    const res = await fetch(`/api/issued-works/${compositeId}/check`, { method: "POST" });
-    if (!res.ok) return toast.error("Не удалось проставить «Проверено»");
-    toast.success("Работа проверена");
-    mutate();
-  }
-
   function activeSortField(): SortField {
     return sort[0]?.field ?? "weekPlanFact";
   }
@@ -274,12 +401,6 @@ export function IssuedWorksClient() {
   function activeSortDir(): SortDir {
     return sort[0]?.dir ?? "desc";
   }
-
-  const displayRows = selectedIds.size > 0
-    ? rows.filter(r => selectedIds.has(rowId(r)))
-    : rows;
-  const displaySum = displayRows.reduce((s, r) => s + r.amount, 0);
-  const displayCount = displayRows.length;
 
   return (
     <div className="flex flex-col h-[calc(100vh-3rem)] min-h-0">
@@ -384,6 +505,7 @@ export function IssuedWorksClient() {
       <Table
         className={cn(compactTable, "min-w-[1680px]")}
         containerClassName="rounded-md border bg-white flex-1 min-h-0 overflow-auto"
+        containerRef={scrollRef}
       >
           <TableHeader>
             <TableRow>
@@ -482,81 +604,29 @@ export function IssuedWorksClient() {
               <TableHead className={stickyActionsHead} />
             </TableRow>
           </TableHeader>
-          <BulkSelectTableBody>
-            {isLoading ? (
+          <VirtualizedTableBody
+            scrollRef={scrollRef}
+            rowCount={rows.length}
+            colSpan={15}
+            isLoading={isLoading}
+            loading={
               <TableRow>
                 <TableCell colSpan={15} className="text-center text-neutral-500 py-8">
                   Загрузка...
                 </TableCell>
               </TableRow>
-            ) : rows.length === 0 ? (
+            }
+            isEmpty={rows.length === 0}
+            empty={
               <TableRow>
                 <TableCell colSpan={15} className="text-center text-neutral-500 py-12">
                   Пока нет ни одной работы. Они появятся после создания строк в Личных сметах
                   и Прочих тратах (Phase 3).
                 </TableCell>
               </TableRow>
-            ) : (
-              rows.map((r, rowIndex) => (
-                <TableRow key={`${r.sourceType}:${r.sourceId}`} className={`${selectedIds.has(rowId(r)) ? "bg-blue-50" : ""} ${r.workStatus === "archived" ? "bg-neutral-50 text-neutral-400" : ""}`.trim()}>
-                  <TableCell>
-                    <RowSelectCheckbox
-                      checked={selectedIds.has(rowId(r))}
-                      rowIndex={rowIndex}
-                      rowId={rowId(r)}
-                      onSelect={handleRowSelect}
-                    />
-                  </TableCell>
-                  <TableCell className={cn(compactCell, "tabular-nums text-left", periodYearMonthClass)}>
-                    {r.executionYear}
-                  </TableCell>
-                  <TableCell className={cn(compactCell, "whitespace-nowrap", periodYearMonthClass)}>
-                    {monthLabel(r.executionMonth)}
-                  </TableCell>
-                  <TableCell className={cn(compactCell, "whitespace-nowrap", weekPayClass)}>
-                    {r.weekPlanFact != null ? weekLabel(r.weekPlanFact) : "—"}
-                  </TableCell>
-                  <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>{r.executorName}</TableCell>
-                  <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>
-                    {r.responsibleExecutorName ?? "—"}
-                  </TableCell>
-                  <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>{r.projectName}</TableCell>
-                  <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>{r.workTypeName}</TableCell>
-                  <TableCell className={cn(compactCell, "text-right tabular-nums font-semibold")}>{formatMoney(r.amount)}</TableCell>
-                  <TableCell className={compactCell}>
-                    <StatusBadge dict={WORK_STATUSES} value={r.workStatus} />
-                  </TableCell>
-                  <TableCell className={compactCell}>{formatDateShort(r.checkedAt)}</TableCell>
-                  <TableCell className={compactCell}>{formatDateShort(r.plannedPayAt)}</TableCell>
-                  <TableCell className={cn(compactCell, r.workStatus === "paid" && !r.paidAt && "bg-red-100 text-red-700")}>{formatDateShort(r.paidAt)}</TableCell>
-                  <TableCell className={compactCell}>{smetaTypeCell(r)}</TableCell>
-                  <TableCell
-                    className={cn(
-                      stickyActionsCell,
-                      selectedIds.has(rowId(r)) && "bg-blue-50",
-                      r.workStatus === "archived" && "bg-neutral-50"
-                    )}
-                  >
-                    <div className={stickyActionsInner}>
-                      <Button size="sm" variant="ghost" onClick={() => setEditing(r)} title="Редактировать">
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      {r.workStatus === "submitted" && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleCheck(r)}
-                          title="Проставить «Проверено»"
-                        >
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                        </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </BulkSelectTableBody>
+            }
+            renderRow={renderRow}
+          />
         </Table>
 
       {editing && (

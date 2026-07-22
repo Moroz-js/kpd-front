@@ -17,7 +17,7 @@ import {
   Wallet,
   Wrench,
   ShoppingCart,
-  History,
+  Hourglass,
   ClipboardList,
   CheckSquare,
   User,
@@ -58,7 +58,7 @@ const ADMIN_NAV: NavGroup[] = [
       { label: "Виды работ", href: "/admin/work-types", icon: Wrench },
       { label: "Банковские счета", href: "/admin/bank-accounts", icon: Wallet },
       { label: "Задачи", href: "/admin/tasks", icon: CheckSquare },
-      { label: "История действий", href: "/admin/activity", icon: History },
+      { label: "История действий", href: "/admin/activity", icon: Hourglass },
     ],
   },
   {

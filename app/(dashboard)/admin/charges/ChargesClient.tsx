@@ -27,11 +27,12 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { stickyActionsHead, stickyActionsCell, stickyActionsInner, compactTable, compactHead, compactCell, compactCellClip } from "@/lib/table-styles";
-import { BulkSelectTableBody } from "@/components/ui-custom/BulkSelectTableBody";
+import { VirtualizedTableBody } from "@/components/ui-custom/VirtualizedTableBody";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
 import { useTableRowSelection } from "@/lib/useTableRowSelection";
+import { sortByNameRu } from "@/lib/sort";
 
 const ACTIONS_COL_WIDTH = 96;
 /** table-fixed: фиксированные ширины, иначе текст залезает под sticky-действия */
@@ -265,9 +266,156 @@ function InlinePurposeCell({ value, onSave }: { value: string; onSave: (v: strin
   );
 }
 
+const MONTH_LABELS = [
+  "Январь","Февраль","Март","Апрель","Май","Июнь",
+  "Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь",
+];
+
+type ChargeTableRowProps = {
+  row: Charge;
+  rowIndex: number;
+  checked: boolean;
+  onSelect: (index: number, id: string, shiftKey: boolean) => void;
+  onEdit: (row: Charge) => void;
+  onDelete: (row: Charge) => void;
+  onPatchStatus: (id: string, status: string) => void;
+  onPatchPaidAt: (id: string, paidAt: string) => void;
+  onPatchPurpose: (id: string, purpose: string) => void;
+};
+
+const ChargeTableRow = React.memo(function ChargeTableRow({
+  row,
+  rowIndex,
+  checked,
+  onSelect,
+  onEdit,
+  onDelete,
+  onPatchStatus,
+  onPatchPaidAt,
+  onPatchPurpose,
+}: ChargeTableRowProps) {
+  const pd = planDate(row);
+  const overdueH = isOverdueH(row);
+  const missingM = isMissingM(row);
+  const bankEmpty = cellEmpty(row.bankAccount?.name);
+
+  return (
+    <TableRow className={checked ? "bg-blue-50" : ""}>
+      <TableCell
+        className={cn(stickyCheckboxCell, checked && "bg-blue-50")}
+        style={stickyColStyle(0, COL_CHECKBOX)}
+      >
+        <div className="flex items-center justify-center">
+          <RowSelectCheckbox
+            checked={checked}
+            rowIndex={rowIndex}
+            rowId={row.id}
+            onSelect={onSelect}
+          />
+        </div>
+      </TableCell>
+      <TableCell
+        className={cn(
+          compactCell,
+          compactCellClip,
+          stickyBankCell,
+          cellRed(bankEmpty),
+          "whitespace-normal",
+          checked && "bg-blue-50",
+          bankEmpty && checked && "bg-red-100",
+        )}
+        style={stickyColStyle(COL_CHECKBOX, COL_BANK)}
+      >
+        {clipText(row.bankAccount?.name ?? "—", row.bankAccount?.name ?? undefined)}
+      </TableCell>
+      <TableCell
+        className={cn(
+          compactCell,
+          stickyAmountCell,
+          "text-right tabular-nums font-semibold",
+          cellRed(cellEmpty(row.amount)),
+          checked && "bg-blue-50",
+          cellEmpty(row.amount) && checked && "bg-red-100",
+        )}
+        style={stickyColStyle(COL_CHECKBOX + COL_BANK, COL_AMOUNT)}
+      >
+        {row.amount ? (
+          <span className="inline-flex items-center gap-1">
+            {formatMoney(row.amount)}
+            {row.bankAccount?.currency && (
+              <span className="text-[10px] font-normal text-neutral-400 tracking-wide">
+                {row.bankAccount.currency}
+              </span>
+            )}
+          </span>
+        ) : "—"}
+      </TableCell>
+      <TableCell className={compactCell}>
+        <Select value={row.status} onValueChange={(v) => v && onPatchStatus(row.id, v)}>
+          <SelectTrigger className="h-6 w-auto min-w-[104px] border-0 bg-transparent shadow-none p-0 focus:ring-0 [&>svg]:hidden">
+            <SelectValue>
+              <ChargeStatusBadge status={row.status} />
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(CHARGE_STATUSES).map(([k, v]) => (
+              <SelectItem key={k} value={k}>{v.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </TableCell>
+      <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>
+        {clipText(row.order?.project?.client?.name ?? "—", row.order?.project?.client?.name ?? undefined)}
+      </TableCell>
+      <TableCell className={cn(compactCell, compactCellClip, cellRed(cellEmpty(row.order?.project?.name)), "whitespace-normal")}>
+        {clipText(row.order?.project?.name ?? "—", row.order?.project?.name ?? undefined)}
+      </TableCell>
+      <TableCell className={compactCell}>{formatDateShort(row.issuedPlanAt)}</TableCell>
+      <TableCell className={compactCell}>{formatDateShort(row.issuedAt)}</TableCell>
+      <TableCell className={cn(compactCell, cellRed(overdueH))}>{formatDateShort(row.paidPlanAt)}</TableCell>
+      <TableCell className={compactCell}>{pd ? MONTH_LABELS[pd.getMonth()] : "—"}</TableCell>
+      <TableCell className={compactCell}>{pd ? weekLabel(getISOWeek(pd)) : "—"}</TableCell>
+      <TableCell className={compactCell}>{pd ? pd.getFullYear() : "—"}</TableCell>
+      <TableCell className={cn(compactCell, cellRed(missingM))}>
+        <InlineDateCell
+          value={row.paidAt ? row.paidAt.slice(0, 10) : ""}
+          onSave={(v) => onPatchPaidAt(row.id, v)}
+          highlight={missingM}
+        />
+      </TableCell>
+      <TableCell className={cn(compactCell, compactCellClip, "align-top whitespace-normal")}>
+        <InlinePurposeCell
+          value={row.paymentPurpose ?? ""}
+          onSave={(v) => onPatchPurpose(row.id, v)}
+        />
+      </TableCell>
+      <TableCell className={cn(compactCell, compactCellClip, `tabular-nums whitespace-normal ${cellRed(cellEmpty(row.order?.orderNumber))}`)}>
+        {clipText(row.order ? row.order.orderNumber : "—", row.order?.orderNumber)}
+      </TableCell>
+      <TableCell className={cn(compactCell, compactCellClip, "tabular-nums whitespace-normal")}>
+        {clipText(row.chargeNumber, row.chargeNumber)}
+      </TableCell>
+      <TableCell className={cn(compactCell, compactCellClip, cellRed(cellEmpty(row.invoiceNumber)), "whitespace-normal")}>
+        {clipText(row.invoiceNumber || "—", row.invoiceNumber || undefined)}
+      </TableCell>
+      <TableCell className={cn(stickyActionsCell, "w-[96px] min-w-[96px] max-w-[96px]", checked && "bg-blue-50")}>
+        <div className={stickyActionsInner}>
+          <button title="Редактировать" className="p-0.5 text-neutral-500 hover:text-neutral-800" onClick={() => onEdit(row)}>
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+          <button title="Удалить" className="p-0.5 text-red-400 hover:text-red-600" onClick={() => onDelete(row)}>
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+});
+
 // ─── Главный компонент ────────────────────────────────────────────────────────
 
-export function ChargesClient({ bankAccounts, orders }: Props) {
+export function ChargesClient({ bankAccounts: bankAccountsProp, orders }: Props) {
+  const bankAccounts = React.useMemo(() => sortByNameRu(bankAccountsProp), [bankAccountsProp]);
   const [rows, setRows] = useState<Charge[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
@@ -284,6 +432,8 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
   const [hidePaid, setHidePaid] = useState(false);
 
   const [bulkStatus, setBulkStatus] = useState("");
+
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const fetchData = useCallback(async () => {
     const r = await fetch("/api/charges");
@@ -343,7 +493,9 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
       if (o.project?.client) map.set(o.project.client.id, o.project.client.name);
     }
     if (rows.some((r) => !r.order?.project?.client)) map.set("__empty__", "Пусто");
-    return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
+    return Array.from(map.entries())
+      .sort((a, b) => a[1].localeCompare(b[1], "ru"))
+      .map(([value, label]) => ({ value, label }));
   }, [orders, rows]);
 
   const projectOptions = React.useMemo(() => {
@@ -352,7 +504,9 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
       if (o.project) map.set(o.project.id, o.project.name);
     }
     if (rows.some((r) => !r.order?.project)) map.set("__empty__", "Пусто");
-    return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
+    return Array.from(map.entries())
+      .sort((a, b) => a[1].localeCompare(b[1], "ru"))
+      .map(([value, label]) => ({ value, label }));
   }, [orders, rows]);
 
   const weekOptions = React.useMemo(() => {
@@ -429,6 +583,34 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
       silentLoad();
     }
   }
+
+  const onEditCb = useCallback((row: Charge) => setEditTarget(row), []);
+  const onDeleteCb = useCallback((row: Charge) => setDeleteTarget(row), []);
+  const onPatchStatusCb = useCallback((id: string, status: string) => patchInlineStatus(id, status), []);
+  const onPatchPaidAtCb = useCallback((id: string, paidAt: string) => patchInlinePaidAt(id, paidAt), []);
+  const onPatchPurposeCb = useCallback((id: string, purpose: string) => patchInlinePurpose(id, purpose), []);
+
+  const renderRow = React.useCallback(
+    (index: number) => {
+      const row = visible[index];
+      if (!row) return null;
+      return (
+        <ChargeTableRow
+          key={row.id}
+          row={row}
+          rowIndex={index}
+          checked={selectedIds.has(row.id)}
+          onSelect={handleRowSelect}
+          onEdit={onEditCb}
+          onDelete={onDeleteCb}
+          onPatchStatus={onPatchStatusCb}
+          onPatchPaidAt={onPatchPaidAtCb}
+          onPatchPurpose={onPatchPurposeCb}
+        />
+      );
+    },
+    [visible, selectedIds, handleRowSelect, onEditCb, onDeleteCb, onPatchStatusCb, onPatchPaidAtCb, onPatchPurposeCb]
+  );
 
   return (
     <div className="flex flex-col gap-4 h-[calc(100vh-3rem)] min-h-0">
@@ -519,6 +701,7 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
           className={cn(compactTable, "w-full border-separate border-spacing-0")}
           style={{ minWidth: CHARGES_TABLE_MIN_WIDTH }}
           containerClassName="rounded-md border bg-white flex-1 min-h-0 min-w-0 overflow-auto"
+          containerRef={scrollRef}
         >
             <colgroup>
               {CHARGES_COL_WIDTHS.map((w, i) => (
@@ -576,132 +759,12 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
                 <TableHead className={stickyActionsHead} />
               </TableRow>
             </TableHeader>
-            <BulkSelectTableBody>
-              {visible.map((row, rowIndex) => {
-                const pd = planDate(row);
-                const weekPF = payWeekPF(row);
-                const yearPF = payYearPF(row);
-                const overdueH = isOverdueH(row);
-                const missingM = isMissingM(row);
-                const isSelected = selectedIds.has(row.id);
-                const bankEmpty = cellEmpty(row.bankAccount?.name);
-
-                return (
-                  <TableRow key={row.id} className={isSelected ? "bg-blue-50" : ""}>
-                    <TableCell
-                      className={cn(stickyCheckboxCell, isSelected && "bg-blue-50")}
-                      style={stickyColStyle(0, COL_CHECKBOX)}
-                    >
-                      <div className="flex items-center justify-center">
-                        <RowSelectCheckbox
-                          checked={isSelected}
-                          rowIndex={rowIndex}
-                          rowId={row.id}
-                          onSelect={handleRowSelect}
-                        />
-                      </div>
-                    </TableCell>
-                    <TableCell
-                      className={cn(
-                        compactCell,
-                        compactCellClip,
-                        stickyBankCell,
-                        cellRed(bankEmpty),
-                        "whitespace-normal",
-                        isSelected && "bg-blue-50",
-                        bankEmpty && isSelected && "bg-red-100",
-                      )}
-                      style={stickyColStyle(COL_CHECKBOX, COL_BANK)}
-                    >
-                      {clipText(row.bankAccount?.name ?? "—", row.bankAccount?.name ?? undefined)}
-                    </TableCell>
-                    <TableCell
-                      className={cn(
-                        compactCell,
-                        stickyAmountCell,
-                        "text-right tabular-nums font-semibold",
-                        cellRed(cellEmpty(row.amount)),
-                        isSelected && "bg-blue-50",
-                        cellEmpty(row.amount) && isSelected && "bg-red-100",
-                      )}
-                      style={stickyColStyle(COL_CHECKBOX + COL_BANK, COL_AMOUNT)}
-                    >
-                      {row.amount ? (
-                        <span className="inline-flex items-center gap-1">
-                          {formatMoney(row.amount)}
-                          {row.bankAccount?.currency && (
-                            <span className="text-[10px] font-normal text-neutral-400 tracking-wide">
-                              {row.bankAccount.currency}
-                            </span>
-                          )}
-                        </span>
-                      ) : "—"}
-                    </TableCell>
-                    <TableCell className={compactCell}>
-                      <Select
-                        value={row.status}
-                        onValueChange={(v) => v && patchInlineStatus(row.id, v)}
-                      >
-                        <SelectTrigger className="h-6 w-auto min-w-[104px] border-0 bg-transparent shadow-none p-0 focus:ring-0 [&>svg]:hidden">
-                          <SelectValue>
-                            <ChargeStatusBadge status={row.status} />
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectContent>
-                          {Object.entries(CHARGE_STATUSES).map(([k, v]) => (
-                            <SelectItem key={k} value={k}>{v.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                    <TableCell className={cn(compactCell, compactCellClip, "whitespace-normal")}>
-                      {clipText(row.order?.project?.client?.name ?? "—", row.order?.project?.client?.name ?? undefined)}
-                    </TableCell>
-                    <TableCell className={cn(compactCell, compactCellClip, cellRed(cellEmpty(row.order?.project?.name)), "whitespace-normal")}>
-                      {clipText(row.order?.project?.name ?? "—", row.order?.project?.name ?? undefined)}
-                    </TableCell>
-                    <TableCell className={compactCell}>{formatDateShort(row.issuedPlanAt)}</TableCell>
-                    <TableCell className={compactCell}>{formatDateShort(row.issuedAt)}</TableCell>
-                    <TableCell className={cn(compactCell, cellRed(overdueH))}>{formatDateShort(row.paidPlanAt)}</TableCell>
-                    <TableCell className={compactCell}>{pd ? MONTH_LABELS[pd.getMonth()] : "—"}</TableCell>
-                    <TableCell className={compactCell}>{pd ? weekLabel(getISOWeek(pd)) : "—"}</TableCell>
-                    <TableCell className={compactCell}>{pd ? pd.getFullYear() : "—"}</TableCell>
-                    <TableCell className={cn(compactCell, cellRed(missingM))}>
-                      <InlineDateCell
-                        value={row.paidAt ? row.paidAt.slice(0, 10) : ""}
-                        onSave={(v) => patchInlinePaidAt(row.id, v)}
-                        highlight={missingM}
-                      />
-                    </TableCell>
-                    <TableCell className={cn(compactCell, compactCellClip, "align-top whitespace-normal")}>
-                      <InlinePurposeCell
-                        value={row.paymentPurpose ?? ""}
-                        onSave={(v) => patchInlinePurpose(row.id, v)}
-                      />
-                    </TableCell>
-                    <TableCell className={cn(compactCell, compactCellClip, `tabular-nums whitespace-normal ${cellRed(cellEmpty(row.order?.orderNumber))}`)}>
-                      {clipText(row.order ? row.order.orderNumber : "—", row.order?.orderNumber)}
-                    </TableCell>
-                    <TableCell className={cn(compactCell, compactCellClip, "tabular-nums whitespace-normal")}>
-                      {clipText(row.chargeNumber, row.chargeNumber)}
-                    </TableCell>
-                    <TableCell className={cn(compactCell, compactCellClip, cellRed(cellEmpty(row.invoiceNumber)), "whitespace-normal")}>
-                      {clipText(row.invoiceNumber || "—", row.invoiceNumber || undefined)}
-                    </TableCell>
-                    <TableCell className={cn(stickyActionsCell, "w-[96px] min-w-[96px] max-w-[96px]", isSelected && "bg-blue-50")}>
-                      <div className={stickyActionsInner}>
-                        <button title="Редактировать" className="p-0.5 text-neutral-500 hover:text-neutral-800" onClick={() => setEditTarget(row)}>
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button title="Удалить" className="p-0.5 text-red-400 hover:text-red-600" onClick={() => setDeleteTarget(row)}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </BulkSelectTableBody>
+            <VirtualizedTableBody
+              scrollRef={scrollRef}
+              rowCount={visible.length}
+              colSpan={18}
+              renderRow={renderRow}
+            />
           </Table>
       )}
       </div>
@@ -740,11 +803,6 @@ export function ChargesClient({ bankAccounts, orders }: Props) {
     </div>
   );
 }
-
-const MONTH_LABELS = [
-  "Январь","Февраль","Март","Апрель","Май","Июнь",
-  "Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь",
-];
 
 // ─── Форма создания / редактирования ─────────────────────────────────────────
 

@@ -26,21 +26,22 @@ const ACTION_LABELS: Record<string, string> = {
   access_revoke: "Отзыв доступа",
 };
 
+// Порядок = алфавит русских label (используется в выпадашке фильтра).
 const ENTITY_LABELS: Record<string, string> = {
-  Work: "Работа",
-  Payment: "Выплата",
-  OtherExpense: "Прочие траты",
-  Charge: "Начисление",
-  Executor: "Исполнитель",
-  Project: "Проект",
-  Order: "Заказ",
-  SpendingPlanLine: "План расходов",
-  VacationEntry: "Отпуск",
-  Task: "Задача",
   BankAccount: "Банковский счёт",
   WorkType: "Вид работ",
+  Payment: "Выплата",
+  Order: "Заказ",
+  Task: "Задача",
+  Executor: "Исполнитель",
   Client: "Клиент",
+  Charge: "Начисление",
+  VacationEntry: "Отпуск",
+  SpendingPlanLine: "План расходов",
+  Project: "Проект",
+  OtherExpense: "Прочие траты",
   User: "Пользователь",
+  Work: "Работа",
 };
 
 const ACTION_COLORS: Record<string, string> = {
@@ -96,7 +97,7 @@ export function ActivityClient() {
 
   const userOptions = Array.from(
     new Map((users ?? []).map((u) => [u.fullName, { value: u.id, label: u.fullName }])).values()
-  );
+  ).sort((a, b) => a.label.localeCompare(b.label, "ru"));
 
   const totalPages = data ? Math.ceil(data.total / data.pageSize) : 1;
 

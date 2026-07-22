@@ -15,7 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { BulkSelectTableBody } from "@/components/ui-custom/BulkSelectTableBody";
+import { VirtualizedTableBody } from "@/components/ui-custom/VirtualizedTableBody";
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -28,6 +28,7 @@ import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
 import { useTableRowSelection } from "@/lib/useTableRowSelection";
 import { cn } from "@/lib/utils";
 import { stickyActionsHead, stickyActionsCell, stickyActionsInner } from "@/lib/table-styles";
+import { sortByNameRu } from "@/lib/sort";
 import { PayoutEditDialog } from "./PayoutEditDialog";
 
 type Row = {
@@ -81,6 +82,161 @@ function toLocalDate(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+type PayoutRowProps = {
+  row: Row;
+  rowIndex: number;
+  checked: boolean;
+  onSelect: (index: number, id: string, shiftKey: boolean) => void;
+  inlineActive: "plannedPayAt" | "paidAt" | "bankAccountId" | null;
+  inlineVal: string;
+  activeBanks: BankOption[];
+  onInlineValChange: (v: string) => void;
+  onStartInline: (row: Row, field: "paidAt" | "plannedPayAt" | "bankAccountId") => void;
+  onCommitInline: (row: Row) => void;
+  onCancelInline: () => void;
+  onPatchInlineStatus: (row: Row, paymentStatus: string) => void;
+  onPatchRow: (row: Row, patch: Record<string, unknown>) => Promise<boolean>;
+  onEdit: (row: Row) => void;
+  onPay: (row: Row) => void;
+  onDelete: (row: Row) => void;
+};
+
+const PayoutRow = React.memo(function PayoutRow({
+  row: r,
+  rowIndex,
+  checked,
+  onSelect,
+  inlineActive,
+  inlineVal,
+  activeBanks,
+  onInlineValChange,
+  onStartInline,
+  onCommitInline,
+  onCancelInline,
+  onPatchInlineStatus,
+  onPatchRow,
+  onEdit,
+  onPay,
+  onDelete,
+}: PayoutRowProps) {
+  const key = rowKey(r);
+  return (
+    <TableRow key={key} className={checked ? "bg-blue-50" : undefined}>
+      <TableCell className="w-8">
+        <RowSelectCheckbox checked={checked} rowIndex={rowIndex} rowId={key} onSelect={onSelect} />
+      </TableCell>
+      <TableCell className={cn(periodYearMonthClass, yearColCell)}>{r.periodYear}</TableCell>
+      <TableCell className={cn(periodYearMonthClass, "text-xs whitespace-nowrap")}>{monthLabel(r.periodMonth)}</TableCell>
+      <TableCell className={cn(weekColClass, "text-xs whitespace-nowrap")}>{r.weekPlanFact != null ? weekLabel(r.weekPlanFact) : "—"}</TableCell>
+      <TableCell>{r.executorName}</TableCell>
+      <TableCell className="max-w-48 truncate" title={r.comment ?? ""}>{r.comment ?? "—"}</TableCell>
+      <TableCell>
+        <Select value={r.paymentStatus} onValueChange={(v) => v && onPatchInlineStatus(r, v)}>
+          <SelectTrigger className="h-6 w-auto min-w-[120px] border-0 bg-transparent shadow-none p-0 focus:ring-0 [&>svg]:hidden">
+            <SelectValue><StatusBadge dict={PAYMENT_STATUSES} value={r.paymentStatus} /></SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(PAYMENT_STATUSES).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </TableCell>
+      <TableCell className="text-right tabular-nums font-semibold text-sm">{formatMoney(r.amount)}</TableCell>
+      <TableCell
+        className="cursor-pointer hover:bg-neutral-50 min-w-[100px]"
+        onClick={() => inlineActive !== "plannedPayAt" && onStartInline(r, "plannedPayAt")}
+      >
+        {inlineActive === "plannedPayAt" ? (
+          <input
+            autoFocus
+            type="date"
+            value={inlineVal}
+            onChange={(e) => onInlineValChange(e.target.value)}
+            onBlur={() => onCommitInline(r)}
+            onClick={(e) => { try { (e.target as HTMLInputElement).showPicker(); } catch { /**/ } }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") onCommitInline(r);
+              if (e.key === "Escape") onCancelInline();
+            }}
+            className="w-full h-6 rounded border border-blue-300 px-1 text-xs bg-blue-50 focus:outline-none cursor-pointer"
+          />
+        ) : (
+          <span className="text-xs text-neutral-600">{formatDateShort(r.plannedPayAt)}</span>
+        )}
+      </TableCell>
+      <TableCell
+        className={cn(
+          "cursor-pointer hover:bg-neutral-50 min-w-[100px]",
+          (r.paymentStatus === "paid" || r.paymentStatus === "sent") && !r.paidAt && "bg-red-100 text-red-700"
+        )}
+        onClick={() => inlineActive !== "paidAt" && onStartInline(r, "paidAt")}
+      >
+        {inlineActive === "paidAt" ? (
+          <input
+            autoFocus
+            type="date"
+            value={inlineVal}
+            onChange={(e) => onInlineValChange(e.target.value)}
+            onBlur={() => onCommitInline(r)}
+            onClick={(e) => { try { (e.target as HTMLInputElement).showPicker(); } catch { /**/ } }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") onCommitInline(r);
+              if (e.key === "Escape") onCancelInline();
+            }}
+            className="w-full h-6 rounded border border-blue-300 px-1 text-xs bg-blue-50 focus:outline-none cursor-pointer"
+          />
+        ) : (
+          <span className="text-xs text-neutral-600">{formatDateShort(r.paidAt)}</span>
+        )}
+      </TableCell>
+      <TableCell className="min-w-[140px] max-w-[160px] truncate">
+        {inlineActive === "bankAccountId" ? (
+          <Select
+            value={inlineVal || "__none__"}
+            onValueChange={(v) => {
+              const val = v === "__none__" ? "" : (v ?? "");
+              onInlineValChange(val);
+              onPatchRow(r, { bankAccountId: val || null }).then(() => onCancelInline());
+            }}
+            open
+            onOpenChange={(o) => !o && onCancelInline()}
+          >
+            <SelectTrigger className="h-6 text-xs">
+              <SelectValue>{inlineVal ? (activeBanks.find(b => b.id === inlineVal)?.name ?? "Счёт") : "— не задан —"}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">— не задан —</SelectItem>
+              {activeBanks.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        ) : (
+          <span
+            className="text-xs text-neutral-600 cursor-pointer hover:underline truncate block"
+            onClick={() => onStartInline(r, "bankAccountId")}
+          >
+            {r.bankAccountName ?? "—"}
+          </span>
+        )}
+      </TableCell>
+      <TableCell>{SMETA_LABEL[r.sourceType]}</TableCell>
+      <TableCell className={cn(stickyActionsCell, checked && "bg-blue-50")}>
+        <div className={stickyActionsInner}>
+          {r.paymentStatus === "planned" && (
+            <Button size="sm" variant="ghost" onClick={() => onPay(r)} title="Оплатить" className="text-green-600 hover:text-green-800">
+              <CircleDollarSign className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={() => onEdit(r)} title="Редактировать">
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => onDelete(r)} title="Удалить">
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+});
+
 export function PayoutsClient() {
   const { data, isLoading, mutate } = useSWR<Row[]>("/api/payouts", fetcher);
   const { data: executors } = useSWR<ExecutorOption[]>("/api/executors", fetcher);
@@ -110,6 +266,8 @@ export function PayoutsClient() {
   const [bulkPaidAt, setBulkPaidAt] = React.useState("");
   const [bulkBankId, setBulkBankId] = React.useState("");
   const [bulkSaving, setBulkSaving] = React.useState(false);
+
+  const scrollRef = React.useRef<HTMLDivElement>(null);
 
   // Inline edit state
   const [inlineEdit, setInlineEdit] = React.useState<{ key: string; field: "paidAt" | "plannedPayAt" | "bankAccountId" } | null>(null);
@@ -175,7 +333,7 @@ export function PayoutsClient() {
   const { selectedIds, handleRowSelect, toggleAll, clearSelection } = useTableRowSelection(orderedRowIds);
 
   const activeBanks = React.useMemo(
-    () => (banks ?? []).filter((b) => b.status === "active"),
+    () => sortByNameRu((banks ?? []).filter((b) => b.status === "active")),
     [banks]
   );
 
@@ -277,6 +435,72 @@ export function PayoutsClient() {
     mutate();
   }
 
+  const patchRowCb = React.useCallback(
+    async (row: Row, patch: Record<string, unknown>) => patchRow(row, patch),
+    [mutate]
+  );
+  const patchInlineStatusCb = React.useCallback(
+    (row: Row, paymentStatus: string) => patchInlineStatus(row, paymentStatus),
+    [mutate]
+  );
+  const commitInlineEditCb = React.useCallback(
+    (row: Row) => commitInlineEdit(row),
+    [inlineEdit, inlineVal, mutate]
+  );
+  const startInlineCb = React.useCallback(startInline, []);
+  const cancelInlineCb = React.useCallback(() => setInlineEdit(null), []);
+  const onInlineValChangeCb = React.useCallback((v: string) => setInlineVal(v), []);
+  const onEditCb = React.useCallback((row: Row) => setEditing(row), []);
+  const onPayCb = React.useCallback((row: Row) => setPaying(row), []);
+  const onDeleteCb = React.useCallback((row: Row) => setDeleting(row), []);
+
+  const renderRow = React.useCallback(
+    (index: number) => {
+      const r = rows[index];
+      if (!r) return null;
+      const key = rowKey(r);
+      const inlineActive = inlineEdit?.key === key ? inlineEdit.field : null;
+      return (
+        <PayoutRow
+          key={key}
+          row={r}
+          rowIndex={index}
+          checked={selectedIds.has(key)}
+          onSelect={handleRowSelect}
+          inlineActive={inlineActive}
+          inlineVal={inlineActive ? inlineVal : ""}
+          activeBanks={activeBanks}
+          onInlineValChange={onInlineValChangeCb}
+          onStartInline={startInlineCb}
+          onCommitInline={commitInlineEditCb}
+          onCancelInline={cancelInlineCb}
+          onPatchInlineStatus={patchInlineStatusCb}
+          onPatchRow={patchRowCb}
+          onEdit={onEditCb}
+          onPay={onPayCb}
+          onDelete={onDeleteCb}
+        />
+      );
+    },
+    [
+      rows,
+      selectedIds,
+      inlineEdit,
+      inlineVal,
+      activeBanks,
+      handleRowSelect,
+      onInlineValChangeCb,
+      startInlineCb,
+      commitInlineEditCb,
+      cancelInlineCb,
+      patchInlineStatusCb,
+      patchRowCb,
+      onEditCb,
+      onPayCb,
+      onDeleteCb,
+    ]
+  );
+
   function activeSortField(): SortField { return sort[0]?.field ?? "weekPlanFact"; }
   function activeSortDir(): SortDir { return sort[0]?.dir ?? "desc"; }
 
@@ -359,6 +583,7 @@ export function PayoutsClient() {
       <Table
         className="min-w-[1420px]"
         containerClassName="rounded-md border bg-white flex-1 min-h-0 overflow-auto"
+        containerRef={scrollRef}
       >
           <TableHeader>
             <TableRow>
@@ -418,149 +643,20 @@ export function PayoutsClient() {
               <TableHead className={stickyActionsHead} />
             </TableRow>
           </TableHeader>
-          <BulkSelectTableBody>
-            {isLoading ? (
+          <VirtualizedTableBody
+            scrollRef={scrollRef}
+            rowCount={rows.length}
+            colSpan={13}
+            isLoading={isLoading}
+            loading={
               <TableRow><TableCell colSpan={13} className="text-center text-neutral-500 py-8">Загрузка...</TableCell></TableRow>
-            ) : rows.length === 0 ? (
+            }
+            isEmpty={rows.length === 0}
+            empty={
               <TableRow><TableCell colSpan={13} className="text-center text-neutral-500 py-12">Нет выплат.</TableCell></TableRow>
-            ) : (
-              rows.map((r, rowIndex) => {
-                const key = rowKey(r);
-                const isEditing = (field: string) => inlineEdit?.key === key && inlineEdit.field === field;
-                return (
-                  <TableRow key={key} className={selectedIds.has(key) ? "bg-blue-50" : undefined}>
-                    <TableCell className="w-8">
-                      <RowSelectCheckbox
-                        checked={selectedIds.has(key)}
-                        rowIndex={rowIndex}
-                        rowId={key}
-                        onSelect={handleRowSelect}
-                      />
-                    </TableCell>
-                    <TableCell className={cn(periodYearMonthClass, yearColCell)}>{r.periodYear}</TableCell>
-                    <TableCell className={cn(periodYearMonthClass, "text-xs whitespace-nowrap")}>{monthLabel(r.periodMonth)}</TableCell>
-                    <TableCell className={cn(weekColClass, "text-xs whitespace-nowrap")}>{r.weekPlanFact != null ? weekLabel(r.weekPlanFact) : "—"}</TableCell>
-                    <TableCell>{r.executorName}</TableCell>
-                    <TableCell className="max-w-48 truncate" title={r.comment ?? ""}>{r.comment ?? "—"}</TableCell>
-
-                    {/* Inline status */}
-                    <TableCell>
-                      <Select value={r.paymentStatus} onValueChange={(v) => v && patchInlineStatus(r, v)}>
-                        <SelectTrigger className="h-6 w-auto min-w-[120px] border-0 bg-transparent shadow-none p-0 focus:ring-0 [&>svg]:hidden">
-                          <SelectValue><StatusBadge dict={PAYMENT_STATUSES} value={r.paymentStatus} /></SelectValue>
-                        </SelectTrigger>
-                        <SelectContent>
-                          {Object.entries(PAYMENT_STATUSES).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-
-                    <TableCell className="text-right tabular-nums font-semibold text-sm">{formatMoney(r.amount)}</TableCell>
-
-                    {/* Inline дата план */}
-                    <TableCell
-                      className="cursor-pointer hover:bg-neutral-50 min-w-[100px]"
-                      onClick={() => !isEditing("plannedPayAt") && startInline(r, "plannedPayAt")}
-                    >
-                      {isEditing("plannedPayAt") ? (
-                        <input
-                          autoFocus
-                          type="date"
-                          value={inlineVal}
-                          onChange={(e) => setInlineVal(e.target.value)}
-                          onBlur={() => commitInlineEdit(r)}
-                          onClick={(e) => { try { (e.target as HTMLInputElement).showPicker(); } catch { /**/ } }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") commitInlineEdit(r);
-                            if (e.key === "Escape") setInlineEdit(null);
-                          }}
-                          className="w-full h-6 rounded border border-blue-300 px-1 text-xs bg-blue-50 focus:outline-none cursor-pointer"
-                        />
-                      ) : (
-                        <span className="text-xs text-neutral-600">{formatDateShort(r.plannedPayAt)}</span>
-                      )}
-                    </TableCell>
-
-                    {/* Inline дата оплаты */}
-                    <TableCell
-                      className={cn(
-                        "cursor-pointer hover:bg-neutral-50 min-w-[100px]",
-                        (r.paymentStatus === "paid" || r.paymentStatus === "sent") && !r.paidAt && "bg-red-100 text-red-700"
-                      )}
-                      onClick={() => !isEditing("paidAt") && startInline(r, "paidAt")}
-                    >
-                      {isEditing("paidAt") ? (
-                        <input
-                          autoFocus
-                          type="date"
-                          value={inlineVal}
-                          onChange={(e) => setInlineVal(e.target.value)}
-                          onBlur={() => commitInlineEdit(r)}
-                          onClick={(e) => { try { (e.target as HTMLInputElement).showPicker(); } catch { /**/ } }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") commitInlineEdit(r);
-                            if (e.key === "Escape") setInlineEdit(null);
-                          }}
-                          className="w-full h-6 rounded border border-blue-300 px-1 text-xs bg-blue-50 focus:outline-none cursor-pointer"
-                        />
-                      ) : (
-                        <span className="text-xs text-neutral-600">{formatDateShort(r.paidAt)}</span>
-                      )}
-                    </TableCell>
-
-                    {/* Inline источник оплаты */}
-                    <TableCell className="min-w-[140px] max-w-[160px] truncate">
-                      {isEditing("bankAccountId") ? (
-                        <Select
-                          value={inlineVal || "__none__"}
-                          onValueChange={(v) => {
-                            const val = v === "__none__" ? "" : (v ?? "");
-                            setInlineVal(val);
-                            const patch = { bankAccountId: val || null };
-                            patchRow(r, patch).then(() => setInlineEdit(null));
-                          }}
-                          open
-                          onOpenChange={(o) => !o && setInlineEdit(null)}
-                        >
-                          <SelectTrigger className="h-6 text-xs">
-                            <SelectValue>{inlineVal ? (activeBanks.find(b => b.id === inlineVal)?.name ?? "Счёт") : "— не задан —"}</SelectValue>
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__">— не задан —</SelectItem>
-                            {activeBanks.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <span
-                          className="text-xs text-neutral-600 cursor-pointer hover:underline truncate block"
-                          onClick={() => startInline(r, "bankAccountId")}
-                        >
-                          {r.bankAccountName ?? "—"}
-                        </span>
-                      )}
-                    </TableCell>
-
-                    <TableCell>{SMETA_LABEL[r.sourceType]}</TableCell>
-                    <TableCell className={cn(stickyActionsCell, selectedIds.has(key) && "bg-blue-50")}>
-                      <div className={stickyActionsInner}>
-                        {r.paymentStatus === "planned" && (
-                          <Button size="sm" variant="ghost" onClick={() => setPaying(r)} title="Оплатить" className="text-green-600 hover:text-green-800">
-                            <CircleDollarSign className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                        <Button size="sm" variant="ghost" onClick={() => setEditing(r)} title="Редактировать">
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setDeleting(r)} title="Удалить">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            )}
-          </BulkSelectTableBody>
+            }
+            renderRow={renderRow}
+          />
         </Table>
 
       {paying && (
@@ -609,7 +705,9 @@ function MarkPaidDialog({
   onConfirm: (paidAt: string, bankAccountId: string | null) => void;
 }) {
   const [paidAt, setPaidAt] = React.useState(toLocalDate());
-  const activeBanks = banks.filter((b) => b.status === "active" || b.id === row.bankAccountId);
+  const activeBanks = sortByNameRu(
+    banks.filter((b) => b.status === "active" || b.id === row.bankAccountId)
+  );
   const defaultBank = activeBanks.find((b) => b.isDefault)?.id ?? activeBanks[0]?.id ?? "";
   const [bankAccountId, setBankAccountId] = React.useState(row.bankAccountId ?? defaultBank);
   const ref = React.useRef<HTMLInputElement>(null);

@@ -165,7 +165,7 @@ export async function GET(req: NextRequest, { params }: Ctx) {
     prevCumulative = cumulative;
   }
 
-  // Block 2: «Расходы из смет» — только paid-работы, с разбивкой по исполнителям
+  // Block 2: «Расходы из смет» — все статусы работ, с разбивкой по исполнителям
   const workTypeMap = new Map<string, {
     id: string;
     name: string;
@@ -178,7 +178,6 @@ export async function GET(req: NextRequest, { params }: Ctx) {
   ];
 
   for (const src of allSources) {
-    if (src.workStatus !== "paid") continue;
     const pf = issuedWeek(src.plannedPayAt, src.paidAt);
     if (!pf || pf.year !== year) continue;
     if (!workTypeMap.has(src.workTypeId)) {
@@ -261,11 +260,13 @@ export async function GET(req: NextRequest, { params }: Ctx) {
       executors: Array.from(wt.executorMap.values()).sort((a, b) => a.name.localeCompare(b.name, "ru")),
     })),
     planLines: Array.from(planGroupMap.values()),
-    executors: executors.map(e => ({
-      id: e.id,
-      name: e.name,
-      workTypeIds: e.executorWorkTypes.map(ewt => ewt.workTypeId),
-    })),
-    availableWorkTypes: workTypes,
+    executors: executors
+      .map(e => ({
+        id: e.id,
+        name: e.name,
+        workTypeIds: e.executorWorkTypes.map(ewt => ewt.workTypeId),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, "ru")),
+    availableWorkTypes: [...workTypes].sort((a, b) => a.name.localeCompare(b.name, "ru")),
   });
 }

@@ -31,6 +31,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { stickyActionsHead, stickyActionsCell, stickyActionsInner } from "@/lib/table-styles";
+import { sortByNameRu } from "@/lib/sort";
 
 type Row = {
   id: string;
@@ -80,7 +81,9 @@ export function OrdersClient() {
 
   const companyOptions = React.useMemo(() => {
     const companies = Array.from(new Set((data ?? []).map((r) => r.company ?? "__empty__")));
-    return companies.map((c) => ({ value: c, label: c === "__empty__" ? "Пусто" : c }));
+    return companies
+      .map((c) => ({ value: c, label: c === "__empty__" ? "Пусто" : c }))
+      .sort((a, b) => a.label.localeCompare(b.label, "ru"));
   }, [data]);
 
   const clientOptions = React.useMemo(() => {
@@ -90,14 +93,18 @@ export function OrdersClient() {
       if (!r.clientId || !r.clientName) continue;
       map.set(r.clientId, r.clientName);
     }
-    return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
+    return Array.from(map.entries())
+      .sort((a, b) => a[1].localeCompare(b[1], "ru"))
+      .map(([value, label]) => ({ value, label }));
   }, [data]);
 
   const projectOptions = React.useMemo(() => {
     const list = data ?? [];
     const map = new Map<string, string>();
     for (const r of list) map.set(r.projectId, r.projectName);
-    return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
+    return Array.from(map.entries())
+      .sort((a, b) => a[1].localeCompare(b[1], "ru"))
+      .map(([value, label]) => ({ value, label }));
   }, [data]);
 
   const rows = React.useMemo(() => {
@@ -339,8 +346,8 @@ function OrderEditDialog({
     setContractNumber(row?.contractNumber ?? "");
   }, [row]);
 
-  const activeProjects = projects.filter(
-    (p) => p.status === "active" || p.id === row?.projectId
+  const activeProjects = sortByNameRu(
+    projects.filter((p) => p.status === "active" || p.id === row?.projectId)
   );
 
   async function handleSubmit(e: React.FormEvent) {
