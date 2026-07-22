@@ -102,8 +102,9 @@ export async function updateWork(
   userId: string
 ) {
   const before = await prisma.work.findUniqueOrThrow({ where: { id: workId } });
+  const amountChanged = patch.amount !== undefined && patch.amount !== before.amount;
 
-  if (patch.amount !== undefined && before.workStatus === "paid") {
+  if (amountChanged && before.workStatus === "paid") {
     throw new Error("Сумму оплаченной работы нельзя менять из сметы");
   }
 
@@ -151,7 +152,7 @@ export async function updateWork(
       },
     });
 
-    if (patch.amount !== undefined && before.paymentId) {
+    if (amountChanged && before.paymentId) {
       const linked = await tx.work.findMany({
         where: { paymentId: before.paymentId },
         select: { amount: true },
