@@ -18,16 +18,16 @@ import {
   Wrench,
   ShoppingCart,
   Hourglass,
-  ClipboardList,
   CheckSquare,
   User,
   Download,
   KeyRound,
+  PanelLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { toast } from "sonner";
 
 type NavItem = {
@@ -72,6 +72,33 @@ const ROLE_LABELS: Record<string, string> = {
   responsible: "Руководитель проекта",
   executor: "Исполнитель",
 };
+
+const SIDEBAR_STORAGE_KEY = "kpd:sidebar";
+
+function useSidebarCollapsed() {
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return localStorage.getItem(SIDEBAR_STORAGE_KEY) === "collapsed";
+    } catch {
+      return false;
+    }
+  });
+
+  const toggle = useCallback(() => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(SIDEBAR_STORAGE_KEY, next ? "collapsed" : "expanded");
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
+
+  return [collapsed, toggle] as const;
+}
 
 type SidebarProps = {
   role: string;
@@ -137,6 +164,7 @@ export function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname();
   const [resettingPwd, setResettingPwd] = useState(false);
+  const [collapsed, toggleCollapsed] = useSidebarCollapsed();
   const navGroups = buildNavGroups({
     role,
     hasProjects,
@@ -169,16 +197,36 @@ export function Sidebar({
   }
 
   return (
-    <aside className="flex-shrink-0 w-60 h-full bg-white border-r border-neutral-200 flex flex-col z-10 overflow-y-auto">
-      <div className="px-4 py-5 border-b border-neutral-200">
-        <span className="text-xl font-bold text-neutral-800">КПД</span>
+    <aside
+      className={cn(
+        "flex-shrink-0 h-full bg-white border-r border-neutral-200 flex flex-col z-10 overflow-y-auto transition-[width]",
+        collapsed ? "w-16" : "w-60"
+      )}
+    >
+      <div
+        className={cn(
+          "border-b border-neutral-200 flex items-center",
+          collapsed ? "px-2 py-3 justify-center" : "px-4 py-5 justify-between gap-2"
+        )}
+      >
+        {!collapsed && <span className="text-xl font-bold text-neutral-800">КПД</span>}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={toggleCollapsed}
+          title={collapsed ? "Развернуть меню" : "Свернуть меню"}
+          aria-label={collapsed ? "Развернуть меню" : "Свернуть меню"}
+        >
+          <PanelLeft className="h-4 w-4" />
+        </Button>
       </div>
 
       <nav className="flex-1 py-4 overflow-y-auto">
-        <div className="space-y-4 px-2">
+        <div className={cn("space-y-4", collapsed ? "px-1" : "px-2")}>
           {navGroups.map((group, gi) => (
             <div key={gi}>
-              {group.label && (
+              {group.label && !collapsed && (
                 <p className="px-3 mb-1 text-xs font-semibold text-neutral-400 uppercase tracking-wider">
                   {group.label}
                 </p>
@@ -191,15 +239,17 @@ export function Sidebar({
                     <li key={item.href}>
                       <Link
                         href={item.href}
+                        title={collapsed ? item.label : undefined}
                         className={cn(
-                          "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                          "flex items-center rounded-md text-sm font-medium transition-colors",
+                          collapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-2",
                           isActive
                             ? "bg-neutral-100 text-neutral-900"
                             : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
                         )}
                       >
                         <Icon className="h-4 w-4 shrink-0" />
-                        {item.label}
+                        {!collapsed && item.label}
                       </Link>
                     </li>
                   );
@@ -210,34 +260,44 @@ export function Sidebar({
         </div>
       </nav>
 
-      <div className="p-4 border-t border-neutral-200">
-        <Separator className="mb-3" />
-        <div className="mb-3">
-          <p className="text-sm font-medium text-neutral-800 truncate">{fullName}</p>
-          <p className="text-xs text-neutral-500">{displayRole}</p>
-        </div>
+      <div className={cn("border-t border-neutral-200", collapsed ? "p-2" : "p-4")}>
+        {!collapsed && <Separator className="mb-3" />}
+        {!collapsed && (
+          <div className="mb-3">
+            <p className="text-sm font-medium text-neutral-800 truncate">{fullName}</p>
+            <p className="text-xs text-neutral-500">{displayRole}</p>
+          </div>
+        )}
         {isSuperAdmin && (
           <Button
             type="button"
             variant="ghost"
-            size="sm"
+            size={collapsed ? "icon" : "sm"}
             disabled={resettingPwd}
             onClick={handleSelfReset}
-            className="w-full justify-start text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 mb-1"
+            title="Сбросить пароль"
+            className={cn(
+              "text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 mb-1",
+              collapsed ? "w-full" : "w-full justify-start"
+            )}
           >
-            <KeyRound className="h-4 w-4 mr-2" />
-            {resettingPwd ? "Сброс..." : "Сбросить пароль"}
+            <KeyRound className={cn("h-4 w-4", !collapsed && "mr-2")} />
+            {!collapsed && (resettingPwd ? "Сброс..." : "Сбросить пароль")}
           </Button>
         )}
         <form action={signOutAction}>
           <Button
             type="submit"
             variant="ghost"
-            size="sm"
-            className="w-full justify-start text-neutral-600 hover:text-red-600 hover:bg-red-50"
+            size={collapsed ? "icon" : "sm"}
+            title="Выйти"
+            className={cn(
+              "text-neutral-600 hover:text-red-600 hover:bg-red-50",
+              collapsed ? "w-full" : "w-full justify-start"
+            )}
           >
-            <LogOut className="h-4 w-4 mr-2" />
-            Выйти
+            <LogOut className={cn("h-4 w-4", !collapsed && "mr-2")} />
+            {!collapsed && "Выйти"}
           </Button>
         </form>
       </div>

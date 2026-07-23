@@ -40,9 +40,10 @@ export function WorkTypesMultiSelect({
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
 
-  React.useEffect(() => {
-    if (!open) setSearch("");
-  }, [open]);
+  function handleOpenChange(next: boolean) {
+    setOpen(next);
+    if (!next) setSearch("");
+  }
 
   const valueSet = React.useMemo(() => new Set(value), [value]);
 
@@ -63,8 +64,8 @@ export function WorkTypesMultiSelect({
     if (!q) return sortedOptions;
     return sortedOptions.filter(
       (o) =>
-        o.name.toLowerCase().includes(q) ||
-        (o.segment?.toLowerCase().includes(q) ?? false)
+        o.name.toLowerCase().startsWith(q) ||
+        (o.segment?.toLowerCase().startsWith(q) ?? false)
     );
   }, [sortedOptions, search]);
 
@@ -106,7 +107,7 @@ export function WorkTypesMultiSelect({
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger
         render={
           <Button

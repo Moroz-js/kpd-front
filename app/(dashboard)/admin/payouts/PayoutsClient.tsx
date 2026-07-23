@@ -9,13 +9,21 @@ import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import { ConfirmDialog } from "@/components/ui-custom/ConfirmDialog";
 import { PAYMENT_STATUSES } from "@/lib/statuses";
-import { formatMoney, formatMoneyRub, formatDateShort, weekLabel, monthLabel, MONTHS } from "@/lib/format";
+import { formatMoney, formatMoneyRub, formatDateShort, weekLabel, monthLabel, monthFullLabel, MONTHS } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { VirtualizedTableBody } from "@/components/ui-custom/VirtualizedTableBody";
+import {
+  GroupBySelect,
+  GroupHeaderRow,
+  buildGroupedFlatList,
+  compareGroupKeys,
+  compareGroupLabels,
+  type FlatGroupItem,
+} from "@/components/ui-custom/TableGrouping";
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -76,6 +84,31 @@ const weekColClass = "w-18 max-w-18 px-1";
 const yearColCell = "text-xs tabular-nums text-left";
 
 function rowKey(r: Row) { return `${r.sourceType}:${r.sourceId}`; }
+
+function payoutWeekKey(r: Row): string {
+  if (r.weekPlanFact == null || r.yearPlanFact == null) return "__empty__";
+  return `${r.yearPlanFact}-${String(r.weekPlanFact).padStart(2, "0")}`;
+}
+
+function payoutWeekLabel(r: Row): string {
+  if (r.weekPlanFact == null || r.yearPlanFact == null) return "Не указано";
+  return `${weekLabel(r.weekPlanFact)} ${r.yearPlanFact}`;
+}
+
+function payoutMonthKey(r: Row): string {
+  return `${r.periodYear}-${String(r.periodMonth).padStart(2, "0")}`;
+}
+
+function payoutMonthLabel(r: Row): string {
+  return `${monthFullLabel(r.periodMonth)} ${r.periodYear}`;
+}
+
+const PAYOUT_GROUP_OPTIONS = [
+  { value: "executor", label: "Исполнитель" },
+  { value: "payWeek", label: "Неделя оплаты" },
+  { value: "month", label: "Месяц выполнения" },
+  { value: "bankAccount", label: "Источник оплаты" },
+] as const;
 
 function toLocalDate(): string {
   const d = new Date();
@@ -249,6 +282,8 @@ export function PayoutsClient() {
   const [statusFilter, setStatusFilter] = React.useState<string[]>([]);
   const [bankFilter, setBankFilter] = React.useState<string[]>([]);
   const [smetaFilter, setSmetaFilter] = React.useState<string[]>([]);
+  const [groupBy, setGroupBy] = React.useState<"" | "executor" | "payWeek" | "month" | "bankAccount">("");
+  const [collapsedGroups, setCollapsedGroups] = React.useState<Set<string>>(() => new Set());
 
   const [sort, setSort] = React.useState<{ field: SortField; dir: SortDir }[]>([
     { field: "weekPlanFact", dir: "desc" },
@@ -330,7 +365,58 @@ export function PayoutsClient() {
   }, [allRows, periodYearFilter, periodMonthFilter, weekFilter, executorFilter, statusFilter, bankFilter, smetaFilter, sort]);
 
   const orderedRowIds = React.useMemo(() => rows.map(rowKey), [rows]);
+  const rowIndexById = React.useMemo(() => {
+    const map = new Map<string, number>();
+    rows.forEach((r, i) => map.set(rowKey(r), i));
+    return map;
+  }, [rows]);
   const { selectedIds, handleRowSelect, toggleAll, clearSelection } = useTableRowSelection(orderedRowIds);
+
+  const flatItems = React.useMemo((): FlatGroupItem<Row>[] | null => {
+    if (!groupBy) return null;
+    const getKey = (r: Row): string => {
+      if (groupBy === "executor") return r.executorId || "__empty__";
+      if (groupBy === "payWeek") return payoutWeekKey(r);
+      if (groupBy === "month") return payoutMonthKey(r);
+      return r.bankAccountId ?? "__empty__";
+    };
+    const getLabel = (r: Row): string => {
+      if (groupBy === "executor") return r.executorName || "Не указано";
+      if (groupBy === "payWeek") return payoutWeekLabel(r);
+      if (groupBy === "month") return payoutMonthLabel(r);
+      return r.bankAccountName ?? "Не указано";
+    };
+    const primary = sort[0];
+    const groupAligned =
+      (groupBy === "executor" && primary?.field === "executorName") ||
+      (groupBy === "payWeek" && primary?.field === "weekPlanFact") ||
+      (groupBy === "month" && (primary?.field === "periodMonth" || primary?.field === "periodYear")) ||
+      (groupBy === "bankAccount" && primary?.field === "bankAccountName");
+    const groupDir: SortDir = groupAligned ? (primary?.dir ?? "asc") : "asc";
+    return buildGroupedFlatList(rows, getKey, getLabel, (r) => r.amount, collapsedGroups, {
+      compareRows,
+      compareGroups: (a, b) =>
+        groupBy === "payWeek" || groupBy === "month"
+          ? compareGroupKeys(a.key, b.key, groupDir)
+          : compareGroupLabels(a.label, b.label, groupDir),
+    });
+  }, [rows, groupBy, collapsedGroups, sort]);
+
+  const toggleGroup = React.useCallback((key: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const handleGroupByChange = React.useCallback((v: string) => {
+    setGroupBy(
+      v === "executor" || v === "payWeek" || v === "month" || v === "bankAccount" ? v : ""
+    );
+    setCollapsedGroups(new Set());
+  }, []);
 
   const activeBanks = React.useMemo(
     () => sortByNameRu((banks ?? []).filter((b) => b.status === "active")),
@@ -447,7 +533,12 @@ export function PayoutsClient() {
     (row: Row) => commitInlineEdit(row),
     [inlineEdit, inlineVal, mutate]
   );
-  const startInlineCb = React.useCallback(startInline, []);
+  const startInlineCb = React.useCallback(
+    (row: Row, field: "paidAt" | "plannedPayAt" | "bankAccountId") => startInline(row, field),
+    // startInline читает только row и setState
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
   const cancelInlineCb = React.useCallback(() => setInlineEdit(null), []);
   const onInlineValChangeCb = React.useCallback((v: string) => setInlineVal(v), []);
   const onEditCb = React.useCallback((row: Row) => setEditing(row), []);
@@ -456,6 +547,48 @@ export function PayoutsClient() {
 
   const renderRow = React.useCallback(
     (index: number) => {
+      if (flatItems) {
+        const item = flatItems[index];
+        if (!item) return null;
+        if (item.kind === "group") {
+          return (
+            <GroupHeaderRow
+              key={`g:${item.key}`}
+              label={item.label}
+              count={item.count}
+              sum={item.sum}
+              collapsed={item.collapsed}
+              onToggle={() => toggleGroup(item.key)}
+              colSpan={13}
+            />
+          );
+        }
+        const r = item.row;
+        const key = rowKey(r);
+        const rowIndex = rowIndexById.get(key) ?? 0;
+        const inlineActive = inlineEdit?.key === key ? inlineEdit.field : null;
+        return (
+          <PayoutRow
+            key={key}
+            row={r}
+            rowIndex={rowIndex}
+            checked={selectedIds.has(key)}
+            onSelect={handleRowSelect}
+            inlineActive={inlineActive}
+            inlineVal={inlineActive ? inlineVal : ""}
+            activeBanks={activeBanks}
+            onInlineValChange={onInlineValChangeCb}
+            onStartInline={startInlineCb}
+            onCommitInline={commitInlineEditCb}
+            onCancelInline={cancelInlineCb}
+            onPatchInlineStatus={patchInlineStatusCb}
+            onPatchRow={patchRowCb}
+            onEdit={onEditCb}
+            onPay={onPayCb}
+            onDelete={onDeleteCb}
+          />
+        );
+      }
       const r = rows[index];
       if (!r) return null;
       const key = rowKey(r);
@@ -483,12 +616,15 @@ export function PayoutsClient() {
       );
     },
     [
+      flatItems,
       rows,
+      rowIndexById,
       selectedIds,
       inlineEdit,
       inlineVal,
       activeBanks,
       handleRowSelect,
+      toggleGroup,
       onInlineValChangeCb,
       startInlineCb,
       commitInlineEditCb,
@@ -509,6 +645,11 @@ export function PayoutsClient() {
       <PageHeader title="Выплаты" />
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
+        <GroupBySelect
+          value={groupBy}
+          onChange={handleGroupByChange}
+          options={[...PAYOUT_GROUP_OPTIONS]}
+        />
         <MultiSelectFilter label="Год выполнения" options={periodYearOptions} value={periodYearFilter} onChange={setPeriodYearFilter} />
         <MultiSelectFilter label="Месяц выполнения" options={MONTHS} value={periodMonthFilter} onChange={setPeriodMonthFilter} />
         <MultiSelectFilter label="Неделя план-факт" options={weekOptions} value={weekFilter} onChange={setWeekFilter} />
@@ -645,7 +786,7 @@ export function PayoutsClient() {
           </TableHeader>
           <VirtualizedTableBody
             scrollRef={scrollRef}
-            rowCount={rows.length}
+            rowCount={flatItems ? flatItems.length : rows.length}
             colSpan={13}
             isLoading={isLoading}
             loading={

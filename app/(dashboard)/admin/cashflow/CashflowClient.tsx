@@ -115,6 +115,43 @@ const SUMMARY_DEFS: SummaryDef[] = [
   // Далее — discrepancyDPFact (рендерится отдельно)
 ];
 
+const ROW_TOOLTIPS: Record<string, string> = {
+  balanceStart:
+    "Для первой недели — значение, введённое вручную. Для последующих недель — значение строки «Баланс (сметы/ДП)» предыдущей недели",
+  incomeFact: "Сумма начислений со статусом «Оплачено» с соответствующей неделей оплаты",
+  incomePlanOnly: "Сумма начислений со статусом, отличным от «Оплачено» с соответствующей неделей оплаты",
+  incomePlanFact: "Сумма всех начислений с соответствующей неделей оплаты",
+  expensePlanDP:
+    "Прошедшие недели: сумма выставленных работ со статусом «Оплачено» с соответствующей неделей оплаты. Текущая и будущие недели: сумма планов расходов из дашбордов проектов за соответствующую неделю. Граница между «прошлым» и «текущим»: 00:00 MSK (воскресенье → понедельник)",
+  balanceEndDP:
+    "Расчётный баланс: «Баланс на начало» + «Приход (план+факт)» − «Расход (план-факт) из ДП» за ту же неделю",
+  balanceInAccounts: "Значение из колонки «Рубли» раздела «Остаток банковские счета» за соответствующую неделю",
+  discrepancy:
+    "Несхождение расчётного баланса и фактического остатка на счетах. «Баланс (сметы/ДП)» − «Баланс на счетах». Красный текст при значении ≠ 0",
+  paidFromBudget:
+    "Сумма выставленных работ со статусом «Оплачено» за соответствующую неделю. Учитываются все проекты, включая неактивные",
+  unpaidFromBudget:
+    "Сумма выставленных работ со статусом, отличным от «Оплачено», за соответствующую неделю. Учитываются все проекты, включая неактивные",
+  discrepancyDPFact:
+    "Разница: сумма выставленных работ со статусом «Оплачено» − сумма планов расходов из дашбордов проектов за соответствующую неделю. Красный текст при значении ≠ 0. По клику — список проектов с несхождением",
+};
+
+function RowLabelTooltip({ label, tooltip }: { label: string; tooltip?: string }) {
+  if (!tooltip) return <>{label}</>;
+  return (
+    <TooltipProvider delay={200}>
+      <Tooltip>
+        <TooltipTrigger className="cursor-help underline decoration-dotted underline-offset-2">
+          {label}
+        </TooltipTrigger>
+        <TooltipContent side="right" className="max-w-xs">
+          {tooltip}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 type AggregateDef = { key: keyof Aggregates; label: string; bold: boolean };
 const AGGREGATE_DEFS: AggregateDef[] = [
   { key: "projectExpenses", label: "Проектные расходы", bold: true },
@@ -255,29 +292,13 @@ export function CashflowClient() {
     [visibleWeeks, weeks]
   );
 
-  const pickByVisibleWeeks = React.useCallback(
-    (arr: number[]) => {
-      if (!collapsedWeeks) return arr;
-      return visibleWeekIndices.map((i) => arr[i] ?? 0);
-    },
-    [collapsedWeeks, visibleWeekIndices]
-  );
-
   const chartProjects = React.useMemo(() => {
     if (!data || "error" in data) return [];
-    const list = [
+    return [
       ...(data.externalProjects ?? data.projects),
       ...(data.internalProjects ?? []),
     ];
-    if (!collapsedWeeks) return list;
-    return list.map((p) => ({
-      ...p,
-      plan: pickByVisibleWeeks(p.plan),
-      iw: pickByVisibleWeeks(p.iw),
-      charges: pickByVisibleWeeks(p.charges),
-      cashflow: pickByVisibleWeeks(p.cashflow),
-    }));
-  }, [data, collapsedWeeks, pickByVisibleWeeks]);
+  }, [data]);
 
   if (!data) {
     return (
@@ -310,8 +331,8 @@ export function CashflowClient() {
   const stickyHdr = "sticky left-0 z-[15] bg-neutral-50 border-r border-neutral-200 shadow-[1px_0_0_0_#e5e7eb] px-3 py-1 text-[10px] leading-snug font-semibold text-neutral-500 tracking-wide uppercase whitespace-nowrap overflow-hidden text-ellipsis w-[240px] min-w-[200px] max-w-[240px]";
   const compactHdr =
     "sticky left-0 z-[15] bg-neutral-50 border-r border-neutral-200 shadow-[1px_0_0_0_#e5e7eb] px-2.5 py-0.5 text-[10px] font-semibold text-neutral-500 tracking-wide uppercase whitespace-nowrap overflow-hidden text-ellipsis w-[240px] min-w-[200px] max-w-[240px]";
-  const stickyTotalHdr = "sticky left-[240px] z-30 bg-neutral-100 px-2 py-0.5 text-right text-xs font-semibold text-neutral-600 whitespace-nowrap min-w-[104px] border-r border-neutral-200 shadow-[1px_0_0_0_#e5e7eb]";
-  const stickyTotal = "sticky left-[240px] z-10 bg-neutral-50 px-2 py-0.5 text-right text-[11px] tabular-nums whitespace-nowrap font-medium border-r border-neutral-200 min-w-[104px] shadow-[1px_0_0_0_#e5e7eb]";
+  const stickyTotalHdr = "bg-neutral-100 px-2 py-0.5 text-right text-xs font-semibold text-neutral-600 whitespace-nowrap min-w-[104px] border-r border-neutral-200";
+  const stickyTotal = "bg-neutral-50 px-2 py-0.5 text-right text-[11px] tabular-nums whitespace-nowrap font-medium border-r border-neutral-200 min-w-[104px]";
   const isFuture = (wIdx: number) =>
     year > currentISOYear ||
     (year === currentISOYear && (weeks[wIdx]?.week ?? 0) > currentISOWeek);
@@ -426,9 +447,9 @@ export function CashflowClient() {
       {activeTab === "chart" && (
         <div className="flex-1 min-h-0 overflow-y-auto">
           <CashflowChart
-            weeks={visibleWeeks}
-            balanceEndDP={pickByVisibleWeeks(summary.balanceEndDP)}
-            balanceEndBudget={pickByVisibleWeeks(summary.balanceEndBudget)}
+            weeks={weeks}
+            balanceEndDP={summary.balanceEndDP}
+            balanceEndBudget={summary.balanceEndBudget}
             projects={chartProjects}
             currentISOWeek={currentISOWeek}
             currentISOYear={currentISOYear}
@@ -515,7 +536,7 @@ export function CashflowClient() {
                         def.highlight ? "font-medium bg-neutral-50 text-neutral-800" : "font-normal italic text-neutral-500"
                       )}
                     >
-                      {def.label}
+                      <RowLabelTooltip label={def.label} tooltip={ROW_TOOLTIPS[def.key]} />
                     </td>
                     <td className={cn(stickyTotal, valueCls, def.highlight && "font-medium")}>
                       {def.key === "balanceStart" ? fmt(openingBalance ?? 0) : ("signed" in def && def.signed ? fmtSign(total) : fmt(total))}
@@ -561,7 +582,7 @@ export function CashflowClient() {
               {/* Баланс на счетах (из DB) */}
               <tr className={cn(ROW_BORDER, "hover:bg-neutral-50")}>
                 <td className={cn(compactLbl, "text-right font-normal italic text-neutral-500")}>
-                  Баланс на счетах
+                  <RowLabelTooltip label="Баланс на счетах" tooltip={ROW_TOOLTIPS.balanceInAccounts} />
                 </td>
                 <td className={cn(stickyTotal)}>
                   {fmtNullable(
@@ -594,16 +615,7 @@ export function CashflowClient() {
               {/* Несхождение = Баланс (сметы/ДП) − Баланс на счетах */}
               <tr className={cn(ROW_BORDER_STRONG, "hover:bg-neutral-50")}>
                 <td className={cn(compactLbl, "text-right font-normal italic text-neutral-500")}>
-                  <TooltipProvider delay={200}>
-                    <Tooltip>
-                      <TooltipTrigger className="cursor-help underline decoration-dotted underline-offset-2">
-                        Несхождение
-                      </TooltipTrigger>
-                      <TooltipContent side="right" className="max-w-xs">
-                        Несхождение расчётного баланса и фактического остатка на счетах
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <RowLabelTooltip label="Несхождение" tooltip={ROW_TOOLTIPS.discrepancy} />
                 </td>
                 <td className={cn(stickyTotal)}>
                   {fmtNullable(
@@ -662,7 +674,7 @@ export function CashflowClient() {
                         def.highlight ? "font-medium bg-neutral-50 text-neutral-800" : "font-normal italic text-neutral-500"
                       )}
                     >
-                      {def.label}
+                      <RowLabelTooltip label={def.label} tooltip={ROW_TOOLTIPS[def.key]} />
                     </td>
                     <td className={cn(stickyTotal, valueCls, def.highlight && "font-medium")}>
                       {"signed" in def && def.signed ? fmtSign(total) : fmt(total)}
@@ -685,7 +697,7 @@ export function CashflowClient() {
               {/* Несхождение план и факт в ДП = iwPaid − planTotal */}
               <tr className={cn(ROW_BORDER_STRONG, "hover:bg-neutral-50")}>
                 <td className={cn(compactLbl, "text-right font-normal italic text-neutral-500")}>
-                  Несхождение план и факт в ДП
+                  <RowLabelTooltip label="Несхождение план и факт в ДП" tooltip={ROW_TOOLTIPS.discrepancyDPFact} />
                 </td>
                 <td className={cn(stickyTotal)}>
                   {fmtSign(rowTotal(discrepancyDPFact))}

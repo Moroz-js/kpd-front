@@ -45,14 +45,26 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Validation", details: parsed.error.flatten() }, { status: 422 });
 
-  // Ответственный = активный постоянный исполнитель (KPD-285).
-  if (parsed.data.responsibleExecutorId) {
+  // Ответственный: после проверки менять нельзя; новый — только активный permanent.
+  if (
+    parsed.data.responsibleExecutorId !== undefined &&
+    parsed.data.responsibleExecutorId !== row.responsibleExecutorId
+  ) {
+    if (row.workStatus === "checked" || row.workStatus === "paid") {
+      return NextResponse.json(
+        { error: "Ответственного нельзя менять после проверки работы" },
+        { status: 422 }
+      );
+    }
     const exists = await prisma.executor.findFirst({
       where: { id: parsed.data.responsibleExecutorId, type: "permanent", status: "active" },
       select: { id: true },
     });
     if (!exists) {
-      return NextResponse.json({ error: "Выбранный ответственный не найден среди активных постоянных исполнителей" }, { status: 422 });
+      return NextResponse.json(
+        { error: "Выбранный ответственный не найден среди активных постоянных исполнителей" },
+        { status: 422 }
+      );
     }
   }
 

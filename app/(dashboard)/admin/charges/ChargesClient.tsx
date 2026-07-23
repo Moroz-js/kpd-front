@@ -19,7 +19,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { formatMoney, formatMoneyRub, formatDate, formatDateShort } from "@/lib/format";
+import { formatMoney, formatMoneyRub } from "@/lib/format";
 import { getISOWeek, getISOWeekYear, weekLabel, toLocalDateString } from "@/lib/iso-weeks";
 import { CHARGE_STATUSES, BADGE_TONE_CLASS } from "@/lib/statuses";
 import {
@@ -29,8 +29,17 @@ import { cn } from "@/lib/utils";
 import { stickyActionsHead, stickyActionsCell, stickyActionsInner, compactTable, compactHead, compactCell, compactCellClip } from "@/lib/table-styles";
 import { VirtualizedTableBody } from "@/components/ui-custom/VirtualizedTableBody";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
+import {
+  GroupBySelect,
+  GroupHeaderRow,
+  buildGroupedFlatList,
+  compareGroupKeys,
+  compareGroupLabels,
+  type FlatGroupItem,
+} from "@/components/ui-custom/TableGrouping";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
+import { SortableHead } from "@/components/ui-custom/SortableHead";
 import { useTableRowSelection } from "@/lib/useTableRowSelection";
 import { sortByNameRu } from "@/lib/sort";
 
@@ -129,11 +138,81 @@ function payYearPF(charge: Charge): number | null {
   return getISOWeekYear(new Date(d));
 }
 
-const ROMAN = ["I", "II", "III", "IV", "V"];
+/** ISO year+week, недели 1–9 с ведущим нулём (`2026-01`). */
+function payWeekKey(charge: Charge): string {
+  const w = payWeekPF(charge);
+  const y = payYearPF(charge);
+  if (w === null || y === null) return "__empty__";
+  return `${y}-${String(w).padStart(2, "0")}`;
+}
 
-function weekOfMonth(date: Date): string {
-  const weekNum = Math.ceil(date.getDate() / 7);
-  return `Неделя ${ROMAN[weekNum - 1] ?? weekNum}`;
+function payWeekGroupLabel(charge: Charge): string {
+  const w = payWeekPF(charge);
+  const y = payYearPF(charge);
+  if (w === null || y === null) return "Не указано";
+  return `${weekLabel(w)} ${y}`;
+}
+
+const CHARGE_GROUP_OPTIONS = [
+  { value: "bank", label: "По банковскому счёту" },
+  { value: "week", label: "По неделе" },
+  { value: "project", label: "По проекту" },
+] as const;
+
+type SortField = "status" | "week" | "issuedPlanAt" | "issuedAt" | "paidPlanAt" | "paidAt";
+type SortDir = "asc" | "desc";
+
+const CHARGE_STATUS_ORDER = Object.keys(CHARGE_STATUSES);
+
+function cmpDateNullsLast(a: string | null, b: string | null, dir: SortDir): number {
+  if (!a && !b) return 0;
+  if (!a) return 1;
+  if (!b) return -1;
+  const cmp = new Date(a).getTime() - new Date(b).getTime();
+  return dir === "asc" ? cmp : -cmp;
+}
+
+function compareCharges(a: Charge, b: Charge, field: SortField, dir: SortDir): number {
+  switch (field) {
+    case "status": {
+      const ai = CHARGE_STATUS_ORDER.indexOf(a.status);
+      const bi = CHARGE_STATUS_ORDER.indexOf(b.status);
+      const cmp = (ai < 0 ? 999 : ai) - (bi < 0 ? 999 : bi);
+      return dir === "asc" ? cmp : -cmp;
+    }
+    case "week": {
+      const ak = payWeekKey(a);
+      const bk = payWeekKey(b);
+      if (ak === "__empty__" && bk === "__empty__") return 0;
+      if (ak === "__empty__") return 1;
+      if (bk === "__empty__") return -1;
+      const cmp = ak.localeCompare(bk);
+      return dir === "asc" ? cmp : -cmp;
+    }
+    case "issuedPlanAt":
+      return cmpDateNullsLast(a.issuedPlanAt, b.issuedPlanAt, dir);
+    case "issuedAt":
+      return cmpDateNullsLast(a.issuedAt, b.issuedAt, dir);
+    case "paidPlanAt":
+      return cmpDateNullsLast(a.paidPlanAt, b.paidPlanAt, dir);
+    case "paidAt":
+      return cmpDateNullsLast(a.paidAt, b.paidAt, dir);
+  }
+}
+
+function orderPrimaryLabel(o: Order): string {
+  return `№${o.orderNumber} ${o.project.name}`;
+}
+
+function OrderSelectLabel({ order }: { order: Order }) {
+  return (
+    <div className="min-w-0 py-0.5">
+      <div className="truncate">{orderPrimaryLabel(order)}</div>
+      {order.description ? (
+        <div className="truncate text-xs text-neutral-500">{order.description}</div>
+      ) : null}
+    </div>
+  );
 }
 
 // ─── Условное форматирование ──────────────────────────────────────────────────
@@ -176,13 +255,26 @@ function InlineDateCell({ value, onSave, highlight }: { value: string; onSave: (
   const [editing, setEditing] = useState(false);
   const [v, setV] = useState(value);
 
+  useEffect(() => {
+    if (!editing) setV(value);
+  }, [value, editing]);
+
+  function commit() {
+    setEditing(false);
+    onSave(v);
+  }
+
   if (!editing) {
     return (
       <span
         className="inline-flex cursor-pointer hover:bg-neutral-100 rounded px-1 py-0.5 text-xs text-neutral-600"
-        onClick={() => { setEditing(true); setTimeout(() => { try { ref.current?.showPicker(); } catch { /**/ } }, 50); }}
+        onClick={() => {
+          setV(value);
+          setEditing(true);
+          setTimeout(() => { try { ref.current?.showPicker(); } catch { /**/ } }, 50);
+        }}
       >
-        {v ? v.slice(5).split("-").reverse().join(".") : <span className={highlight ? "font-medium" : "text-neutral-300"}>—</span>}
+        {value ? value.slice(5).split("-").reverse().join(".") : <span className={highlight ? "font-medium" : "text-neutral-300"}>—</span>}
       </span>
     );
   }
@@ -193,7 +285,17 @@ function InlineDateCell({ value, onSave, highlight }: { value: string; onSave: (
       type="date"
       value={v}
       onChange={(e) => setV(e.target.value)}
-      onBlur={() => { setEditing(false); onSave(v); }}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          (e.target as HTMLInputElement).blur();
+        }
+        if (e.key === "Escape") {
+          setV(value);
+          setEditing(false);
+        }
+      }}
       onClick={() => { try { ref.current?.showPicker(); } catch { /**/ } }}
       className="border border-blue-300 rounded px-1 py-0.5 text-xs outline-none w-32 cursor-pointer"
     />
@@ -279,7 +381,7 @@ type ChargeTableRowProps = {
   onEdit: (row: Charge) => void;
   onDelete: (row: Charge) => void;
   onPatchStatus: (id: string, status: string) => void;
-  onPatchPaidAt: (id: string, paidAt: string) => void;
+  onPatchDate: (id: string, field: "issuedPlanAt" | "issuedAt" | "paidPlanAt" | "paidAt", value: string) => void;
   onPatchPurpose: (id: string, purpose: string) => void;
 };
 
@@ -291,7 +393,7 @@ const ChargeTableRow = React.memo(function ChargeTableRow({
   onEdit,
   onDelete,
   onPatchStatus,
-  onPatchPaidAt,
+  onPatchDate,
   onPatchPurpose,
 }: ChargeTableRowProps) {
   const pd = planDate(row);
@@ -370,16 +472,31 @@ const ChargeTableRow = React.memo(function ChargeTableRow({
       <TableCell className={cn(compactCell, compactCellClip, cellRed(cellEmpty(row.order?.project?.name)), "whitespace-normal")}>
         {clipText(row.order?.project?.name ?? "—", row.order?.project?.name ?? undefined)}
       </TableCell>
-      <TableCell className={compactCell}>{formatDateShort(row.issuedPlanAt)}</TableCell>
-      <TableCell className={compactCell}>{formatDateShort(row.issuedAt)}</TableCell>
-      <TableCell className={cn(compactCell, cellRed(overdueH))}>{formatDateShort(row.paidPlanAt)}</TableCell>
+      <TableCell className={compactCell}>
+        <InlineDateCell
+          value={row.issuedPlanAt ? row.issuedPlanAt.slice(0, 10) : ""}
+          onSave={(v) => onPatchDate(row.id, "issuedPlanAt", v)}
+        />
+      </TableCell>
+      <TableCell className={compactCell}>
+        <InlineDateCell
+          value={row.issuedAt ? row.issuedAt.slice(0, 10) : ""}
+          onSave={(v) => onPatchDate(row.id, "issuedAt", v)}
+        />
+      </TableCell>
+      <TableCell className={cn(compactCell, cellRed(overdueH))}>
+        <InlineDateCell
+          value={row.paidPlanAt ? row.paidPlanAt.slice(0, 10) : ""}
+          onSave={(v) => onPatchDate(row.id, "paidPlanAt", v)}
+        />
+      </TableCell>
       <TableCell className={compactCell}>{pd ? MONTH_LABELS[pd.getMonth()] : "—"}</TableCell>
       <TableCell className={compactCell}>{pd ? weekLabel(getISOWeek(pd)) : "—"}</TableCell>
       <TableCell className={compactCell}>{pd ? pd.getFullYear() : "—"}</TableCell>
       <TableCell className={cn(compactCell, cellRed(missingM))}>
         <InlineDateCell
           value={row.paidAt ? row.paidAt.slice(0, 10) : ""}
-          onSave={(v) => onPatchPaidAt(row.id, v)}
+          onSave={(v) => onPatchDate(row.id, "paidAt", v)}
           highlight={missingM}
         />
       </TableCell>
@@ -430,6 +547,9 @@ export function ChargesClient({ bankAccounts: bankAccountsProp, orders }: Props)
   const [fProject, setFProject] = useState<string[]>([]);
   const [fWeek, setFWeek] = useState<string[]>([]);
   const [hidePaid, setHidePaid] = useState(false);
+  const [groupBy, setGroupBy] = useState<"" | "bank" | "week" | "project">("");
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
+  const [sort, setSort] = useState<{ field: SortField; dir: SortDir } | null>(null);
 
   const [bulkStatus, setBulkStatus] = useState("");
 
@@ -464,26 +584,89 @@ export function ChargesClient({ bankAccounts: bankAccountsProp, orders }: Props)
       if (!fProject.includes(projectId)) return false;
     }
     if (fWeek.length) {
-      const w = payWeekPF(r);
-      const y = payYearPF(r);
-      const key = w !== null && y !== null ? `${y}-${w}` : "__empty__";
-      if (!fWeek.includes(key)) return false;
+      if (!fWeek.includes(payWeekKey(r))) return false;
     }
     return true;
   });
 
-  const visible = React.useMemo(
-    () => (hidePaid ? filtered.filter((r) => r.status !== "paid") : filtered),
-    [filtered, hidePaid]
-  );
+  const visible = React.useMemo(() => {
+    let list = hidePaid ? filtered.filter((r) => r.status !== "paid") : filtered;
+    list = [...list];
+    if (sort) {
+      list.sort((a, b) => compareCharges(a, b, sort.field, sort.dir));
+    } else {
+      list.sort((a, b) => b.chargeNumber.localeCompare(a.chargeNumber, "ru"));
+    }
+    return list;
+  }, [filtered, hidePaid, sort]);
+
+  function handleSort(field: string, dir: SortDir) {
+    setSort((prev) => {
+      // SortableHead: desc → asc; для 3-шагового цикла трактуем как сброс.
+      if (prev?.field === field && prev.dir === "desc" && dir === "asc") return null;
+      return { field: field as SortField, dir };
+    });
+  }
 
   const orderedRowIds = React.useMemo(() => visible.map((r) => r.id), [visible]);
+  const rowIndexById = React.useMemo(() => {
+    const map = new Map<string, number>();
+    visible.forEach((r, i) => map.set(r.id, i));
+    return map;
+  }, [visible]);
   const { selectedIds, handleRowSelect, toggleAll, clearSelection } = useTableRowSelection(orderedRowIds);
 
   const selectedSum = React.useMemo(
     () => rows.filter((r) => selectedIds.has(r.id)).reduce((s, r) => s + (r.amount ?? 0), 0),
     [rows, selectedIds]
   );
+
+  const flatItems = React.useMemo((): FlatGroupItem<Charge>[] | null => {
+    if (!groupBy) return null;
+    const getKey = (r: Charge): string => {
+      if (groupBy === "bank") return r.bankAccountId ?? "__empty__";
+      if (groupBy === "week") return payWeekKey(r);
+      return r.order?.project?.id ?? "__empty__";
+    };
+    const getLabel = (r: Charge): string => {
+      if (groupBy === "bank") return r.bankAccount?.name ?? "Не указано";
+      if (groupBy === "week") return payWeekGroupLabel(r);
+      return r.order?.project?.name ?? "Не указано";
+    };
+    const groupDir: SortDir =
+      sort?.field === "week" && groupBy === "week" ? sort.dir : "asc";
+    return buildGroupedFlatList(
+      visible,
+      getKey,
+      getLabel,
+      (r) => r.amount ?? 0,
+      collapsedGroups,
+      {
+        compareRows: (a, b) =>
+          sort
+            ? compareCharges(a, b, sort.field, sort.dir)
+            : b.chargeNumber.localeCompare(a.chargeNumber, "ru"),
+        compareGroups: (a, b) =>
+          groupBy === "week"
+            ? compareGroupKeys(a.key, b.key, groupDir)
+            : compareGroupLabels(a.label, b.label, "asc"),
+      }
+    );
+  }, [visible, groupBy, collapsedGroups, sort]);
+
+  const toggleGroup = useCallback((key: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const handleGroupByChange = useCallback((v: string) => {
+    setGroupBy((v === "bank" || v === "week" || v === "project" ? v : "") as "" | "bank" | "week" | "project");
+    setCollapsedGroups(new Set());
+  }, []);
 
   const clientOptions = React.useMemo(() => {
     const map = new Map<string, string>();
@@ -512,12 +695,9 @@ export function ChargesClient({ bankAccounts: bankAccountsProp, orders }: Props)
   const weekOptions = React.useMemo(() => {
     const map = new Map<string, string>();
     for (const r of rows) {
-      const w = payWeekPF(r);
-      const y = payYearPF(r);
-      if (w !== null && y !== null) {
-        const key = `${y}-${String(w).padStart(2, "0")}`;
-        if (!map.has(key)) map.set(key, `${weekLabel(w)} ${y}`);
-      }
+      const key = payWeekKey(r);
+      if (key === "__empty__") continue;
+      if (!map.has(key)) map.set(key, payWeekGroupLabel(r));
     }
     return Array.from(map.entries())
       .sort(([a], [b]) => a.localeCompare(b))
@@ -534,15 +714,33 @@ export function ChargesClient({ bankAccounts: bankAccountsProp, orders }: Props)
     setRows(prev => prev.map(r => r.id === id ? { ...r, status } : r));
   }
 
-  async function patchInlinePaidAt(id: string, paidAt: string) {
-    const res = await fetch(`/api/charges/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ paidAt: paidAt ? new Date(paidAt).toISOString() : null }),
-    });
-    if (!res.ok) return toast.error("Не удалось изменить дату");
-    const updated = await res.json() as Charge;
-    setRows(prev => prev.map(r => r.id === id ? updated : r));
+  async function patchInlineDate(
+    id: string,
+    field: "issuedPlanAt" | "issuedAt" | "paidPlanAt" | "paidAt",
+    value: string
+  ) {
+    const row = rows.find((r) => r.id === id);
+    const prev = row?.[field] ? row[field]!.slice(0, 10) : "";
+    if (prev === value) return;
+    const iso = value ? new Date(value).toISOString() : null;
+    setRows((prevRows) => prevRows.map((r) => (r.id === id ? { ...r, [field]: iso } : r)));
+    try {
+      const res = await fetch(`/api/charges/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [field]: iso }),
+      });
+      if (!res.ok) {
+        toast.error("Не удалось изменить дату");
+        silentLoad();
+        return;
+      }
+      const updated = await res.json() as Charge;
+      setRows((prevRows) => prevRows.map((r) => (r.id === id ? updated : r)));
+    } catch {
+      toast.error("Не удалось изменить дату");
+      silentLoad();
+    }
   }
 
   async function patchInlinePurpose(id: string, paymentPurpose: string) {
@@ -587,11 +785,49 @@ export function ChargesClient({ bankAccounts: bankAccountsProp, orders }: Props)
   const onEditCb = useCallback((row: Charge) => setEditTarget(row), []);
   const onDeleteCb = useCallback((row: Charge) => setDeleteTarget(row), []);
   const onPatchStatusCb = useCallback((id: string, status: string) => patchInlineStatus(id, status), []);
-  const onPatchPaidAtCb = useCallback((id: string, paidAt: string) => patchInlinePaidAt(id, paidAt), []);
+  const onPatchDateCb = useCallback(
+    (id: string, field: "issuedPlanAt" | "issuedAt" | "paidPlanAt" | "paidAt", value: string) =>
+      patchInlineDate(id, field, value),
+    []
+  );
   const onPatchPurposeCb = useCallback((id: string, purpose: string) => patchInlinePurpose(id, purpose), []);
 
   const renderRow = React.useCallback(
     (index: number) => {
+      if (flatItems) {
+        const item = flatItems[index];
+        if (!item) return null;
+        if (item.kind === "group") {
+          return (
+            <GroupHeaderRow
+              key={`g:${item.key}`}
+              label={item.label}
+              count={item.count}
+              sum={item.sum}
+              collapsed={item.collapsed}
+              onToggle={() => toggleGroup(item.key)}
+              colSpan={18}
+              stickyFirstCell
+            />
+          );
+        }
+        const row = item.row;
+        const rowIndex = rowIndexById.get(row.id) ?? 0;
+        return (
+          <ChargeTableRow
+            key={row.id}
+            row={row}
+            rowIndex={rowIndex}
+            checked={selectedIds.has(row.id)}
+            onSelect={handleRowSelect}
+            onEdit={onEditCb}
+            onDelete={onDeleteCb}
+            onPatchStatus={onPatchStatusCb}
+            onPatchDate={onPatchDateCb}
+            onPatchPurpose={onPatchPurposeCb}
+          />
+        );
+      }
       const row = visible[index];
       if (!row) return null;
       return (
@@ -604,12 +840,24 @@ export function ChargesClient({ bankAccounts: bankAccountsProp, orders }: Props)
           onEdit={onEditCb}
           onDelete={onDeleteCb}
           onPatchStatus={onPatchStatusCb}
-          onPatchPaidAt={onPatchPaidAtCb}
+          onPatchDate={onPatchDateCb}
           onPatchPurpose={onPatchPurposeCb}
         />
       );
     },
-    [visible, selectedIds, handleRowSelect, onEditCb, onDeleteCb, onPatchStatusCb, onPatchPaidAtCb, onPatchPurposeCb]
+    [
+      flatItems,
+      visible,
+      rowIndexById,
+      selectedIds,
+      handleRowSelect,
+      toggleGroup,
+      onEditCb,
+      onDeleteCb,
+      onPatchStatusCb,
+      onPatchDateCb,
+      onPatchPurposeCb,
+    ]
   );
 
   return (
@@ -623,6 +871,11 @@ export function ChargesClient({ bankAccounts: bankAccountsProp, orders }: Props)
         </Button>
 
         <div className="ml-auto flex flex-wrap gap-2">
+          <GroupBySelect
+            value={groupBy}
+            onChange={handleGroupByChange}
+            options={[...CHARGE_GROUP_OPTIONS]}
+          />
           <MultiSelectFilter
             label="Счёт получения"
             options={bankAccounts.map(b => ({ value: b.id, label: b.name }))}
@@ -721,32 +974,82 @@ export function ChargesClient({ bankAccounts: bankAccountsProp, orders }: Props)
                 <TableHead className={cn(compactHead, stickyBankHead)} style={stickyColStyle(COL_CHECKBOX, COL_BANK)}>
                   Счёт получения
                 </TableHead>
-                <TableHead
-                  className={cn(compactHead, stickyAmountHead, "text-right")}
-                  style={stickyColStyle(COL_CHECKBOX + COL_BANK, COL_AMOUNT)}
-                >
+                <TableHead className={cn(compactHead, stickyAmountHead, "text-right")} style={stickyColStyle(COL_CHECKBOX + COL_BANK, COL_AMOUNT)}>
                   Сумма
                 </TableHead>
-                <TableHead className={compactHead}>
+                <SortableHead
+                  field="status"
+                  sortBy={sort?.field ?? ""}
+                  sortDir={sort?.dir ?? "asc"}
+                  onSort={handleSort}
+                  className={compactHead}
+                >
                   <span className="flex items-center gap-1">
                     Статус
                     <Pencil className="h-3 w-3 text-neutral-400" />
                   </span>
-                </TableHead>
+                </SortableHead>
                 <TableHead className={compactHead}>Клиент</TableHead>
                 <TableHead className={compactHead}>Проект</TableHead>
-                <TableHead className={compactHead}>Выст. план</TableHead>
-                <TableHead className={compactHead}>Выст. факт</TableHead>
-                <TableHead className={compactHead}>Опл. план</TableHead>
+                <SortableHead
+                  field="issuedPlanAt"
+                  sortBy={sort?.field ?? ""}
+                  sortDir={sort?.dir ?? "asc"}
+                  onSort={handleSort}
+                  className={compactHead}
+                >
+                  <span className="flex items-center gap-1">
+                    Выст. план
+                    <Pencil className="h-3 w-3 text-neutral-400" />
+                  </span>
+                </SortableHead>
+                <SortableHead
+                  field="issuedAt"
+                  sortBy={sort?.field ?? ""}
+                  sortDir={sort?.dir ?? "asc"}
+                  onSort={handleSort}
+                  className={compactHead}
+                >
+                  <span className="flex items-center gap-1">
+                    Выст. факт
+                    <Pencil className="h-3 w-3 text-neutral-400" />
+                  </span>
+                </SortableHead>
+                <SortableHead
+                  field="paidPlanAt"
+                  sortBy={sort?.field ?? ""}
+                  sortDir={sort?.dir ?? "asc"}
+                  onSort={handleSort}
+                  className={compactHead}
+                >
+                  <span className="flex items-center gap-1">
+                    Опл. план
+                    <Pencil className="h-3 w-3 text-neutral-400" />
+                  </span>
+                </SortableHead>
                 <TableHead className={compactHead}>Месяц</TableHead>
-                <TableHead className={compactHead}>Неделя</TableHead>
+                <SortableHead
+                  field="week"
+                  sortBy={sort?.field ?? ""}
+                  sortDir={sort?.dir ?? "asc"}
+                  onSort={handleSort}
+                  className={compactHead}
+                >
+                  Неделя
+                </SortableHead>
                 <TableHead className={compactHead}>Год</TableHead>
-                <TableHead className={compactHead}>
+                <SortableHead
+                  field="paidAt"
+                  sortBy={sort?.field ?? ""}
+                  sortDir={sort?.dir ?? "asc"}
+                  onSort={handleSort}
+                  className={compactHead}
+                >
                   <span className="flex items-center gap-1">
                     Опл. факт
                     <Pencil className="h-3 w-3 text-neutral-400" />
                   </span>
-                </TableHead>
+                </SortableHead>
                 <TableHead className={compactHead}>
                   <span className="flex items-center gap-1">
                     Назначение
@@ -761,7 +1064,7 @@ export function ChargesClient({ bankAccounts: bankAccountsProp, orders }: Props)
             </TableHeader>
             <VirtualizedTableBody
               scrollRef={scrollRef}
-              rowCount={visible.length}
+              rowCount={flatItems ? flatItems.length : visible.length}
               colSpan={18}
               renderRow={renderRow}
             />
@@ -915,18 +1218,19 @@ function ChargeFormDialog({
             <Label>Заказ</Label>
             <Select value={orderId} onValueChange={(v) => setOrderId(v ?? "")}>
               <SelectTrigger>
-                <SelectValue>{selectedOrder ? `№${selectedOrder.orderNumber}${selectedOrder.description ? ` — ${selectedOrder.description}` : ""}` : "Выберите заказ"}</SelectValue>
+                <SelectValue>
+                  {selectedOrder ? <OrderSelectLabel order={selectedOrder} /> : "Выберите заказ"}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="">—</SelectItem>
-                {orders.map(o => <SelectItem key={o.id} value={o.id}>№{o.orderNumber}{o.description ? ` — ${o.description}` : ""}</SelectItem>)}
+                {orders.map((o) => (
+                  <SelectItem key={o.id} value={o.id}>
+                    <OrderSelectLabel order={o} />
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
-            {selectedOrder && (
-              <p className="text-xs text-neutral-500">
-                Проект: {selectedOrder.project.name}
-              </p>
-            )}
           </div>
           <div className="space-y-1.5 min-w-0">
             <Label>Сумма</Label>

@@ -199,6 +199,62 @@ export async function checkWork(workId: string, userId: string) {
   return updated;
 }
 
+/** Дублирование работ: копии со статусом «выставлена», без выплаты и дат проверки/оплаты. */
+export async function duplicateWorks(
+  executorId: string,
+  ids: string[],
+  userId: string
+) {
+  const sources = await prisma.work.findMany({
+    where: { id: { in: ids }, executorId },
+  });
+
+  if (sources.length !== ids.length) {
+    throw new Error("Some works not found for this executor");
+  }
+
+  const byId = new Map(sources.map((w) => [w.id, w]));
+  const created = [];
+
+  for (const id of ids) {
+    const src = byId.get(id)!;
+    const copy = await prisma.work.create({
+      data: {
+        executorId,
+        projectId: src.projectId,
+        workTypeId: src.workTypeId,
+        executionYear: src.executionYear,
+        executionMonth: src.executionMonth,
+        techTask: src.techTask,
+        report: src.report,
+        link: src.link,
+        volume: src.volume,
+        rate: src.rate,
+        amount: src.amount,
+        responsibleExecutorId: src.responsibleExecutorId,
+        comment: src.comment,
+        plannedPayAt: src.plannedPayAt,
+        workStatus: "submitted",
+        paymentId: null,
+        paidAt: null,
+        checkedAt: null,
+      },
+    });
+
+    await logActivity({
+      userId,
+      action: "create",
+      entityType: "Work",
+      entityId: copy.id,
+      entityLabel: `Работа ${copy.executionMonth}/${copy.executionYear} (копия)`,
+    });
+
+    created.push(copy);
+  }
+
+  return created;
+}
+
 /** Удаление с каскадом: пересчитываем Payment.amount, если нет работ — удаляем Payment. */
 export async function deleteWork(workId: string, userId: string) {
   const work = await prisma.work.findUniqueOrThrow({ where: { id: workId } });

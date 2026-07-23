@@ -4,12 +4,11 @@ import * as React from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import { toast } from "sonner" ;
-import { Plus, Pencil, Archive, ArchiveRestore, Check, X, KeyRound, ExternalLink, Search } from "lucide-react";
+import { Plus, Pencil, Archive, ArchiveRestore, Check, X, ExternalLink, Search } from "lucide-react";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import { ConfirmDialog } from "@/components/ui-custom/ConfirmDialog";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   ENTITY_STATUSES,
@@ -112,7 +111,6 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
   });
 
   const [wizardOpen, setWizardOpen] = React.useState(false);
-  const [resetPasswordTarget, setResetPasswordTarget] = React.useState<Row | null>(null);
   const [archiveTarget, setArchiveTarget] = React.useState<Row | null>(null);
   const [archivePrecheck, setArchivePrecheck] = React.useState<{
     openWorks: number;
@@ -246,21 +244,6 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
     const res = await fetch(`/api/executors/${row.id}/archive`, { method: "DELETE" });
     if (!res.ok) return toast.error("Не удалось вернуть из архива");
     toast.success(`«${row.name}» снова активен`);
-    mutate();
-  }
-
-  async function toggleAccess(row: Row) {
-    if (!row.email) {
-      toast.error("У исполнителя нет учётной записи — нельзя выдать доступ");
-      return;
-    }
-    const method = row.hasAccess ? "DELETE" : "POST";
-    const res = await fetch(`/api/executors/${row.id}/access`, { method });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      return toast.error(err.error ?? "Не удалось изменить доступ");
-    }
-    toast.success(row.hasAccess ? "Доступ отозван" : "Доступ выдан");
     mutate();
   }
 
@@ -518,21 +501,11 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
                   </TableCell>
                   <TableCell className={compactCell}>
                     {r.email && r.type !== "service" ? (
-                      <button
-                        type="button"
-                        onClick={() => !isManage && toggleAccess(r)}
-                        disabled={isManage}
-                        title={isManage ? undefined : "Переключить доступ"}
-                        className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0 text-xs font-medium border transition-colors ${
+                      <span
+                        className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0 text-xs font-medium border cursor-default ${
                           r.hasAccess
                             ? "bg-green-50 border-green-300 text-green-800"
                             : "bg-neutral-100 border-neutral-300 text-neutral-600"
-                        } ${
-                          isManage
-                            ? "cursor-default"
-                            : r.hasAccess
-                              ? "hover:bg-green-100"
-                              : "hover:bg-neutral-200"
                         }`}
                       >
                         {r.hasAccess ? (
@@ -540,7 +513,7 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
                         ) : (
                           <><X className="h-3 w-3" /> Нет</>
                         )}
-                      </button>
+                      </span>
                     ) : (
                       <span className="text-xs text-neutral-400">—</span>
                     )}
@@ -562,15 +535,6 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
                       </Link>
                       {!isManage && (
                         <>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => r.userId && setResetPasswordTarget(r)}
-                            title="Сменить пароль"
-                            className={r.userId && r.type !== "service" && r.type !== "bank" ? "" : "invisible pointer-events-none"}
-                          >
-                            <KeyRound className="h-3.5 w-3.5" />
-                          </Button>
                           {r.status === "active" ? (
                             <Button
                               size="sm"
@@ -612,13 +576,6 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
         />
       )}
 
-      {resetPasswordTarget && (
-        <ResetPasswordDialog
-          target={resetPasswordTarget}
-          onClose={() => setResetPasswordTarget(null)}
-        />
-      )}
-
       <ConfirmDialog
         open={!!archiveTarget}
         onOpenChange={(o) => {
@@ -651,67 +608,5 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
         }}
       />
     </div>
-  );
-}
-
-function generatePassword(): string {
-  const chars = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789!@#$%";
-  return Array.from({ length: 12 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
-}
-
-function ResetPasswordDialog({
-  target,
-  onClose,
-}: {
-  target: Row;
-  onClose: () => void;
-}) {
-  const [saving, setSaving] = React.useState(false);
-
-  async function handleReset() {
-    if (!target.userId) return;
-    setSaving(true);
-    try {
-      const newPwd = generatePassword();
-      const res = await fetch(`/api/users/${target.userId}/reset-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: newPwd }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        toast.error((err as { error?: string }).error ?? "Не удалось сбросить пароль");
-        return;
-      }
-      await navigator.clipboard.writeText(newPwd);
-      toast.success("Пароль сброшен и скопирован в буфер обмена");
-      onClose();
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Сброс пароля — {target.name}</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          <p className="text-sm text-neutral-500">
-            Будет сгенерирован случайный пароль и автоматически скопирован в буфер обмена — сообщите его пользователю.
-          </p>
-          <p className="text-xs text-amber-700">
-            Текущий пароль посмотреть невозможно по соображениям безопасности.
-          </p>
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose} disabled={saving}>Отмена</Button>
-          <Button onClick={handleReset} disabled={saving}>
-            {saving ? "Сброс..." : "Сбросить"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

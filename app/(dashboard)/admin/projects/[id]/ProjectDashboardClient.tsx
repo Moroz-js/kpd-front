@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ProjectCashflowChart } from "@/components/ui-custom/ProjectCashflowChart";
 import { WorksReviewTable } from "@/components/ui-custom/WorksReviewTable";
 
@@ -109,14 +110,45 @@ type WeekHeader = { week: number; month: number; monthName: string };
 
 type SummaryKey = "cashflow" | "incomePlanFact" | "incomeFact" | "incomePlan" | "incomeCumulative" | "marginPct" | "expenses" | "expensePlan" | "overspend";
 
-const SUMMARY_DEFS: { key: SummaryKey; label: string; signed?: boolean; highlight?: boolean }[] = [
-  { key: "cashflow",         label: "Кэшфлоу (нараст.)", highlight: true },
-  { key: "incomePlanFact",   label: "Доход, факт+план" },
-  { key: "incomeFact",       label: "Доход, факт" },
-  { key: "incomePlan",       label: "Доход, план" },
-  { key: "incomeCumulative", label: "Доход накоп. итогом" },
-  { key: "marginPct",        label: "Маржа в моменте %" },
-  { key: "expenses",         label: "Расходы (факт+долг+план)" },
+const SUMMARY_DEFS: { key: SummaryKey; label: string; signed?: boolean; highlight?: boolean; tooltip?: string }[] = [
+  {
+    key: "cashflow",
+    label: "Кэшфлоу (нараст.)",
+    highlight: true,
+    tooltip:
+      "Для первой недели — значение, введённое вручную. Для последующих недель: значение строки «Кэшфлоу» предыдущей недели + «Доход, факт+план» за соответствующую неделю - «План-фикс расходов по статьям» за соответствующую неделю",
+  },
+  {
+    key: "incomePlanFact",
+    label: "Доход, факт+план",
+    tooltip: "Сумма всех начислений с соответствующей неделей оплаты",
+  },
+  {
+    key: "incomeFact",
+    label: "Доход, факт",
+    tooltip: "Сумма начислений со статусом «Оплачено» с соответствующей неделей оплаты",
+  },
+  {
+    key: "incomePlan",
+    label: "Доход, план",
+    tooltip: "Сумма начислений со статусом, отличным от «Оплачено» с соответствующей неделей оплаты",
+  },
+  {
+    key: "incomeCumulative",
+    label: "Доход накоп. итогом",
+    tooltip:
+      "Значение строки «Доход накопленным итогом» предыдущей недели + «Доход, факт+план» за соответствующую неделю",
+  },
+  {
+    key: "marginPct",
+    label: "Маржа в моменте %",
+    tooltip: "«Кэшфлоу» / «Доход накопленным итогом» за соответствующую неделю",
+  },
+  {
+    key: "expenses",
+    label: "Расходы (факт+долг+план)",
+    tooltip: "Сумма выставленных работ с любым статусом за соответствующую неделю",
+  },
 ];
 
 type PlanLineRow = {
@@ -587,7 +619,7 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                   })}
                 </tr>
               )}
-              {summaryExpanded && SUMMARY_DEFS.map(({ key, label, signed, highlight }) => {
+              {summaryExpanded && SUMMARY_DEFS.map(({ key, label, signed, highlight, tooltip }) => {
                 const arr = summary[key] ?? [];
                 const totalRaw: number | null =
                   key === "cashflow"
@@ -604,7 +636,22 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                     "hover:bg-neutral-50 border-b border-neutral-100",
                     highlight && "bg-blue-50 font-semibold"
                   )}>
-                    <td className={cn(stickyLbl, !highlight && "font-normal italic text-neutral-500")}>{label}</td>
+                    <td className={cn(stickyLbl, !highlight && "font-normal italic text-neutral-500")}>
+                      {tooltip ? (
+                        <TooltipProvider delay={200}>
+                          <Tooltip>
+                            <TooltipTrigger className="cursor-help underline decoration-dotted underline-offset-2">
+                              {label}
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="max-w-xs">
+                              {tooltip}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      ) : (
+                        label
+                      )}
+                    </td>
                     <td className={cn(stickyTotal, highlight && "font-semibold")}>
                       {totalRaw === null ? "—" : cellVal(totalRaw)}
                     </td>
@@ -701,7 +748,18 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
 
               {/* Block 3: Overspend (row41 = expenses − expensePlan) */}
               <tr className="bg-neutral-50 border-t-2 border-b border-neutral-200">
-                <td className={cn(stickyLbl, "bg-neutral-50 font-medium text-neutral-800")}>Перерасход</td>
+                <td className={cn(stickyLbl, "bg-neutral-50 font-medium text-neutral-800")}>
+                  <TooltipProvider delay={200}>
+                    <Tooltip>
+                      <TooltipTrigger className="cursor-help underline decoration-dotted underline-offset-2">
+                        Перерасход
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="max-w-xs">
+                        Сумма выставленных работ с любым статусом − сумма планов расходов за соответствующую неделю
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </td>
                 <td className={cn(stickyTotal, overspendValueClass(rowTotal(summary.overspend ?? [])))}>
                   {rowTotal(summary.overspend ?? []) === 0 ? "—" : fmtSign(rowTotal(summary.overspend ?? []))}
                 </td>

@@ -4,6 +4,7 @@ import * as React from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Check, ChevronDown, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -31,7 +32,13 @@ export function MultiSelectFilter({
   optionLabelClassName,
 }: MultiSelectFilterProps) {
   const [open, setOpen] = React.useState(false);
+  const [search, setSearch] = React.useState("");
   const valueSet = React.useMemo(() => new Set(value), [value]);
+
+  function handleOpenChange(next: boolean) {
+    setOpen(next);
+    if (!next) setSearch("");
+  }
 
   const triggerLabel = (() => {
     if (value.length === 0) return label;
@@ -52,21 +59,27 @@ export function MultiSelectFilter({
     onChange([]);
   }
 
-  // Group options
+  const filtered = React.useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((o) => o.label.toLowerCase().startsWith(q));
+  }, [options, search]);
+
+  // Group options (после фильтрации; пустые группы не попадают)
   const grouped = React.useMemo(() => {
-    const hasGroups = options.some((o) => o.group);
-    if (!hasGroups) return [{ group: null, opts: options }];
+    const hasGroups = filtered.some((o) => o.group);
+    if (!hasGroups) return [{ group: null as string | null, opts: filtered }];
     const map = new Map<string, MultiSelectOption[]>();
-    for (const opt of options) {
+    for (const opt of filtered) {
       const g = opt.group ?? "";
       if (!map.has(g)) map.set(g, []);
       map.get(g)!.push(opt);
     }
     return Array.from(map.entries()).map(([group, opts]) => ({ group: group || null, opts }));
-  }, [options]);
+  }, [filtered]);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger
         render={
           <Button
@@ -94,10 +107,20 @@ export function MultiSelectFilter({
           </Button>
         }
       />
-      <PopoverContent className={cn("w-72 p-1", popoverClassName)} align="start">
-        <div className="max-h-72 overflow-y-auto">
+      <PopoverContent className={cn("w-72 p-0", popoverClassName)} align="start">
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Поиск..."
+          className="h-9 rounded-none border-0 border-b shadow-none focus-visible:ring-0 text-sm"
+          autoFocus
+        />
+        <div className="max-h-72 overflow-y-auto p-1">
           {options.length === 0 && (
             <div className="px-3 py-2 text-xs text-neutral-500">Нет вариантов</div>
+          )}
+          {options.length > 0 && filtered.length === 0 && (
+            <div className="px-3 py-4 text-xs text-neutral-500 text-center">Ничего не найдено</div>
           )}
           {grouped.map(({ group, opts }) => (
             <React.Fragment key={group ?? "__ungrouped__"}>

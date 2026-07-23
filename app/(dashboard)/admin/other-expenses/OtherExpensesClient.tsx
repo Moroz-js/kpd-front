@@ -25,9 +25,10 @@ import { VirtualizedTableBody } from "@/components/ui-custom/VirtualizedTableBod
 import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
+import { SortableHead } from "@/components/ui-custom/SortableHead";
 import { WORK_STATUSES, PAYMENT_STATUSES } from "@/lib/statuses";
-import { formatMoney, formatMoneyRub, formatDate, formatDateShort, MONTHS } from "@/lib/format";
-import { getISOWeek, weekLabel, nearestPaymentDate, toLocalDateString } from "@/lib/iso-weeks";
+import { formatMoney, formatMoneyRub, formatDateShort, MONTHS } from "@/lib/format";
+import { getISOWeek, getISOWeekYear, weekLabel, nearestPaymentDate, toLocalDateString } from "@/lib/iso-weeks";
 import { cn } from "@/lib/utils";
 import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
 import { useTableRowSelection } from "@/lib/useTableRowSelection";
@@ -42,25 +43,6 @@ const COL_WIDTHS = [
 ] as const;
 const TABLE_MIN_WIDTH = COL_WIDTHS.reduce((s, w) => s + w, 0);
 const cellClip = "overflow-hidden max-w-0";
-
-function EditableColHead({
-  children,
-  className,
-  showPencil,
-}: {
-  children: React.ReactNode;
-  className?: string;
-  showPencil?: boolean;
-}) {
-  return (
-    <TableHead className={className}>
-      <span className="inline-flex items-center gap-1">
-        {children}
-        {showPencil && <Pencil className="h-3 w-3 shrink-0 text-neutral-400" aria-hidden />}
-      </span>
-    </TableHead>
-  );
-}
 
 // ─── Константы ────────────────────────────────────────────────────────────────
 
@@ -130,6 +112,109 @@ function payWeek(plannedPayAt: string | null, paidAt: string | null): string {
   const d = paidAt ?? plannedPayAt;
   if (!d) return "—";
   return weekLabel(getISOWeek(new Date(d)));
+}
+
+/** Ключ ISO-недели оплаты: `YYYY-WW` из paidAt ?? plannedPayAt. */
+function payWeekKey(plannedPayAt: string | null, paidAt: string | null): string {
+  const d = paidAt ?? plannedPayAt;
+  if (!d) return "__empty__";
+  const date = new Date(d);
+  return `${getISOWeekYear(date)}-${String(getISOWeek(date)).padStart(2, "0")}`;
+}
+
+function payWeekFilterLabel(plannedPayAt: string | null, paidAt: string | null): string {
+  const d = paidAt ?? plannedPayAt;
+  if (!d) return "Не указано";
+  const date = new Date(d);
+  return `${weekLabel(getISOWeek(date))} ${getISOWeekYear(date)}`;
+}
+
+type SortField =
+  | "executionMonth"
+  | "payWeek"
+  | "project"
+  | "executor"
+  | "workType"
+  | "responsible"
+  | "preferredPayMethod"
+  | "plannedPayAt"
+  | "amount"
+  | "workStatus"
+  | "paymentStatus"
+  | "paidAt"
+  | "bankAccount";
+type SortDir = "asc" | "desc";
+
+function cmpText(a: string, b: string, dir: SortDir): number {
+  const cmp = a.localeCompare(b, "ru");
+  return dir === "asc" ? cmp : -cmp;
+}
+
+/** Пустые даты всегда в конце. */
+function cmpDate(a: string | null | undefined, b: string | null | undefined, dir: SortDir): number {
+  if (!a && !b) return 0;
+  if (!a) return 1;
+  if (!b) return -1;
+  const cmp = new Date(a).getTime() - new Date(b).getTime();
+  return dir === "asc" ? cmp : -cmp;
+}
+
+function cmpNullableText(a: string | null | undefined, b: string | null | undefined, dir: SortDir): number {
+  const ae = !a;
+  const be = !b;
+  if (ae && be) return 0;
+  if (ae) return 1;
+  if (be) return -1;
+  return cmpText(a!, b!, dir);
+}
+
+function compareOtherExpenses(a: OtherExpense, b: OtherExpense, field: SortField, dir: SortDir): number {
+  switch (field) {
+    case "executionMonth":
+      return dir === "asc" ? a.executionMonth - b.executionMonth : b.executionMonth - a.executionMonth;
+    case "payWeek": {
+      const ak = payWeekKey(a.plannedPayAt, a.paidAt);
+      const bk = payWeekKey(b.plannedPayAt, b.paidAt);
+      if (ak === "__empty__" && bk === "__empty__") return 0;
+      if (ak === "__empty__") return 1;
+      if (bk === "__empty__") return -1;
+      return cmpText(ak, bk, dir);
+    }
+    case "project":
+      return cmpText(a.project.name, b.project.name, dir);
+    case "executor":
+      return cmpText(a.executor.name, b.executor.name, dir);
+    case "workType":
+      return cmpText(a.workType.name, b.workType.name, dir);
+    case "responsible":
+      return cmpNullableText(a.responsibleExecutor?.name, b.responsibleExecutor?.name, dir);
+    case "preferredPayMethod":
+      return cmpNullableText(a.preferredPayMethod, b.preferredPayMethod, dir);
+    case "plannedPayAt":
+      return cmpDate(a.plannedPayAt, b.plannedPayAt, dir);
+    case "amount":
+      return dir === "asc" ? a.amount - b.amount : b.amount - a.amount;
+    case "workStatus": {
+      const al = WORK_STATUSES[a.workStatus as keyof typeof WORK_STATUSES]?.label ?? a.workStatus;
+      const bl = WORK_STATUSES[b.workStatus as keyof typeof WORK_STATUSES]?.label ?? b.workStatus;
+      return cmpText(al, bl, dir);
+    }
+    case "paymentStatus": {
+      const al = a.paymentStatus
+        ? (PAYMENT_STATUSES[a.paymentStatus as keyof typeof PAYMENT_STATUSES]?.label ?? a.paymentStatus)
+        : "";
+      const bl = b.paymentStatus
+        ? (PAYMENT_STATUSES[b.paymentStatus as keyof typeof PAYMENT_STATUSES]?.label ?? b.paymentStatus)
+        : "";
+      return cmpNullableText(al || null, bl || null, dir);
+    }
+    case "paidAt":
+      return cmpDate(a.paidAt, b.paidAt, dir);
+    case "bankAccount":
+      return cmpNullableText(a.bankAccount?.name, b.bankAccount?.name, dir);
+    default:
+      return 0;
+  }
 }
 
 type OtherExpenseTableRowProps = {
@@ -353,12 +438,14 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects: pro
   // Фильтры
   const [fYear, setFYear] = useState<string[]>([]);
   const [fMonth, setFMonth] = useState<string[]>([]);
+  const [fPayWeek, setFPayWeek] = useState<string[]>([]);
   const [fProject, setFProject] = useState<string[]>([]);
   const [fExecutor, setFExecutor] = useState<string[]>([]);
   const [fWorkType, setFWorkType] = useState<string[]>([]);
   const [fResponsible, setFResponsible] = useState<string[]>([]);
   const [fWorkStatus, setFWorkStatus] = useState<string[]>([]);
   const [fPayStatus, setFPayStatus] = useState<string[]>([]);
+  const [sort, setSort] = useState<{ field: SortField; dir: SortDir } | null>(null);
 
   const fetchData = useCallback(async () => {
     const r = await fetch("/api/other-expenses");
@@ -395,17 +482,30 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects: pro
 
   const allYears = [...new Set(rows.map(r => r.executionYear))].sort();
 
-  const filtered = rows.filter(r => {
-    if (fYear.length && !fYear.includes(String(r.executionYear))) return false;
-    if (fMonth.length && !fMonth.includes(String(r.executionMonth))) return false;
-    if (fProject.length && !fProject.includes(r.projectId)) return false;
-    if (fExecutor.length && !fExecutor.includes(r.executorId)) return false;
-    if (fWorkType.length && !fWorkType.includes(r.workTypeId)) return false;
-    if (fResponsible.length && !fResponsible.includes(r.responsibleExecutorId ?? "__empty__")) return false;
-    if (fWorkStatus.length && !fWorkStatus.includes(r.workStatus)) return false;
-    if (fPayStatus.length && !fPayStatus.includes(r.paymentStatus ?? "__empty__")) return false;
-    return true;
-  });
+  const filtered = React.useMemo(() => {
+    let list = rows.filter(r => {
+      if (fYear.length && !fYear.includes(String(r.executionYear))) return false;
+      if (fMonth.length && !fMonth.includes(String(r.executionMonth))) return false;
+      if (fPayWeek.length) {
+        if (!fPayWeek.includes(payWeekKey(r.plannedPayAt, r.paidAt))) return false;
+      }
+      if (fProject.length && !fProject.includes(r.projectId)) return false;
+      if (fExecutor.length && !fExecutor.includes(r.executorId)) return false;
+      if (fWorkType.length && !fWorkType.includes(r.workTypeId)) return false;
+      if (fResponsible.length && !fResponsible.includes(r.responsibleExecutorId ?? "__empty__")) return false;
+      if (fWorkStatus.length && !fWorkStatus.includes(r.workStatus)) return false;
+      if (fPayStatus.length && !fPayStatus.includes(r.paymentStatus ?? "__empty__")) return false;
+      return true;
+    });
+    if (sort) {
+      list = [...list].sort((a, b) => compareOtherExpenses(a, b, sort.field, sort.dir));
+    }
+    return list;
+  }, [rows, fYear, fMonth, fPayWeek, fProject, fExecutor, fWorkType, fResponsible, fWorkStatus, fPayStatus, sort]);
+
+  function handleSort(field: string, dir: SortDir) {
+    setSort({ field: field as SortField, dir });
+  }
 
   const orderedRowIds = React.useMemo(() => filtered.map((r) => r.id), [filtered]);
   const { selectedIds, handleRowSelect, toggleAll, clearSelection } = useTableRowSelection(orderedRowIds);
@@ -571,6 +671,44 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects: pro
       .map(([value, { label, group }]) => ({ value, label, group }));
   }, [rows]);
 
+  const payWeekOpts = React.useMemo(() => {
+    const map = new Map<string, string>();
+    let hasEmpty = false;
+    for (const r of rows) {
+      const key = payWeekKey(r.plannedPayAt, r.paidAt);
+      if (key === "__empty__") {
+        hasEmpty = true;
+        continue;
+      }
+      if (!map.has(key)) map.set(key, payWeekFilterLabel(r.plannedPayAt, r.paidAt));
+    }
+    const opts = Array.from(map.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([value, label]) => ({ value, label }));
+    return hasEmpty ? [{ value: "__empty__", label: "Не указано" }, ...opts] : opts;
+  }, [rows]);
+
+  const responsibleOpts = React.useMemo(() => {
+    const map = new Map<string, string>();
+    let hasEmpty = false;
+    for (const r of rows) {
+      if (!r.responsibleExecutorId) {
+        hasEmpty = true;
+        continue;
+      }
+      if (!map.has(r.responsibleExecutorId)) {
+        map.set(r.responsibleExecutorId, r.responsibleExecutor?.name ?? r.responsibleExecutorId);
+      }
+    }
+    for (const e of permanentExecutors) {
+      if (!map.has(e.id)) map.set(e.id, e.name);
+    }
+    const opts = Array.from(map.entries())
+      .sort((a, b) => a[1].localeCompare(b[1], "ru"))
+      .map(([value, label]) => ({ value, label }));
+    return hasEmpty ? [{ value: "__empty__", label: "Не указано" }, ...opts] : opts;
+  }, [rows, permanentExecutors]);
+
   const selectedSum = React.useMemo(() => {
     return filtered.filter(r => selectedIds.has(r.id)).reduce((s, r) => s + (r.amount ?? 0), 0);
   }, [filtered, selectedIds]);
@@ -664,6 +802,12 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects: pro
             onChange={setFMonth}
           />
           <MultiSelectFilter
+            label="Неделя оплаты"
+            options={payWeekOpts}
+            value={fPayWeek}
+            onChange={setFPayWeek}
+          />
+          <MultiSelectFilter
             label="Проект"
             options={projects.map(p => ({ value: p.id, label: p.name }))}
             value={fProject}
@@ -684,8 +828,8 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects: pro
             onChange={setFWorkType}
           />
           <MultiSelectFilter
-            label="Руководитель проекта"
-            options={permanentExecutors.map(r => ({ value: r.id, label: r.name }))}
+            label="Ответственный"
+            options={responsibleOpts}
             value={fResponsible}
             onChange={setFResponsible}
           />
@@ -773,23 +917,50 @@ export function OtherExpensesClient({ isAdmin, userId, executorId, projects: pro
                 <Checkbox checked={selectedIds.size === filtered.length && filtered.length > 0} onCheckedChange={() => toggleAll(orderedRowIds)} />
               </TableHead>
               <TableHead className={compactPeriodHead}>Год выполнения</TableHead>
-              <TableHead className={compactPeriodHead}>Месяц выполнения</TableHead>
-              <TableHead className={compactPeriodHead}>Неделя оплаты</TableHead>
-              <TableHead className={compactHead}>Проект</TableHead>
-              <TableHead className={compactHead}>Исполнитель</TableHead>
+              <SortableHead field="executionMonth" sortBy={sort?.field ?? ""} sortDir={sort?.dir ?? "asc"} onSort={handleSort} className={compactPeriodHead}>
+                Месяц выполнения
+              </SortableHead>
+              <SortableHead field="payWeek" sortBy={sort?.field ?? ""} sortDir={sort?.dir ?? "asc"} onSort={handleSort} className={compactPeriodHead}>
+                Неделя оплаты
+              </SortableHead>
+              <SortableHead field="project" sortBy={sort?.field ?? ""} sortDir={sort?.dir ?? "asc"} onSort={handleSort} className={compactHead}>
+                Проект
+              </SortableHead>
+              <SortableHead field="executor" sortBy={sort?.field ?? ""} sortDir={sort?.dir ?? "asc"} onSort={handleSort} className={compactHead}>
+                Исполнитель
+              </SortableHead>
               <TableHead className={compactHead}>Описание работы</TableHead>
-              <TableHead className={compactHead}>Вид работ</TableHead>
-              <TableHead className={compactHead}>Руководитель проекта</TableHead>
-              <TableHead className={compactHead}>Способ оплаты</TableHead>
-              <TableHead className={compactHead}>Дата оплаты план</TableHead>
-              <TableHead className={cn(compactHead, "text-right")}>Сумма</TableHead>
-              <TableHead className={compactHead}>Статус работы</TableHead>
-              <TableHead className={compactHead}>Статус выплаты</TableHead>
+              <SortableHead field="workType" sortBy={sort?.field ?? ""} sortDir={sort?.dir ?? "asc"} onSort={handleSort} className={compactHead}>
+                Вид работ
+              </SortableHead>
+              <SortableHead field="responsible" sortBy={sort?.field ?? ""} sortDir={sort?.dir ?? "asc"} onSort={handleSort} className={compactHead}>
+                Ответственный
+              </SortableHead>
+              <SortableHead field="preferredPayMethod" sortBy={sort?.field ?? ""} sortDir={sort?.dir ?? "asc"} onSort={handleSort} className={compactHead}>
+                Способ оплаты
+              </SortableHead>
+              <SortableHead field="plannedPayAt" sortBy={sort?.field ?? ""} sortDir={sort?.dir ?? "asc"} onSort={handleSort} className={compactHead}>
+                Дата оплаты план
+              </SortableHead>
+              <SortableHead field="amount" sortBy={sort?.field ?? ""} sortDir={sort?.dir ?? "asc"} onSort={handleSort} className={cn(compactHead, "text-right")}>
+                Сумма
+              </SortableHead>
+              <SortableHead field="workStatus" sortBy={sort?.field ?? ""} sortDir={sort?.dir ?? "asc"} onSort={handleSort} className={compactHead}>
+                Статус работы
+              </SortableHead>
+              <SortableHead field="paymentStatus" sortBy={sort?.field ?? ""} sortDir={sort?.dir ?? "asc"} onSort={handleSort} className={compactHead}>
+                Статус выплаты
+              </SortableHead>
               <TableHead className={cn(compactHead, "text-right")}>Выплата</TableHead>
-              <EditableColHead className={compactHead} showPencil={isAdmin}>
-                Дата оплаты факт
-              </EditableColHead>
-              <TableHead className={compactHead}>Источник перевода</TableHead>
+              <SortableHead field="paidAt" sortBy={sort?.field ?? ""} sortDir={sort?.dir ?? "asc"} onSort={handleSort} className={compactHead}>
+                <span className="inline-flex items-center gap-1">
+                  Дата оплаты факт
+                  {isAdmin && <Pencil className="h-3 w-3 shrink-0 text-neutral-400" aria-hidden />}
+                </span>
+              </SortableHead>
+              <SortableHead field="bankAccount" sortBy={sort?.field ?? ""} sortDir={sort?.dir ?? "asc"} onSort={handleSort} className={compactHead}>
+                Источник перевода
+              </SortableHead>
               <TableHead className={cn(stickyActionsHead, "w-[128px] min-w-[128px] max-w-[128px]")} />
             </TableRow>
           </TableHeader>
@@ -946,7 +1117,7 @@ function OtherExpenseFormDialog({
     return workTypes;
   }, [executorId, executorWorkTypeIds, workTypes]);
   // Ответственный = активный постоянный исполнитель. По умолчанию —
-  // руководитель проекта (подставляется при выборе проекта), редактируем до оплаты.
+  // responsibleExecutorId проекта (подставляется при выборе проекта в новой строке).
   const [responsibleExecutorId, setResponsibleExecutorId] = useState(
     initial?.responsibleExecutorId ?? ""
   );
@@ -970,6 +1141,20 @@ function OtherExpenseFormDialog({
   const paymentCreated = !!initial?.paymentStatus;
   // Откат разрешён только если выплата ещё «Запланирована» (не отправлена/оплачена)
   const canRevert = canRework && isEdit && initial?.workStatus === "checked" && initial?.paymentStatus === "planned";
+  const responsibleLocked =
+    isEdit && (initial!.workStatus === "checked" || initial!.workStatus === "paid");
+
+  const responsibleOptions = React.useMemo(() => {
+    const list = [...permanentExecutors];
+    if (
+      initial?.responsibleExecutor &&
+      initial.responsibleExecutorId &&
+      !list.some((e) => e.id === initial.responsibleExecutorId)
+    ) {
+      list.push(initial.responsibleExecutor);
+    }
+    return sortByNameRu(list);
+  }, [permanentExecutors, initial]);
 
   async function handleSave() {
     if (!projectId || !executorId || !workTypeId || !responsibleExecutorId || !description || !amount) {
@@ -985,7 +1170,6 @@ function OtherExpenseFormDialog({
         projectId,
         executorId,
         workTypeId,
-        responsibleExecutorId,
         executionYear: parseInt(year),
         executionMonth: parseInt(month),
         description,
@@ -993,6 +1177,10 @@ function OtherExpenseFormDialog({
         preferredPayMethod: preferredPayMethod || null,
         comment: comment || null,
       };
+
+      if (!responsibleLocked) {
+        body.responsibleExecutorId = responsibleExecutorId;
+      }
 
       if (isEdit) {
         body.bankAccountId = bankAccountId || null;
@@ -1060,9 +1248,11 @@ function OtherExpenseFormDialog({
               onValueChange={(v) => {
                 const next = v ?? "";
                 setProjectId(next);
-                // Автозаполнение «Ответственного» руководителем выбранного проекта.
-                const pmId = projects.find((p) => p.id === next)?.responsibleExecutorId ?? null;
-                if (pmId) setResponsibleExecutorId(pmId);
+                // Автозаполнение «Ответственного» только в новой строке.
+                if (!isEdit) {
+                  const pmId = projects.find((p) => p.id === next)?.responsibleExecutorId ?? null;
+                  if (pmId) setResponsibleExecutorId(pmId);
+                }
               }}
             >
               <SelectTrigger><SelectValue>{projects.find(p => p.id === projectId)?.name ?? "Выберите проект"}</SelectValue></SelectTrigger>
@@ -1117,10 +1307,22 @@ function OtherExpenseFormDialog({
             <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Описание..." />
           </div>
           <div className="space-y-1.5 min-w-0">
-            <Label>Руководитель проекта *</Label>
-            <Select value={responsibleExecutorId} onValueChange={(v) => setResponsibleExecutorId(v ?? "")}>
-              <SelectTrigger><SelectValue>{permanentExecutors.find(r => r.id === responsibleExecutorId)?.name ?? "Выберите"}</SelectValue></SelectTrigger>
-              <SelectContent>{permanentExecutors.map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}</SelectContent>
+            <Label>Ответственный *</Label>
+            <Select
+              value={responsibleExecutorId}
+              onValueChange={(v) => setResponsibleExecutorId(v ?? "")}
+              disabled={responsibleLocked}
+            >
+              <SelectTrigger>
+                <SelectValue>
+                  {responsibleOptions.find(r => r.id === responsibleExecutorId)?.name
+                    ?? initial?.responsibleExecutor?.name
+                    ?? "Выберите"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {responsibleOptions.map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
+              </SelectContent>
             </Select>
           </div>
           <div className="space-y-1.5 min-w-0">

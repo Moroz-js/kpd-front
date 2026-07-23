@@ -29,14 +29,15 @@ export function DepartmentCombobox({
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
 
-  React.useEffect(() => {
-    if (!open) setSearch("");
-  }, [open]);
+  function handleOpenChange(next: boolean) {
+    setOpen(next);
+    if (!next) setSearch("");
+  }
 
   const filtered = React.useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return options;
-    return options.filter((d) => d.toLowerCase().includes(q));
+    return options.filter((d) => d.toLowerCase().startsWith(q));
   }, [options, search]);
 
   const canCreate =
@@ -57,7 +58,7 @@ export function DepartmentCombobox({
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger
         id={id}
         render={

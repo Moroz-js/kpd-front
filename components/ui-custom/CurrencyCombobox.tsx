@@ -28,15 +28,16 @@ export function CurrencyCombobox({
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
 
-  React.useEffect(() => {
-    if (!open) setSearch("");
-  }, [open]);
+  function handleOpenChange(next: boolean) {
+    setOpen(next);
+    if (!next) setSearch("");
+  }
 
   const normalized = search.trim().toUpperCase();
 
   const filtered = React.useMemo(() => {
     if (!normalized) return options;
-    return options.filter((c) => c.toUpperCase().includes(normalized));
+    return options.filter((c) => c.toUpperCase().startsWith(normalized));
   }, [options, normalized]);
 
   const canCreate =
@@ -58,7 +59,7 @@ export function CurrencyCombobox({
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger
         id={id}
         render={

@@ -88,6 +88,15 @@ function assertCanChangeWorkStatus(existing: Existing, patch: UpdateOtherExpense
   }
 }
 
+/** Ответственного нельзя менять после проверки (workStatus checked/paid). */
+function assertCanChangeResponsible(existing: Existing, patch: UpdateOtherExpenseInput) {
+  if (patch.responsibleExecutorId === undefined) return;
+  if (patch.responsibleExecutorId === existing.responsibleExecutorId) return;
+  if (existing.workStatus === "checked" || existing.workStatus === "paid") {
+    throw new Error("Ответственного нельзя менять после проверки работы");
+  }
+}
+
 function applyPaymentCascade(
   existing: Existing,
   state: {
@@ -212,6 +221,7 @@ export async function updateOtherExpense(
     await assertExecutorEligibleForOtherExpense(patch.executorId);
   }
   assertCanChangeWorkStatus(existing, patch);
+  assertCanChangeResponsible(existing, patch);
 
   const state = {
     workStatus: existing.workStatus,

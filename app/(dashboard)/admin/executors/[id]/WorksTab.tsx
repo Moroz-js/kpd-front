@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, CheckCircle, CircleDollarSign, X, Link2, Layers } from "lucide-react";
+import { Plus, Pencil, Trash2, CheckCircle, CircleDollarSign, X, Link2, Layers, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -39,6 +39,8 @@ import { sortByNameRu } from "@/lib/sort";
 import { nearestPaymentDate, toLocalDateString, getISOWeek, getISOWeekYear, weekLabel } from "@/lib/iso-weeks";
 import { cn } from "@/lib/utils";
 import { stickyActionsHead, stickyActionsCell, stickyActionsInner } from "@/lib/table-styles";
+import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
+import { useTableRowSelection } from "@/lib/useTableRowSelection";
 
 type WorkType = { id: string; name: string };
 type Project = { id: string; name: string };
@@ -177,11 +179,11 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts: bankAccou
   const [deleteTarget, setDeleteTarget] = useState<{ type: "work" | "payment"; id: string; label: string } | null>(null);
   const [markPaidTarget, setMarkPaidTarget] = useState<AllPaymentRow | null>(null);
 
-  // Bulk / выбор
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Bulk / выбор работ (чекбоксы + shift + «выбрать всё»)
   const [bulkStatus, setBulkStatus] = useState<string>("");
   const [bulkDate, setBulkDate] = useState<string>("");
   const [forming, setForming] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
 
   // Подсветка группы «выплата + её работы» при наведении
   const [hoverPaymentId, setHoverPaymentId] = useState<string | null>(null);
@@ -305,18 +307,47 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts: bankAccou
       return true;
     })
     .reduce((sum, w) => sum + w.amount, 0);
+
+  const showWorkRows = !paymentOnlyFilterActive && filterRowType !== "payments";
+  const showPaymentRows = !workOnlyFilterActive && filterRowType !== "works";
+
+  const orderedWorkIds = React.useMemo(() => {
+    if (!showWorkRows) return [] as string[];
+    const ids: string[] = [];
+    const visible = groups
+      .filter((g) => !(hidePaidGroups && PAID_STATUSES_PAYMENT.has(g.payment.paymentStatus)))
+      .filter((g) => filterRowType === "works" || paymentPasses(g.payment))
+      .map((g) => ({ payment: g.payment, works: g.works.filter(workPasses) }))
+      .filter((g) => filterRowType === "payments" || !workOnlyFilterActive || g.works.length > 0)
+      .filter((g) => filterRowType !== "works" || g.works.length > 0);
+    for (const g of visible) {
+      for (const w of g.works) ids.push(w.id);
+    }
+    for (const w of unlinkedWorks.filter(workPasses)) ids.push(w.id);
+    return ids;
+  }, [
+    showWorkRows,
+    groups,
+    unlinkedWorks,
+    hidePaidGroups,
+    filterRowType,
+    paymentPasses,
+    workPasses,
+    workOnlyFilterActive,
+  ]);
+
+  const { selectedIds, handleRowSelect, toggleAll, clearSelection } =
+    useTableRowSelection(orderedWorkIds);
+  const workIndexById = React.useMemo(() => {
+    const map = new Map<string, number>();
+    orderedWorkIds.forEach((id, i) => map.set(id, i));
+    return map;
+  }, [orderedWorkIds]);
+
   const selectedArray = Array.from(selectedIds);
   const selectedWorks = works.filter((w) => selectedIds.has(w.id));
   const selectedAllCheckedUnlinked =
     selectedWorks.length > 0 && selectedWorks.every((w) => w.workStatus === "checked" && !w.paymentId);
-
-  function toggleSelect(id: string) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }
 
   // ── Действия ────────────────────────────────────────────────────────────────
   async function handleCheck(work: WorkRow) {
@@ -369,10 +400,34 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts: bankAccou
     }
     const { updated } = await res.json();
     toast.success(`Обновлено работ: ${updated}`);
-    setSelectedIds(new Set());
+    clearSelection();
     setBulkStatus("");
     setBulkDate("");
     silentLoad();
+  }
+
+  async function handleDuplicate(ids: string[]) {
+    if (ids.length === 0) return;
+    setDuplicating(true);
+    try {
+      const res = await fetch(`/api/executors/${executorId}/works/duplicate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error((d as { error?: string }).error ?? "Не удалось дублировать");
+      }
+      const data = await res.json() as { created: number };
+      toast.success(data.created === 1 ? "Работа продублирована" : `Продублировано работ: ${data.created}`);
+      clearSelection();
+      silentLoad();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Не удалось дублировать");
+    } finally {
+      setDuplicating(false);
+    }
   }
 
   async function formPayment(body: { scope: "all-checked" } | { workIds: string[] }) {
@@ -385,7 +440,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts: bankAccou
       });
       if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error((d as { error?: string }).error ?? "Ошибка"); }
       toast.success("Выплата сформирована");
-      setSelectedIds(new Set());
+      clearSelection();
       silentLoad();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Ошибка");
@@ -460,11 +515,8 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts: bankAccou
   }
 
   // ── Рендер ───────────────────────────────────────────────────────────────────
-  const showWorkRows = !paymentOnlyFilterActive && filterRowType !== "payments";
-  const showPaymentRows = !workOnlyFilterActive && filterRowType !== "works";
-
-  const COL_COUNT = 14;
   /** table-fixed + colgroup — колонки не растягиваются от длинного ТЗ/URL */
+  const COL_COUNT = 14;
   const COL_WIDTHS = [32, 40, 72, 140, 90, 48, 56, 120, 72, 88, 80, 140, 110, 96] as const;
   const TABLE_MIN_WIDTH = COL_WIDTHS.reduce((s, w) => s + w, 0);
   const cellClip = "overflow-hidden max-w-0";
@@ -482,13 +534,12 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts: bankAccou
     return (
       <>
         <td className="border-b border-neutral-100 px-1 py-1 w-8 text-center align-middle">
-          {/* §4.2: выбирать можно только проверенные непривязанные работы */}
-          {!w.paymentId && w.workStatus === "checked" && (
-            <Checkbox
-              checked={selectedIds.has(w.id)}
-              onCheckedChange={() => toggleSelect(w.id)}
-            />
-          )}
+          <RowSelectCheckbox
+            checked={selectedIds.has(w.id)}
+            rowIndex={workIndexById.get(w.id) ?? 0}
+            rowId={w.id}
+            onSelect={handleRowSelect}
+          />
         </td>
         <td className={td}>{w.executionYear}</td>
         <td className={cn(td, "whitespace-nowrap")}>{monthFullLabel(w.executionMonth)}</td>
@@ -543,6 +594,16 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts: bankAccou
         <td className={dim}>—</td>
         <td className={cn(td, stickyActionsCell, active && "bg-blue-100")}>
           <div className={stickyActionsInner}>
+            {canCreate && (
+              <button
+                title="Дублировать"
+                className="p-0.5 text-neutral-500 hover:text-neutral-800"
+                disabled={duplicating}
+                onClick={() => handleDuplicate([w.id])}
+              >
+                <Copy className="h-3.5 w-3.5" />
+              </button>
+            )}
             {isAdmin && w.workStatus !== "checked" && w.workStatus !== "paid" && !w.paymentId && (
               <button title="Проверить" className="p-0.5 text-blue-600 hover:text-blue-800" onClick={() => handleCheck(w)}>
                 <CheckCircle className="h-3.5 w-3.5" />
@@ -701,7 +762,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts: bankAccou
           <span className="text-xs font-medium text-blue-700">{selectedIds.size} работ выбрано</span>
           {isAdmin && (
             <Select value={bulkStatus} onValueChange={(v) => v && setBulkStatus(v)}>
-              <SelectTrigger className="h-7 w-44 text-xs">
+              <SelectTrigger className="h-7 w-44 text-xs bg-white">
                 <SelectValue>{bulkStatus ? (WORK_STATUS_LABELS[bulkStatus] ?? "Статус") : "Статус не менять"}</SelectValue>
               </SelectTrigger>
               <SelectContent>
@@ -711,10 +772,31 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts: bankAccou
           )}
           <label className="flex items-center gap-1.5 text-xs text-blue-700 whitespace-nowrap">
             Дата оплаты план
-            <Input type="date" className="h-7 text-xs w-36" value={bulkDate} onChange={(e) => setBulkDate(e.target.value)} />
+            <Input type="date" className="h-7 text-xs w-36 bg-white" value={bulkDate} onChange={(e) => setBulkDate(e.target.value)} />
           </label>
           <Button size="sm" className="h-7" onClick={handleBulkApply} disabled={!bulkStatus && !bulkDate}>Применить</Button>
-          <Button size="sm" variant="ghost" className="h-7" onClick={() => setSelectedIds(new Set())}>
+
+          {canCreate && (
+            <>
+              <div aria-hidden className="mx-1 h-5 w-px shrink-0 self-center bg-blue-200" />
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 bg-white"
+                disabled={duplicating}
+                onClick={() => handleDuplicate(selectedArray)}
+              >
+                <Copy className="h-3.5 w-3.5 mr-1" /> Дублировать
+              </Button>
+            </>
+          )}
+
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 ml-auto"
+            onClick={() => clearSelection()}
+          >
             <X className="h-3.5 w-3.5 mr-1" /> Снять
           </Button>
         </div>
@@ -738,7 +820,14 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts: bankAccou
             </colgroup>
             <thead className="sticky top-0 z-10">
               <tr>
-                <th className={cn(th, "w-8")} />
+                <th className={cn(th, "w-8 text-center")}>
+                  {orderedWorkIds.length > 0 && (
+                    <Checkbox
+                      checked={orderedWorkIds.every((id) => selectedIds.has(id))}
+                      onCheckedChange={() => toggleAll(orderedWorkIds)}
+                    />
+                  )}
+                </th>
                 <th className={th}>Год</th>
                 <th className={th}>Месяц</th>
                 <th className={th}>Проект / ТЗ</th>

@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { WorksTab } from "./WorksTab";
-import { PivotTab } from "./PivotTab";
 import { VacationsTab } from "./VacationsTab";
 import { TasksTab } from "./TasksTab";
 import { SettingsTab } from "./SettingsTab";
@@ -44,8 +43,6 @@ type ExecutorDetail = {
 
 const TABS = [
   { id: "works", label: "Работы и Выплаты" },
-  { id: "paid", label: "Оплачено по проектам" },
-  { id: "debt", label: "Долг по проектам" },
   { id: "vacations", label: "График отпусков" },
   { id: "tasks", label: "Задачи" },
 ] as const;
@@ -257,8 +254,6 @@ export function ExecutorEstimateClient({
             bankAccounts={bankAccounts}
           />
         )}
-        {hasPersonalSmeta && activeTab === "paid" && <PivotTab executorId={executorId} type="paid" />}
-        {hasPersonalSmeta && activeTab === "debt" && <PivotTab executorId={executorId} type="debt" />}
         {hasPersonalSmeta && activeTab === "vacations" && (
           <VacationsTab executorId={executorId} isAdmin={isAdmin} isOwner={isOwner} />
         )}

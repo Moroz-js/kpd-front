@@ -22,6 +22,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { VirtualizedTableBody } from "@/components/ui-custom/VirtualizedTableBody";
+import {
+  GroupBySelect,
+  GroupHeaderRow,
+  buildGroupedFlatList,
+  compareGroupKeys,
+  compareGroupLabels,
+  type FlatGroupItem,
+} from "@/components/ui-custom/TableGrouping";
 import { SortableHead } from "@/components/ui-custom/SortableHead";
 import { RowSelectCheckbox } from "@/components/ui-custom/RowSelectCheckbox";
 import { useTableRowSelection } from "@/lib/useTableRowSelection";
@@ -104,6 +112,23 @@ function smetaTypeCell(row: Row) {
 function issuedWorkRowId(r: Row) {
   return `${r.sourceType}:${r.sourceId}`;
 }
+
+function issuedWorkWeekKey(r: Row): string {
+  if (r.weekPlanFact == null || r.yearPlanFact == null) return "__empty__";
+  return `${r.yearPlanFact}-${String(r.weekPlanFact).padStart(2, "0")}`;
+}
+
+function issuedWorkWeekLabel(r: Row): string {
+  if (r.weekPlanFact == null || r.yearPlanFact == null) return "Не указано";
+  return `${weekLabel(r.weekPlanFact)} ${r.yearPlanFact}`;
+}
+
+const ISSUED_WORK_GROUP_OPTIONS = [
+  { value: "executor", label: "Исполнитель" },
+  { value: "week", label: "Неделя оплаты" },
+  { value: "project", label: "Проект" },
+  { value: "workType", label: "Вид работ" },
+] as const;
 
 type IssuedWorkRowProps = {
   row: Row;
@@ -202,6 +227,8 @@ export function IssuedWorksClient() {
   const [workTypeFilter, setWorkTypeFilter] = React.useState<string[]>([]);
   const [statusFilter, setStatusFilter] = React.useState<string[]>([]);
   const [smetaFilter, setSmetaFilter] = React.useState<string[]>([]);
+  const [groupBy, setGroupBy] = React.useState<"" | "executor" | "week" | "project" | "workType">("");
+  const [collapsedGroups, setCollapsedGroups] = React.useState<Set<string>>(() => new Set());
 
   const [sort, setSort] = React.useState<{ field: SortField; dir: SortDir }[]>([
     { field: "weekPlanFact", dir: "desc" },
@@ -320,7 +347,58 @@ export function IssuedWorksClient() {
   ]);
 
   const orderedRowIds = React.useMemo(() => rows.map(issuedWorkRowId), [rows]);
+  const rowIndexById = React.useMemo(() => {
+    const map = new Map<string, number>();
+    rows.forEach((r, i) => map.set(issuedWorkRowId(r), i));
+    return map;
+  }, [rows]);
   const { selectedIds, handleRowSelect, toggleAll, clearSelection } = useTableRowSelection(orderedRowIds);
+
+  const flatItems = React.useMemo((): FlatGroupItem<Row>[] | null => {
+    if (!groupBy) return null;
+    const getKey = (r: Row): string => {
+      if (groupBy === "executor") return r.executorId || "__empty__";
+      if (groupBy === "week") return issuedWorkWeekKey(r);
+      if (groupBy === "project") return r.projectId || "__empty__";
+      return r.workTypeId || "__empty__";
+    };
+    const getLabel = (r: Row): string => {
+      if (groupBy === "executor") return r.executorName || "Не указано";
+      if (groupBy === "week") return issuedWorkWeekLabel(r);
+      if (groupBy === "project") return r.projectName || "Не указано";
+      return r.workTypeName || "Не указано";
+    };
+    const primary = sort[0];
+    const groupAligned =
+      (groupBy === "executor" && primary?.field === "executorName") ||
+      (groupBy === "week" && primary?.field === "weekPlanFact") ||
+      (groupBy === "project" && primary?.field === "projectName") ||
+      (groupBy === "workType" && primary?.field === "workTypeName");
+    const groupDir: SortDir = groupAligned ? (primary?.dir ?? "asc") : "asc";
+    return buildGroupedFlatList(rows, getKey, getLabel, (r) => r.amount, collapsedGroups, {
+      compareRows,
+      compareGroups: (a, b) =>
+        groupBy === "week"
+          ? compareGroupKeys(a.key, b.key, groupDir)
+          : compareGroupLabels(a.label, b.label, groupDir),
+    });
+  }, [rows, groupBy, collapsedGroups, sort]);
+
+  const toggleGroup = React.useCallback((key: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const handleGroupByChange = React.useCallback((v: string) => {
+    setGroupBy(
+      v === "executor" || v === "week" || v === "project" || v === "workType" ? v : ""
+    );
+    setCollapsedGroups(new Set());
+  }, []);
 
   const { displayCount, displaySum } = React.useMemo(() => {
     if (selectedIds.size === 0) {
@@ -354,6 +432,37 @@ export function IssuedWorksClient() {
 
   const renderRow = React.useCallback(
     (index: number) => {
+      if (flatItems) {
+        const item = flatItems[index];
+        if (!item) return null;
+        if (item.kind === "group") {
+          return (
+            <GroupHeaderRow
+              key={`g:${item.key}`}
+              label={item.label}
+              count={item.count}
+              sum={item.sum}
+              collapsed={item.collapsed}
+              onToggle={() => toggleGroup(item.key)}
+              colSpan={15}
+            />
+          );
+        }
+        const r = item.row;
+        const id = issuedWorkRowId(r);
+        const rowIndex = rowIndexById.get(id) ?? 0;
+        return (
+          <IssuedWorkRow
+            key={id}
+            row={r}
+            rowIndex={rowIndex}
+            checked={selectedIds.has(id)}
+            onSelect={handleRowSelect}
+            onEdit={handleEdit}
+            onCheck={handleCheckRow}
+          />
+        );
+      }
       const r = rows[index];
       if (!r) return null;
       const id = issuedWorkRowId(r);
@@ -369,7 +478,7 @@ export function IssuedWorksClient() {
         />
       );
     },
-    [rows, selectedIds, handleRowSelect, handleEdit, handleCheckRow]
+    [flatItems, rows, rowIndexById, selectedIds, handleRowSelect, handleEdit, handleCheckRow, toggleGroup]
   );
 
   async function handleBulkApply() {
@@ -407,6 +516,11 @@ export function IssuedWorksClient() {
       <PageHeader title="Выставленные работы" />
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
+        <GroupBySelect
+          value={groupBy}
+          onChange={handleGroupByChange}
+          options={[...ISSUED_WORK_GROUP_OPTIONS]}
+        />
         <MultiSelectFilter
           label="Год оплаты план-факт"
           options={yearOptions}
@@ -606,7 +720,7 @@ export function IssuedWorksClient() {
           </TableHeader>
           <VirtualizedTableBody
             scrollRef={scrollRef}
-            rowCount={rows.length}
+            rowCount={flatItems ? flatItems.length : rows.length}
             colSpan={15}
             isLoading={isLoading}
             loading={
