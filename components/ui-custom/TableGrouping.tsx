@@ -76,7 +76,8 @@ export function GroupHeaderRow({
   collapsed,
   onToggle,
   colSpan,
-  stickyFirstCell,
+  /** @deprecated Всегда прилипает слева; оставлен для совместимости вызовов */
+  stickyFirstCell: _stickyFirstCell,
 }: {
   label: string;
   count: number;
@@ -88,23 +89,22 @@ export function GroupHeaderRow({
 }) {
   return (
     <TableRow className="bg-neutral-100 hover:bg-neutral-100 font-medium">
-      <TableCell
-        colSpan={colSpan}
-        className={cn(
-          "bg-neutral-100 py-1.5",
-          stickyFirstCell && "sticky left-0 z-20"
-        )}
-      >
+      {/*
+        sticky нельзя вешать на colspan-ячейку на всю ширину таблицы:
+        она равна области скролла, и left:0 не удерживает контент.
+        Прилипает узкий внутренний блок (w-max).
+      */}
+      <TableCell colSpan={colSpan} className="bg-neutral-100 p-0">
         <button
           type="button"
           onClick={onToggle}
           aria-expanded={!collapsed}
-          className="flex w-full items-center gap-2 text-left text-xs text-neutral-800 select-none"
+          className="sticky left-0 z-20 flex w-max max-w-[min(42rem,calc(100vw-14rem))] items-center gap-2 bg-neutral-100 py-1.5 pl-2 pr-4 text-left text-xs text-neutral-800 select-none"
         >
           <SectionChevron expanded={!collapsed} />
           <span className="truncate">{label}</span>
           <span className="tabular-nums text-neutral-500 shrink-0">{count}</span>
-          <span className="ml-auto tabular-nums text-neutral-700 shrink-0">
+          <span className="tabular-nums text-neutral-700 shrink-0">
             {formatMoney(sum)}
           </span>
         </button>
