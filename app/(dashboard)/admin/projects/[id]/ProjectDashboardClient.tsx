@@ -755,7 +755,7 @@ export function ProjectDashboardClient({ projectId, isAdmin, canManagePlan }: { 
                         Перерасход
                       </TooltipTrigger>
                       <TooltipContent side="right" className="max-w-xs">
-                        Сумма выставленных работ с любым статусом − сумма планов расходов за соответствующую неделю
+                        Сумма выставленных работ с любым статусом − сумма планов расходов за соответствующую неделю. Красный текст при значении ≠ 0. По клику — список проектов с несхождением
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
