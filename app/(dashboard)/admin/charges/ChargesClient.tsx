@@ -278,27 +278,31 @@ function InlineDateCell({ value, onSave, highlight }: { value: string; onSave: (
       </span>
     );
   }
+  // Инпут шире узкой колонки — поверх соседних ячеек с непрозрачным фоном,
+  // иначе «просвечивает» и визуально наезжает на соседние даты.
   return (
-    <input
-      ref={ref}
-      autoFocus
-      type="date"
-      value={v}
-      onChange={(e) => setV(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          (e.target as HTMLInputElement).blur();
-        }
-        if (e.key === "Escape") {
-          setV(value);
-          setEditing(false);
-        }
-      }}
-      onClick={() => { try { ref.current?.showPicker(); } catch { /**/ } }}
-      className="border border-blue-300 rounded px-1 py-0.5 text-xs outline-none w-32 cursor-pointer"
-    />
+    <div className="relative h-6 min-w-0">
+      <input
+        ref={ref}
+        autoFocus
+        type="date"
+        value={v}
+        onChange={(e) => setV(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            (e.target as HTMLInputElement).blur();
+          }
+          if (e.key === "Escape") {
+            setV(value);
+            setEditing(false);
+          }
+        }}
+        onClick={() => { try { ref.current?.showPicker(); } catch { /**/ } }}
+        className="absolute left-0 top-1/2 z-30 h-7 w-[8.5rem] -translate-y-1/2 cursor-pointer rounded border border-blue-300 bg-white px-1 py-0.5 text-xs outline-none shadow-md"
+      />
+    </div>
   );
 }
 
