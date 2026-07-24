@@ -39,7 +39,7 @@ import { sortByNameRu } from "@/lib/sort";
 /** Ширины колонок (18) — table-fixed, иначе правые колонки сжимаются и наезжают друг на друга */
 const ACTIONS_COL_WIDTH = 128;
 const COL_WIDTHS = [
-  40, 84, 96, 72, 192, 148, 208, 116, 124, 104, 100, 92, 124, 140, 92, 120, 140, ACTIONS_COL_WIDTH,
+  40, 84, 112, 72, 192, 148, 208, 116, 124, 104, 100, 92, 124, 140, 92, 120, 140, ACTIONS_COL_WIDTH,
 ] as const;
 const TABLE_MIN_WIDTH = COL_WIDTHS.reduce((s, w) => s + w, 0);
 const cellClip = "overflow-hidden max-w-0";
