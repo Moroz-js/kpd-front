@@ -115,14 +115,25 @@ const SUMMARY_DEFS: SummaryDef[] = [
   // Далее — discrepancyDPFact (рендерится отдельно)
 ];
 
-const ROW_TOOLTIPS: Record<string, string> = {
+const ROW_TOOLTIPS: Record<string, React.ReactNode> = {
   balanceStart:
     "Для первой недели — значение, введённое вручную. Для последующих недель — значение строки «Баланс (сметы/ДП)» предыдущей недели",
   incomeFact: "Сумма начислений со статусом «Оплачено» с соответствующей неделей оплаты",
   incomePlanOnly: "Сумма начислений со статусом, отличным от «Оплачено» с соответствующей неделей оплаты",
   incomePlanFact: "Сумма всех начислений с соответствующей неделей оплаты",
-  expensePlanDP:
-    "Прошедшие недели: сумма выставленных работ со статусом «Оплачено» с соответствующей неделей оплаты. Текущая и будущие недели: сумма планов расходов из дашбордов проектов за соответствующую неделю. Граница между «прошлым» и «текущим»: 00:00 MSK (воскресенье → понедельник)",
+  expensePlanDP: (
+    <div className="flex flex-col gap-1.5 text-left">
+      <p>
+        <span className="font-semibold">Прошедшие недели:</span>{" "}
+        сумма выставленных работ со статусом «Оплачено» с соответствующей неделей оплаты.
+      </p>
+      <p>
+        <span className="font-semibold">Текущая и будущие недели:</span>{" "}
+        сумма планов расходов из дашбордов проектов за соответствующую неделю.
+      </p>
+      <p>Граница между «прошлым» и «текущим»: 00:00 MSK (воскресенье → понедельник)</p>
+    </div>
+  ),
   balanceEndDP:
     "Расчётный баланс: «Баланс на начало» + «Приход (план+факт)» − «Расход (план-факт) из ДП» за ту же неделю",
   balanceInAccounts: "Значение из колонки «Рубли» раздела «Остаток банковские счета» за соответствующую неделю",
@@ -136,7 +147,7 @@ const ROW_TOOLTIPS: Record<string, string> = {
     "Разница: сумма выставленных работ со статусом «Оплачено» − сумма планов расходов из дашбордов проектов за соответствующую неделю. Красный текст при значении ≠ 0. По клику — список проектов с несхождением",
 };
 
-function RowLabelTooltip({ label, tooltip }: { label: string; tooltip?: string }) {
+function RowLabelTooltip({ label, tooltip }: { label: string; tooltip?: React.ReactNode }) {
   if (!tooltip) return <>{label}</>;
   return (
     <TooltipProvider delay={200}>
@@ -144,7 +155,7 @@ function RowLabelTooltip({ label, tooltip }: { label: string; tooltip?: string }
         <TooltipTrigger className="cursor-help underline decoration-dotted underline-offset-2">
           {label}
         </TooltipTrigger>
-        <TooltipContent side="right" className="max-w-xs">
+        <TooltipContent side="right" className="max-w-sm items-start text-left whitespace-normal">
           {tooltip}
         </TooltipContent>
       </Tooltip>
