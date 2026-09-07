@@ -648,7 +648,7 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts: bankAccou
       .filter((g) => !(hidePaidGroups && PAID_STATUSES_PAYMENT.has(g.payment.paymentStatus)))
       .filter((g) => !showPaymentRows || paymentPasses(g.payment))
       .map((g) => ({ payment: g.payment, works: g.works.filter(workPasses) }))
-      .filter((g) => !showWorkRows || g.works.length > 0);
+      .filter((g) => (showWorkRows && g.works.length > 0) || showPaymentRows);
     for (const g of visible) {
       for (const w of g.works) ids.push(w.id);
     }
@@ -1027,13 +1027,13 @@ export function WorksTab({ executorId, isAdmin, isOwner, bankAccounts: bankAccou
   }
 
   // Группа (выплата + работы): неделя/статус/источник применяются к выплате,
-  // год/месяц/проект — к работам внутри группы. Под «оконными» фильтрами работ
-  // (год/месяц/проект) группа без подходящих работ скрывается целиком.
+  // год/месяц/проект — к работам внутри группы. Выплаты без работ тоже видны,
+  // пока не активны «оконные» фильтры работ (год/месяц/проект).
   const visibleGroups = groups
     .filter((g) => !(hidePaidGroups && PAID_STATUSES_PAYMENT.has(g.payment.paymentStatus)))
     .filter((g) => !showPaymentRows || paymentPasses(g.payment))
     .map((g) => ({ payment: g.payment, works: g.works.filter(workPasses) }))
-    .filter((g) => !showWorkRows || g.works.length > 0);
+    .filter((g) => (showWorkRows && g.works.length > 0) || showPaymentRows);
 
   const visibleUnlinkedWorks = unlinkedWorks.filter(workPasses);
   const visibleUnlinkedPayments = unlinkedPayments.filter(paymentPasses);
