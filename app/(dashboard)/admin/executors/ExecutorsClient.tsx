@@ -19,10 +19,10 @@ import { normalizeExecutorType } from "@/lib/executor-type";
 
 /** Вкладки вешаются прямо на тип исполнителя: «Остальные» = постоянные и внешние. */
 const EXECUTOR_TABS = [
+  { id: "all", label: "Все" },
   { id: "service", label: "Сервисы" },
   { id: "bank", label: "Банки" },
   { id: "other", label: "Остальные" },
-  { id: "all", label: "Все" },
 ] as const;
 type ExecutorTab = (typeof EXECUTOR_TABS)[number]["id"];
 
