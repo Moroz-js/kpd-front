@@ -207,6 +207,7 @@ export const MODEL_LABELS: Record<string, string> = {
   Order: "Заказы",
   Charge: "Начисления",
   BankOperation: "Банковские операции",
+  BankOperationCharge: "Начисления банковских операций",
   SpendingPlanLine: "Строки плана расходов",
   VacationEntry: "Отпуска",
   Task: "Задачи",

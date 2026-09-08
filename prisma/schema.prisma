@@ -138,6 +138,7 @@ model Project {
   orders              Order[]
   spendingPlanLines   SpendingPlanLine[]
   verificationResults ProjectVerificationResult[]
+  bankOperations      BankOperation[]
 
   @@unique([clientId, shortName])
   @@index([responsibleUserId])
@@ -209,6 +210,7 @@ model WorkType {
   executorWorkTypes ExecutorWorkType[]
   projectWorkTypes  ProjectWorkType[]
   spendingPlanLines SpendingPlanLine[]
+  bankOperations    BankOperation[]
 
   @@map("work_types")
 }
@@ -405,27 +407,103 @@ model Charge {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
+  operationLinks BankOperationCharge[]
+
   @@index([bankAccountId])
   @@index([orderId])
   @@index([status])
   @@map("charges")
 }
 
-// ─────────────────── БАНКОВСКИЕ ОПЕРАЦИИ (заглушка — заполняется через «Робот») ───────────────────
+// ─────────────────── БАНКОВСКИЕ ОПЕРАЦИИ («Робот») ───────────────────
+//
+// Строка = одна операция из банковской выписки. Поля делятся на три группы:
+//   raw*   — как пришло из банка, не меняется (левая часть карточки операции);
+//   разбор — что определила система или поправил бухгалтер (правая часть);
+//   trace* — чем именно проставлено значение разбора («опознан по ИНН» и т.п.).
+//
+// Ветка операции: kind = incoming | outgoing. Внутренний перевод — отдельный
+// признак isInternalTransfer, а не значение kind: пара «списание + поступление»
+// связывается через pairedOperationId и показывается одной строкой.
 
 model BankOperation {
-  id            String      @id @default(cuid())
-  bankAccountId String
-  bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id])
-  amount        Float
-  date          DateTime
-  kind          String // incoming | outgoing
-  comment       String?
-  createdAt     DateTime    @default(now())
+  id             String      @id @default(cuid())
+  bankAccountId  String
+  bankAccount    BankAccount @relation(fields: [bankAccountId], references: [id])
+  transferSource String? // источник перевода: счёт-плательщик или банк, как в выписке
+  amount         Float
+  date           DateTime
+  month          Int
+  year           Int
+  kind           String // incoming | outgoing
+
+  isInternalTransfer Boolean        @default(false)
+  pairedOperationId  String?        @unique
+  pairedOperation    BankOperation? @relation("TransferPair", fields: [pairedOperationId], references: [id])
+  pairedWith         BankOperation? @relation("TransferPair")
+
+  counterpartyName String?
+  counterpartyType String? // client | executor | service | bank | own_account
+  projectId        String?
+  project          Project?  @relation(fields: [projectId], references: [id])
+  workTypeId       String?
+  workType         WorkType? @relation(fields: [workTypeId], references: [id])
+  workDescription  String? // описание работы
+  paymentOrder     String? // платёжное поручение — только поступления
+  paymentPurpose   String? // назначение платежа — только списания
+  basis            String? // основание — только внутренние переводы
+
+  status      String  @default("new") // new | needs_review | recognized | confirmed
+  chargeMatch String? // not_linked | suggested | confirmed | no_charge
+  comment     String?
+
+  confirmedAt     DateTime?
+  confirmedByName String?
+
+  // Сырые поля выписки
+  rawDocNumber     String?
+  rawDate          String?
+  rawAmount        String?
+  rawCurrency      String?
+  rawOperationType String?
+  rawCounterparty  String?
+  rawInn           String?
+  rawAccount       String?
+  rawBik           String?
+  rawPurpose       String?
+  rawCategory      String?
+
+  // Трассировка разбора
+  traceCounterparty String?
+  traceProject      String?
+  traceWorkType     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  charges BankOperationCharge[]
 
   @@index([bankAccountId])
   @@index([date])
+  @@index([kind])
+  @@index([status])
   @@map("bank_operations")
+}
+
+// Пополнение может закрывать несколько начислений, начисление — закрываться
+// несколькими пополнениями. Поэтому связь отдельной таблицей, а не полем.
+model BankOperationCharge {
+  bankOperationId String
+  bankOperation   BankOperation @relation(fields: [bankOperationId], references: [id], onDelete: Cascade)
+  chargeId        String
+  charge          Charge        @relation(fields: [chargeId], references: [id])
+  amount          Float? // сколько из пополнения отнесено на это начисление
+  link            String        @default("confirmed") // suggested | confirmed
+  reason          String? // почему предложено: «сумма совпадает точно»
+
+  @@id([bankOperationId, chargeId])
+  @@index([chargeId])
+  @@map("bank_operation_charges")
 }
 
 // ─────────────────── ПЛАН РАСХОДОВ ───────────────────

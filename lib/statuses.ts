@@ -79,6 +79,41 @@ export const CHARGE_STATUSES = {
 } as const;
 export type ChargeStatus = keyof typeof CHARGE_STATUSES;
 
+// ─── BANK OPERATION STATUSES ──────────────────────────────────
+export const BANK_OPERATION_STATUSES = {
+  new:          { label: "Новая",            tone: "gray"   as BadgeTone },
+  confirmed:    { label: "Подтверждена",     tone: "green"  as BadgeTone },
+  recognized:   { label: "Распознана",       tone: "blue"   as BadgeTone },
+  needs_review: { label: "Требует разбора",  tone: "yellow" as BadgeTone },
+} as const;
+export type BankOperationStatus = keyof typeof BANK_OPERATION_STATUSES;
+
+/** Ветка операции. Внутренний перевод — отдельный признак, не значение kind. */
+export const BANK_OPERATION_KINDS = {
+  incoming: "Поступление",
+  outgoing: "Списание",
+} as const;
+export type BankOperationKind = keyof typeof BANK_OPERATION_KINDS;
+
+/** Тип контрагента в операции. Наш собственный счёт — тоже контрагент (внутренний перевод). */
+export const BANK_COUNTERPARTY_TYPES = {
+  bank: "Банк",
+  executor: "Исполнитель",
+  client: "Клиент",
+  own_account: "Наш счёт",
+  service: "Сервис",
+} as const;
+export type BankCounterpartyType = keyof typeof BANK_COUNTERPARTY_TYPES;
+
+/** Состояние привязки пополнения к начислениям. Связь ставит только человек. */
+export const BANK_CHARGE_MATCH_STATES = {
+  no_charge:  { label: "Без начисления",     tone: "slate"  as BadgeTone },
+  not_linked: { label: "Не привязано",       tone: "gray"   as BadgeTone },
+  confirmed:  { label: "Подтверждено",       tone: "green"  as BadgeTone },
+  suggested:  { label: "Предложено",         tone: "yellow" as BadgeTone },
+} as const;
+export type BankChargeMatchState = keyof typeof BANK_CHARGE_MATCH_STATES;
+
 // ─── EXECUTOR TYPES ───────────────────────────────────────────
 export const EXECUTOR_TYPES = {
   bank: "Банки",

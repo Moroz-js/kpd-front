@@ -32,6 +32,7 @@ export type ActivityEntityType =
   | "Client"
   | "Executor"
   | "BankAccount"
+  | "BankOperation"
   | "WorkType"
   | "VacationEntry"
   | "Task"

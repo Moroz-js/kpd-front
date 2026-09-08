@@ -5,6 +5,7 @@ import Image from "next/image";
 import { usePathname, useSearchParams } from "next/navigation";
 import { signOutAction } from "@/app/(dashboard)/actions";
 import {
+  ArrowLeftRight,
   FolderOpen,
   Users,
   Briefcase,
@@ -59,6 +60,7 @@ const ADMIN_NAV: NavGroup[] = [
       { label: "Клиенты", href: "/admin/clients", icon: Building2 },
       { label: "Виды работ", href: "/admin/work-types", icon: Wrench },
       { label: "Банковские счета", href: "/admin/bank-accounts", icon: Wallet },
+      { label: "Банковские транзакции", href: "/admin/bank-transactions", icon: ArrowLeftRight },
       { label: "Задачи", href: "/admin/tasks", icon: CheckSquare },
       { label: "История действий", href: "/admin/activity", icon: Hourglass },
     ],
