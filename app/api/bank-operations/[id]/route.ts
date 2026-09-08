@@ -6,6 +6,7 @@ import { updateBankOperation } from "@/lib/services/bankOperations";
 import { BANK_OPERATION_STATUSES, BANK_COUNTERPARTY_TYPES } from "@/lib/statuses";
 
 const patchSchema = z.object({
+  counterpartyId: z.string().nullable().optional(),
   counterpartyName: z.string().nullable().optional(),
   counterpartyType: z.enum(Object.keys(BANK_COUNTERPARTY_TYPES) as [string, ...string[]]).nullable().optional(),
   projectId: z.string().nullable().optional(),

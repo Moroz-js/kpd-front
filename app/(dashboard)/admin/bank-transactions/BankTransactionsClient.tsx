@@ -54,7 +54,17 @@ import { cn } from "@/lib/utils";
 import { useUrlSyncedFilters } from "@/lib/useUrlSyncedFilters";
 import { usePersistedInterfaceState, usePersistedScroll } from "@/components/PersistedInterfaceState";
 import { BankOperationCard } from "./BankOperationCard";
-import { collapseTransferPairs, type BankOperation, type ChargeCandidate, type OptionRow } from "./types";
+import { RulesTab } from "./RulesTab";
+import {
+  collapseTransferPairs,
+  counterpartyLabel,
+  type BankOperation,
+  type ChargeCandidate,
+  type CounterpartyOption,
+  type OptionRow,
+  type RecognitionRule,
+} from "./types";
+import type { LinkOption } from "../counterparties/types";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -63,6 +73,7 @@ const TABS = [
   { id: "incoming", label: "Поступления" },
   { id: "outgoing", label: "Списания" },
   { id: "internal", label: "Внутренние переводы" },
+  { id: "rules", label: "Правила разбора" },
 ] as const;
 
 type Tab = (typeof TABS)[number]["id"];
@@ -78,6 +89,8 @@ function selectTab(rows: BankOperation[], tab: Tab): BankOperation[] {
       return rows.filter((r) => r.kind === "outgoing" && !r.isInternalTransfer);
     case "internal":
       return collapseTransferPairs(rows.filter((r) => r.isInternalTransfer));
+    case "rules":
+      return [];
     default:
       return collapseTransferPairs(rows);
   }
@@ -87,16 +100,29 @@ export function BankTransactionsClient({
   bankAccounts,
   projects,
   workTypes,
+  executorOptions,
+  clientOptions,
+  bankAccountOptions,
 }: {
   bankAccounts: OptionRow[];
   projects: OptionRow[];
   workTypes: OptionRow[];
+  executorOptions: LinkOption[];
+  clientOptions: LinkOption[];
+  bankAccountOptions: LinkOption[];
 }) {
   const { data, isLoading, mutate } = useSWR<BankOperation[]>("/api/bank-operations", fetcher);
   const { data: candidates } = useSWR<ChargeCandidate[]>(
     "/api/bank-operations/charge-candidates",
     fetcher
   );
+  const { data: counterpartyData, mutate: mutateCounterparties } = useSWR<CounterpartyOption[]>(
+    "/api/counterparties?view=options",
+    fetcher
+  );
+  const counterparties = React.useMemo(() => counterpartyData ?? [], [counterpartyData]);
+  // Тот же ключ, что во вкладке правил: SWR отдаёт кэш, второго запроса нет.
+  const { data: rules } = useSWR<RecognitionRule[]>("/api/recognition-rules", fetcher);
 
   const [activeTab, setActiveTab] = React.useState<Tab>("all");
   const [fAccount, setFAccount] = React.useState<string[]>([]);
@@ -139,7 +165,7 @@ export function BankTransactionsClient({
 
   const counterpartyOptions = React.useMemo(() => {
     const names = new Set(
-      operations.map((o) => o.counterpartyName).filter((n): n is string => !!n)
+      operations.map((o) => counterpartyLabel(o)).filter((n): n is string => !!n)
     );
     return [...names]
       .sort((a, b) => a.localeCompare(b, "ru"))
@@ -155,7 +181,7 @@ export function BankTransactionsClient({
     return operations.filter((o) => {
       if (fAccount.length && !fAccount.includes(o.bankAccountId)) return false;
       if (fProject.length && !fProject.includes(o.projectId ?? "")) return false;
-      if (fCounterparty.length && !fCounterparty.includes(o.counterpartyName ?? "")) return false;
+      if (fCounterparty.length && !fCounterparty.includes(counterpartyLabel(o) ?? "")) return false;
       if (fStatus.length && !fStatus.includes(o.status)) return false;
       if (fMonth.length && !fMonth.includes(String(o.month))) return false;
       if (fYear.length && !fYear.includes(String(o.year))) return false;
@@ -181,9 +207,12 @@ export function BankTransactionsClient({
 
   const tabCounts = React.useMemo(() => {
     return Object.fromEntries(
-      TABS.map((tab) => [tab.id, selectTab(filtered, tab.id).length])
+      TABS.map((tab) => [
+        tab.id,
+        tab.id === "rules" ? (rules?.length ?? 0) : selectTab(filtered, tab.id).length,
+      ])
     ) as Record<Tab, number>;
-  }, [filtered]);
+  }, [filtered, rules]);
 
   const orderedIds = React.useMemo(() => rows.map((r) => r.id), [rows]);
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
@@ -276,6 +305,10 @@ export function BankTransactionsClient({
         </nav>
       </div>
 
+      {activeTab === "rules" ? (
+        <RulesTab counterparties={counterparties} projects={projects} workTypes={workTypes} />
+      ) : (
+        <>
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <FilterResetButton active={hasActiveFilters} onClick={resetFilters} />
@@ -483,7 +516,7 @@ export function BankTransactionsClient({
                         <span className="truncate">{r.bankAccountName}</span>
                         <ArrowRight className="h-3 w-3 shrink-0 text-neutral-400" />
                         <span className="truncate">
-                          {r.pairedAccountName ?? r.counterpartyName ?? "—"}
+                          {r.pairedAccountName ?? counterpartyLabel(r) ?? "—"}
                         </span>
                       </span>
                     ) : (
@@ -497,15 +530,19 @@ export function BankTransactionsClient({
                   )}
                   {activeTab !== "internal" && (
                     <TableCell className={cn(compactCell, "truncate")}>
-                      {r.counterpartyName ? (
+                      {counterpartyLabel(r) ? (
                         <span>
-                          {r.counterpartyName}
+                          {counterpartyLabel(r)}
                           {r.counterpartyType && (
                             <span className="ml-1 text-[10px] text-neutral-400">
                               {BANK_COUNTERPARTY_TYPES[
                                 r.counterpartyType as keyof typeof BANK_COUNTERPARTY_TYPES
                               ]}
                             </span>
+                          )}
+                          {/* Написание из выписки есть, а в справочнике не сопоставлено. */}
+                          {!r.counterpartyId && (
+                            <span className="ml-1 text-[10px] text-amber-700">не в справочнике</span>
                           )}
                         </span>
                       ) : (
@@ -596,6 +633,8 @@ export function BankTransactionsClient({
           )}
         </TableBody>
       </Table>
+        </>
+      )}
 
       {openOperation && (
         <BankOperationCard
@@ -603,6 +642,11 @@ export function BankTransactionsClient({
           projects={projects}
           workTypes={workTypes}
           chargeCandidates={candidates ?? []}
+          counterparties={counterparties}
+          executorOptions={executorOptions}
+          clientOptions={clientOptions}
+          bankAccountOptions={bankAccountOptions}
+          onCounterpartiesChanged={() => mutateCounterparties()}
           onClose={() => setOpenId(null)}
           onSaved={() => {
             setOpenId(null);

@@ -28,6 +28,9 @@ export type BankOperation = {
   pairedAccountName: string | null;
   counterpartyName: string | null;
   counterpartyType: string | null;
+  counterpartyId: string | null;
+  counterpartyLinkedName: string | null;
+  counterpartyRuleId: string | null;
   projectId: string | null;
   projectName: string | null;
   workTypeId: string | null;
@@ -77,6 +80,42 @@ export type ChargeCandidate = {
 };
 
 export type OptionRow = { id: string; name: string };
+
+/** Контрагент для выбора в операции: ищем по имени, написаниям из выписки и реквизитам. */
+export type CounterpartyOption = {
+  id: string;
+  name: string;
+  kind: string;
+  status: string;
+  legalType: string | null;
+  searchText: string;
+};
+
+export type RecognitionRule = {
+  id: string;
+  target: string;
+  matchField: string;
+  matchValue: string;
+  counterpartyId: string | null;
+  counterpartyName: string | null;
+  projectId: string | null;
+  projectName: string | null;
+  workTypeId: string | null;
+  workTypeName: string | null;
+  priority: number;
+  isActive: boolean;
+  hitCount: number;
+  lastUsedAt: string | null;
+  source: string;
+  comment: string | null;
+  createdByName: string | null;
+  createdAt: string;
+};
+
+/** Имя контрагента в строке: из справочника, иначе написание из выписки. */
+export function counterpartyLabel(op: BankOperation): string | null {
+  return op.counterpartyLinkedName ?? op.counterpartyName;
+}
 
 /**
  * Пара внутреннего перевода показывается одной строкой — списанием.

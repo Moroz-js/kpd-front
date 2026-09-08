@@ -98,6 +98,29 @@ export const FIELD_LABELS: Record<string, string> = {
   isDefault: "По умолчанию",
   segment: "Сегмент",
 
+  // Контрагенты и правила разбора
+  counterpartyId: "Контрагент",
+  counterpartyName: "Контрагент (из выписки)",
+  counterpartyType: "Тип контрагента",
+  counterpartyRuleId: "Правило распознавания",
+  legalType: "Юрлицо",
+  paymentMethod: "Способ оплаты",
+  taxId: "ИНН / ИИК / IBAN",
+  bic: "БИК",
+  bankName: "Банк",
+  accountNumber: "Номер счёта",
+  cardNumber: "Номер карты",
+  value: "Написание в выписке",
+  normalized: "Написание для сравнения",
+  source: "Источник",
+  target: "Что подставляет",
+  matchField: "Поле совпадения",
+  matchValue: "Значение совпадения",
+  normalizedValue: "Значение для сравнения",
+  priority: "Приоритет",
+  hitCount: "Срабатываний",
+  lastUsedAt: "Последнее срабатывание",
+
   // Прочее
   fullName: "ФИО",
   email: "Email",
@@ -154,6 +177,7 @@ export const DATE_FIELDS = new Set([
   "createdAt",
   "updatedAt",
   "accessRevokedAt",
+  "lastUsedAt",
 ]);
 
 /** Поля денежных сумм (форматируются как «1 234 567»). */
@@ -208,6 +232,10 @@ export const MODEL_LABELS: Record<string, string> = {
   Charge: "Начисления",
   BankOperation: "Банковские операции",
   BankOperationCharge: "Начисления банковских операций",
+  Counterparty: "Контрагенты",
+  CounterpartyRequisite: "Реквизиты контрагентов",
+  CounterpartyAlias: "Написания контрагентов в выписке",
+  RecognitionRule: "Правила разбора",
   SpendingPlanLine: "Строки плана расходов",
   VacationEntry: "Отпуска",
   Task: "Задачи",

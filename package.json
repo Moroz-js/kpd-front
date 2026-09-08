@@ -17,6 +17,7 @@
     "db:studio": "node scripts/set-prisma-provider.mjs && prisma generate && prisma studio",
     "backfill:project-numbers": "node scripts/backfill-project-numbers.mjs",
     "migrate:other-expenses": "node scripts/migrate-other-expenses.mjs",
+    "migrate:counterparties": "ts-node --project scripts/tsconfig.json scripts/migrate-counterparties.ts",
     "snapshot:check": "node scripts/snapshot-worker.mjs --check",
     "snapshot:run": "node scripts/snapshot-worker.mjs --manual"
   },

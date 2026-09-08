@@ -105,6 +105,58 @@ export const BANK_COUNTERPARTY_TYPES = {
 } as const;
 export type BankCounterpartyType = keyof typeof BANK_COUNTERPARTY_TYPES;
 
+/**
+ * Вкладки справочника контрагентов. Значения совпадают с типом контрагента в
+ * операции: вкладка выводится из ссылки карточки (клиент / счёт / исполнитель) и
+ * типа исполнителя, отдельным полем не хранится.
+ */
+export const COUNTERPARTY_KINDS = BANK_COUNTERPARTY_TYPES;
+export type CounterpartyKind = BankCounterpartyType;
+
+/** Юридический статус получателя: разные статусы одного человека — разные контрагенты. */
+export const COUNTERPARTY_LEGAL_TYPES = {
+  foreign_company: "Иностранное юрлицо",
+  entrepreneur: "ИП",
+  self_employed: "Самозанятый",
+  individual: "Физлицо",
+  company: "Юрлицо",
+} as const;
+export type CounterpartyLegalType = keyof typeof COUNTERPARTY_LEGAL_TYPES;
+
+/** Способ оплаты реквизита — «куда перевести». */
+export const COUNTERPARTY_PAYMENT_METHODS = {
+  bank_transfer: "Банковский перевод",
+  crypto: "Криптокошелёк",
+  card: "Перевод на карту",
+  service: "Через сервис",
+} as const;
+export type CounterpartyPaymentMethod = keyof typeof COUNTERPARTY_PAYMENT_METHODS;
+
+/** Откуда взялось написание контрагента в выписке. */
+export const COUNTERPARTY_ALIAS_SOURCES = {
+  manual: "Введено вручную",
+  robot: "Добавлено роботом",
+  sheets: "Из Google Sheets",
+} as const;
+export type CounterpartyAliasSource = keyof typeof COUNTERPARTY_ALIAS_SOURCES;
+
+/** Что подставляет правило разбора. */
+export const RULE_TARGETS = {
+  work_type: "Вид работ",
+  counterparty: "Контрагент",
+  project: "Проект",
+} as const;
+export type RuleTarget = keyof typeof RULE_TARGETS;
+
+/** По какому полю выписки срабатывает правило. */
+export const RULE_MATCH_FIELDS = {
+  inn: "ИНН плательщика",
+  purpose_contains: "Назначение содержит",
+  name: "Написание в выписке",
+  account: "Номер счёта",
+} as const;
+export type RuleMatchField = keyof typeof RULE_MATCH_FIELDS;
+
 /** Состояние привязки пополнения к начислениям. Связь ставит только человек. */
 export const BANK_CHARGE_MATCH_STATES = {
   no_charge:  { label: "Без начисления",     tone: "slate"  as BadgeTone },

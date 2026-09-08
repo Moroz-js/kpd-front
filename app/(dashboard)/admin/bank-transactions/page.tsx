@@ -8,9 +8,11 @@ export default async function Page() {
   const user = await getSessionUser();
   if (!user || !isAdmin(user)) redirect("/login");
 
-  const [bankAccounts, projects, workTypes] = await Promise.all([
+  // Списки исполнителей, клиентов и счетов нужны, чтобы контрагента можно было
+  // создать прямо из карточки операции.
+  const [bankAccounts, projects, workTypes, executors, clients] = await Promise.all([
     prisma.bankAccount.findMany({
-      select: { id: true, name: true },
+      select: { id: true, name: true, status: true },
       orderBy: { name: "asc" },
     }),
     prisma.project.findMany({
@@ -23,6 +25,14 @@ export default async function Page() {
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
+    prisma.executor.findMany({
+      select: { id: true, name: true, status: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.client.findMany({
+      select: { id: true, name: true, status: true },
+      orderBy: { name: "asc" },
+    }),
   ]);
 
   return (
@@ -30,6 +40,9 @@ export default async function Page() {
       bankAccounts={bankAccounts}
       projects={projects}
       workTypes={workTypes}
+      executorOptions={executors}
+      clientOptions={clients}
+      bankAccountOptions={bankAccounts}
     />
   );
 }

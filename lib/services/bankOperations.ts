@@ -9,13 +9,17 @@
  * - Внутренний перевод — пара операций (списание + поступление). Обе строки
  *   ссылаются друг на друга через pairedOperationId, в списке пара сворачивается
  *   в одну строку (см. collapseTransferPairs на клиенте).
- * - «Запоминание» после ручной правки контрагента: правил ещё нет, поэтому
- *   выбранный признак пишется в трассировку — она и объясняет, откуда значение.
+ * - Контрагент — ссылка на справочник; написание из выписки остаётся в
+ *   counterpartyName и служит фолбэком для операций, которые ещё не сопоставлены.
+ * - «Запоминание» после ручной правки контрагента создаёт правило разбора
+ *   (RecognitionRule) и запоминает его в операции, трассировка ссылается на него.
  */
 
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { logActivity, diff } from "@/lib/audit/log";
+import { resolveCounterpartyKind } from "@/lib/services/counterparties";
+import { upsertRecognitionRule } from "@/lib/services/recognitionRules";
 
 export type BankOperationChargeLink = {
   chargeId: string;
@@ -45,8 +49,13 @@ export type BankOperationRow = {
   pairedOperationId: string | null;
   /** Счёт второй операции пары — для строки «со счёта → на счёт». */
   pairedAccountName: string | null;
+  /** Написание из выписки — показываем, пока контрагент не сопоставлен. */
   counterpartyName: string | null;
   counterpartyType: string | null;
+  counterpartyId: string | null;
+  /** Имя из справочника контрагентов. */
+  counterpartyLinkedName: string | null;
+  counterpartyRuleId: string | null;
   projectId: string | null;
   projectName: string | null;
   workTypeId: string | null;
@@ -83,6 +92,14 @@ export type BankOperationRow = {
 
 const OPERATION_INCLUDE = {
   bankAccount: { select: { name: true, currency: true } },
+  counterparty: {
+    select: {
+      name: true,
+      clientId: true,
+      bankAccountId: true,
+      executor: { select: { type: true } },
+    },
+  },
   project: { select: { name: true } },
   workType: { select: { name: true } },
   pairedOperation: { select: { bankAccount: { select: { name: true } } } },
@@ -123,7 +140,13 @@ function toRow(op: OperationWithRelations): BankOperationRow {
     pairedAccountName:
       op.pairedOperation?.bankAccount.name ?? op.pairedWith?.bankAccount.name ?? null,
     counterpartyName: op.counterpartyName,
-    counterpartyType: op.counterpartyType,
+    // Тип берём из карточки контрагента: руками его больше не вводят.
+    counterpartyType: op.counterparty
+      ? resolveCounterpartyKind(op.counterparty)
+      : op.counterpartyType,
+    counterpartyId: op.counterpartyId,
+    counterpartyLinkedName: op.counterparty?.name ?? null,
+    counterpartyRuleId: op.counterpartyRuleId,
     projectId: op.projectId,
     projectName: op.project?.name ?? null,
     workTypeId: op.workTypeId,
@@ -224,12 +247,13 @@ export async function listChargeCandidates(): Promise<ChargeCandidate[]> {
 export type RememberBy = "name" | "account" | "inn";
 
 const REMEMBER_LABELS: Record<RememberBy, string> = {
-  name: "имени в выписке",
-  account: "номеру счёта",
+  name: "написание в выписке",
+  account: "номер счёта",
   inn: "ИНН",
 };
 
 export type UpdateBankOperationInput = {
+  counterpartyId?: string | null;
   counterpartyName?: string | null;
   counterpartyType?: string | null;
   projectId?: string | null;
@@ -258,19 +282,52 @@ export async function updateBankOperation(
 
   const data: Record<string, unknown> = { ...fields };
 
-  // Контрагента поправили руками — трассировка должна это показывать.
-  if (fields.counterpartyName !== undefined && fields.counterpartyName !== before.counterpartyName) {
-    const rememberValue =
-      rememberBy === "name"
-        ? before.rawCounterparty
-        : rememberBy === "account"
-          ? before.rawAccount
-          : rememberBy === "inn"
-            ? before.rawInn
-            : null;
-    data.traceCounterparty = rememberBy
-      ? `привязан вручную, дальше узнаём по ${REMEMBER_LABELS[rememberBy]}${rememberValue ? ` ${rememberValue}` : ""}`
-      : "привязан вручную, разово";
+  // Контрагента привязали руками. Тип берём из карточки, а выбранный признак
+  // превращаем в правило разбора — иначе «запомнить выбор» ничего не запоминает.
+  if (fields.counterpartyId !== undefined && fields.counterpartyId !== before.counterpartyId) {
+    const linked = fields.counterpartyId
+      ? await prisma.counterparty.findUnique({
+          where: { id: fields.counterpartyId },
+          select: {
+            name: true,
+            clientId: true,
+            bankAccountId: true,
+            executor: { select: { type: true } },
+          },
+        })
+      : null;
+
+    data.counterpartyType = linked ? resolveCounterpartyKind(linked) : null;
+
+    const rememberValue = rememberBy
+      ? {
+          name: before.rawCounterparty,
+          account: before.rawAccount,
+          inn: before.rawInn,
+        }[rememberBy]
+      : null;
+
+    if (linked && rememberBy && rememberValue) {
+      const rule = await upsertRecognitionRule(
+        {
+          target: "counterparty",
+          matchField: rememberBy,
+          matchValue: rememberValue,
+          counterpartyId: fields.counterpartyId,
+        },
+        userId
+      );
+      data.counterpartyRuleId = rule.id;
+      data.traceCounterparty = `по правилу: ${REMEMBER_LABELS[rememberBy]} ${rememberValue}`;
+    } else {
+      data.counterpartyRuleId = null;
+      data.traceCounterparty = linked ? "привязан вручную, разово" : null;
+    }
+  } else if (
+    fields.counterpartyName !== undefined &&
+    fields.counterpartyName !== before.counterpartyName
+  ) {
+    data.traceCounterparty = "введён вручную, разово";
   }
 
   if (fields.projectId !== undefined && fields.projectId !== before.projectId) {

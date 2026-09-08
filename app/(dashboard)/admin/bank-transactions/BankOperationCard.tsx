@@ -4,13 +4,15 @@
  * Карточка операции: слева выписка как пришла из банка, справа разбор с правкой.
  *
  * Под каждым определённым значением — трассировка: откуда оно взялось.
- * После правки контрагента показывается блок «запоминать по», и признаки в нём
- * берутся только из тех полей, которые реально есть в этой операции.
+ * Контрагент выбирается из справочника, а не вводится текстом: тип контрагента
+ * берётся из его карточки. После смены контрагента показывается блок
+ * «запоминать по» — признаки в нём берутся только из полей этой операции, и
+ * выбранный признак превращается в правило разбора.
  */
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Link2, Sparkles } from "lucide-react";
+import { Link2, Sparkles, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -35,8 +37,10 @@ import {
 } from "@/lib/statuses";
 import { formatDate, formatMoney, monthFullLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { BankOperation, ChargeCandidate, OptionRow } from "./types";
+import type { BankOperation, ChargeCandidate, CounterpartyOption, OptionRow } from "./types";
 import { ChargeLinkDialog } from "./ChargeLinkDialog";
+import { CounterpartyDialog } from "../counterparties/CounterpartyDialog";
+import type { LinkOption } from "../counterparties/types";
 
 const NONE = "__none__";
 
@@ -47,6 +51,11 @@ export function BankOperationCard({
   projects,
   workTypes,
   chargeCandidates,
+  counterparties,
+  executorOptions,
+  clientOptions,
+  bankAccountOptions,
+  onCounterpartiesChanged,
   onClose,
   onSaved,
 }: {
@@ -54,13 +63,18 @@ export function BankOperationCard({
   projects: OptionRow[];
   workTypes: OptionRow[];
   chargeCandidates: ChargeCandidate[];
+  counterparties: CounterpartyOption[];
+  executorOptions: LinkOption[];
+  clientOptions: LinkOption[];
+  bankAccountOptions: LinkOption[];
+  onCounterpartiesChanged: () => void;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [kind, setKind] = React.useState(operation.kind);
   const [isInternal, setIsInternal] = React.useState(operation.isInternalTransfer);
-  const [counterpartyName, setCounterpartyName] = React.useState(operation.counterpartyName ?? "");
-  const [counterpartyType, setCounterpartyType] = React.useState(operation.counterpartyType ?? NONE);
+  const [counterpartyId, setCounterpartyId] = React.useState(operation.counterpartyId ?? NONE);
+  const [counterpartyDialogOpen, setCounterpartyDialogOpen] = React.useState(false);
   const [projectId, setProjectId] = React.useState(operation.projectId ?? NONE);
   const [workTypeId, setWorkTypeId] = React.useState(operation.workTypeId ?? NONE);
   const [workDescription, setWorkDescription] = React.useState(operation.workDescription ?? "");
@@ -73,7 +87,8 @@ export function BankOperationCard({
   const [chargeDialogOpen, setChargeDialogOpen] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
 
-  const counterpartyChanged = counterpartyName.trim() !== (operation.counterpartyName ?? "");
+  const counterpartyChanged = counterpartyId !== (operation.counterpartyId ?? NONE);
+  const selectedCounterparty = counterparties.find((c) => c.id === counterpartyId) ?? null;
 
   // Запоминать можно только по тем признакам, которые есть в самой операции.
   const rememberOptions: { value: RememberBy; label: string; hint: string }[] = [
@@ -95,8 +110,7 @@ export function BankOperationCard({
       body: JSON.stringify({
         kind,
         isInternalTransfer: isInternal,
-        counterpartyName: counterpartyName.trim() || null,
-        counterpartyType: counterpartyType === NONE ? null : counterpartyType,
+        counterpartyId: counterpartyId === NONE ? null : counterpartyId,
         projectId: projectId === NONE ? null : projectId,
         workTypeId: workTypeId === NONE ? null : workTypeId,
         workDescription: workDescription.trim() || null,
@@ -240,13 +254,47 @@ export function BankOperationCard({
             </label>
 
             <div className="space-y-1.5">
-              <Label htmlFor="counterparty">Контрагент</Label>
-              <Input
-                id="counterparty"
-                value={counterpartyName}
-                onChange={(e) => setCounterpartyName(e.target.value)}
+              <div className="flex items-center justify-between">
+                <Label>Контрагент</Label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => setCounterpartyDialogOpen(true)}
+                >
+                  <UserPlus className="mr-1 h-3.5 w-3.5" /> Создать из операции
+                </Button>
+              </div>
+              <SearchableSelect
+                value={counterpartyId}
+                onValueChange={setCounterpartyId}
+                options={[
+                  { value: NONE, label: "Не определён" },
+                  ...counterparties.map((c) => ({
+                    value: c.id,
+                    label: c.name,
+                    searchText: c.searchText,
+                  })),
+                ]}
                 placeholder="Не определён"
+                searchPlaceholder="Имя, ИНН, номер счёта..."
               />
+              {selectedCounterparty ? (
+                <p className="text-xs text-neutral-500">
+                  Тип из карточки:{" "}
+                  {BANK_COUNTERPARTY_TYPES[
+                    selectedCounterparty.kind as keyof typeof BANK_COUNTERPARTY_TYPES
+                  ] ?? selectedCounterparty.kind}
+                  {selectedCounterparty.status === "archived" && " · в архиве"}
+                </p>
+              ) : (
+                operation.counterpartyName && (
+                  <p className="text-xs text-neutral-500">
+                    В выписке: {operation.counterpartyName} — в справочнике не сопоставлен
+                  </p>
+                )
+              )}
               <Trace value={operation.trace.counterparty} />
             </div>
 
@@ -259,6 +307,10 @@ export function BankOperationCard({
                 {rememberOptions.length === 0 ? (
                   <p className="text-xs text-neutral-600">
                     В операции нет признаков для запоминания — привязка останется разовой.
+                  </p>
+                ) : counterpartyId === NONE ? (
+                  <p className="text-xs text-neutral-600">
+                    Правило создаётся только вместе с контрагентом — сначала выберите его.
                   </p>
                 ) : (
                   <div className="space-y-1.5">
@@ -293,21 +345,6 @@ export function BankOperationCard({
                 )}
               </div>
             )}
-
-            <div className="space-y-1.5">
-              <Label>Тип контрагента</Label>
-              <SearchableSelect
-                value={counterpartyType}
-                onValueChange={setCounterpartyType}
-                options={[
-                  { value: NONE, label: "Не определён" },
-                  ...Object.entries(BANK_COUNTERPARTY_TYPES).map(([value, label]) => ({
-                    value,
-                    label,
-                  })),
-                ]}
-              />
-            </div>
 
             <div className="space-y-1.5">
               <Label>Проект</Label>
@@ -469,6 +506,27 @@ export function BankOperationCard({
         )}
 
         <EntityActivityHistory entityType="BankOperation" entityId={operation.id} />
+
+        {counterpartyDialogOpen && (
+          <CounterpartyDialog
+            row={null}
+            prefill={{
+              name: operation.raw.counterparty ?? operation.counterpartyName ?? "",
+              alias: operation.raw.counterparty ?? undefined,
+              taxId: operation.raw.inn ?? undefined,
+              accountNumber: operation.raw.account ?? undefined,
+            }}
+            executors={executorOptions}
+            clients={clientOptions}
+            bankAccounts={bankAccountOptions}
+            onClose={() => setCounterpartyDialogOpen(false)}
+            onSaved={(newId) => {
+              setCounterpartyDialogOpen(false);
+              setCounterpartyId(newId);
+              onCounterpartiesChanged();
+            }}
+          />
+        )}
 
         {chargeDialogOpen && (
           <ChargeLinkDialog

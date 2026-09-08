@@ -13,10 +13,24 @@ import { Input } from "@/components/ui/input";
 import {
   ENTITY_STATUSES,
   EXECUTOR_TYPES,
-  EXECUTOR_TYPE_FILTER_GROUPS,
   RECIPIENT_TYPES,
 } from "@/lib/statuses";
 import { normalizeExecutorType } from "@/lib/executor-type";
+
+/** Вкладки вешаются прямо на тип исполнителя: «Остальные» = постоянные и внешние. */
+const EXECUTOR_TABS = [
+  { id: "service", label: "Сервисы" },
+  { id: "bank", label: "Банки" },
+  { id: "other", label: "Остальные" },
+  { id: "all", label: "Все" },
+] as const;
+type ExecutorTab = (typeof EXECUTOR_TABS)[number]["id"];
+
+const EXECUTOR_TAB_TYPES: Record<Exclude<ExecutorTab, "all">, string[]> = {
+  service: ["service"],
+  bank: ["bank"],
+  other: ["permanent", "external"],
+};
 
 function displayExecutorName(name: string, type: string) {
   return normalizeExecutorType(type) === "service" ? name.toUpperCase() : name;
@@ -102,7 +116,7 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
   const { data: workTypes } = useSWR<WorkTypeOption[]>("/api/work-types", fetcher);
   const { data: responsibles } = useSWR<ResponsibleOption[]>("/api/responsibles", fetcher);
 
-  const [typeFilter, setTypeFilter] = React.useState<string[]>([]);
+  const [activeTab, setActiveTab] = React.useState<ExecutorTab>("all");
   const [workTypeFilter, setWorkTypeFilter] = React.useState<string[]>([]);
   const [projectFilter, setProjectFilter] = React.useState<string[]>([]);
   const [responsibleFilter, setResponsibleFilter] = React.useState<string[]>([]);
@@ -116,11 +130,10 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
     dir: "asc",
   });
   const hasActiveFilters =
-    typeFilter.length > 0 || workTypeFilter.length > 0 || projectFilter.length > 0 ||
+    workTypeFilter.length > 0 || projectFilter.length > 0 ||
     responsibleFilter.length > 0 || bankFilter.length > 0 || recipientFilter.length > 0 ||
     companyStatusFilter.length > 0 || statusFilter.length > 0 || nameSearch.trim().length > 0;
   const resetFilters = () => {
-    setTypeFilter([]);
     setWorkTypeFilter([]);
     setProjectFilter([]);
     setResponsibleFilter([]);
@@ -131,7 +144,7 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
     setNameSearch("");
   };
   const urlFilters = useUrlSyncedFilters([
-    { stateKey: "typeFilter", param: "type", kind: "array", value: typeFilter, defaultValue: [], setValue: setTypeFilter },
+    { stateKey: "activeTab", param: "tab", kind: "string", value: activeTab, defaultValue: "all", setValue: (v) => setActiveTab(v as ExecutorTab) },
     { stateKey: "workTypeFilter", param: "workType", kind: "array", value: workTypeFilter, defaultValue: [], setValue: setWorkTypeFilter },
     { stateKey: "projectFilter", param: "project", kind: "array", value: projectFilter, defaultValue: [], setValue: setProjectFilter },
     { stateKey: "responsibleFilter", param: "responsible", kind: "array", value: responsibleFilter, defaultValue: [], setValue: setResponsibleFilter },
@@ -154,7 +167,7 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
   usePersistedInterfaceState(
     `executors:${mode}`,
     {
-      typeFilter,
+      activeTab,
       workTypeFilter,
       projectFilter,
       responsibleFilter,
@@ -170,10 +183,10 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
       if (stored.sort) setSort(stored.sort);
     }
   );
-  usePersistedScroll(scrollRef, `executors-table:${mode}`, {
+  usePersistedScroll(scrollRef, `executors-table:${mode}:${activeTab}`, {
     enabled: !isLoading && !!data,
     signature: {
-      typeFilter,
+      activeTab,
       workTypeFilter,
       projectFilter,
       responsibleFilter,
@@ -202,14 +215,9 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
     const q = nameSearch.trim().toLowerCase();
     if (q) list = list.filter((r) => r.name.toLowerCase().includes(q));
 
-    if (typeFilter.length) {
-      const flatTypes = new Set<string>();
-      for (const group of typeFilter) {
-        const dbTypes =
-          EXECUTOR_TYPE_FILTER_GROUPS[group as keyof typeof EXECUTOR_TYPE_FILTER_GROUPS] ?? [];
-        for (const t of dbTypes) flatTypes.add(t);
-      }
-      list = list.filter((r) => flatTypes.has(normalizeExecutorType(r.type)));
+    if (activeTab !== "all") {
+      const types = EXECUTOR_TAB_TYPES[activeTab];
+      list = list.filter((r) => types.includes(normalizeExecutorType(r.type)));
     }
 
     if (workTypeFilter.length) {
@@ -267,7 +275,7 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
   }, [
     data,
     nameSearch,
-    typeFilter,
+    activeTab,
     workTypeFilter,
     projectFilter,
     responsibleFilter,
@@ -284,18 +292,6 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
   }, [data, nameSearch]);
 
   const compatibleValues = useCompatibleFilterOptions(optionRows, [
-    {
-      key: "type",
-      value: typeFilter,
-      setValue: setTypeFilter,
-      matches: (row, value) => !value.length || value.some((group) =>
-        (EXECUTOR_TYPE_FILTER_GROUPS[group as keyof typeof EXECUTOR_TYPE_FILTER_GROUPS] ?? [])
-          .includes(normalizeExecutorType(row.type))
-      ),
-      values: (row) => Object.entries(EXECUTOR_TYPE_FILTER_GROUPS)
-        .filter(([, types]) => types.includes(normalizeExecutorType(row.type)))
-        .map(([group]) => group),
-    },
     {
       key: "workType",
       value: workTypeFilter,
@@ -430,14 +426,18 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
     []
   );
 
-  const typeFilterOpts = React.useMemo(
-    () =>
-      Object.keys(EXECUTOR_TYPE_FILTER_GROUPS).map((label) => ({
-        value: label,
-        label,
-      })),
-    []
-  );
+  const tabCounts = React.useMemo(() => {
+    const list = data ?? [];
+    return Object.fromEntries(
+      EXECUTOR_TABS.map((tab) => [
+        tab.id,
+        tab.id === "all"
+          ? list.length
+          : list.filter((r) => EXECUTOR_TAB_TYPES[tab.id].includes(normalizeExecutorType(r.type)))
+              .length,
+      ])
+    ) as Record<ExecutorTab, number>;
+  }, [data]);
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -452,6 +452,26 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
         }
       />
 
+      <div className="mb-4 border-b border-neutral-200">
+        <nav className="flex gap-0 overflow-x-auto">
+          {EXECUTOR_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+                activeTab === tab.id
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-neutral-500 hover:border-neutral-300 hover:text-neutral-800"
+              }`}
+            >
+              {tab.label}
+              <span className="ml-1.5 text-xs text-neutral-400">{tabCounts[tab.id]}</span>
+            </button>
+          ))}
+        </nav>
+      </div>
+
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <FilterResetButton active={hasActiveFilters} onClick={resetFilters} />
         <div className="relative w-56">
@@ -463,7 +483,6 @@ export function ExecutorsClient({ mode = "admin", canAdd = true }: ExecutorsClie
             className="h-8 pl-8 text-xs"
           />
         </div>
-        <MultiSelectFilter label="Тип" options={typeFilterOpts.filter((option) => compatibleValues.type?.has(option.value))} value={typeFilter} onChange={setTypeFilter} />
         <MultiSelectFilter
           label="Статус в компании"
           options={companyStatusOpts.filter((option) => compatibleValues.companyStatus?.has(option.value))}
