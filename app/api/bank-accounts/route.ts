@@ -32,6 +32,7 @@ export async function GET(req: Request) {
 const createSchema = z.object({
   name: z.string().min(1, "Введите название счёта"),
   details: z.string().optional(),
+  comment: z.string().nullable().optional(),
   currency: z.string().regex(/^[A-Za-z]{3,6}$/, "Код валюты: 3–6 латинских букв").optional(),
   isDefault: z.boolean().optional(),
 });

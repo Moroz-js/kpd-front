@@ -172,6 +172,7 @@ model BankAccount {
   id        String   @id @default(cuid())
   name      String   @unique
   details   String?
+  comment   String? // заметка бухгалтера: подключение к роботу, почта выписок, за какие годы есть операции
   currency  String   @default("RUB") // код валюты: RUB | USD | EUR | GEL | ...
   isDefault Boolean  @default(false) // единственный active с true (см. TDNB-23)
   status    String   @default("active") // active | archived

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import * as React from "react";
 import useSWR from "swr";
@@ -34,6 +34,7 @@ type Row = {
   id: string;
   name: string;
   details: string | null;
+  comment: string | null;
   currency: string;
   status: string;
   isDefault: boolean;
@@ -82,6 +83,8 @@ export function BankAccountsClient() {
   const [editing, setEditing] = React.useState<Row | "new" | null>(null);
   const [archiveTarget, setArchiveTarget] = React.useState<Row | null>(null);
   const [unarchiveTarget, setUnarchiveTarget] = React.useState<Row | null>(null);
+  const [commentEditId, setCommentEditId] = React.useState<string | null>(null);
+  const [commentDraft, setCommentDraft] = React.useState("");
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
   usePersistedInterfaceState(
@@ -143,6 +146,27 @@ export function BankAccountsClient() {
       return;
     }
     toast.success(`Счёт «${row.name}» снова активен`);
+    mutate();
+  }
+
+  function startCommentEdit(row: Row) {
+    setCommentEditId(row.id);
+    setCommentDraft(row.comment ?? "");
+  }
+
+  async function commitCommentEdit(row: Row) {
+    const next = commentDraft.trim();
+    setCommentEditId(null);
+    if (next === (row.comment ?? "")) return;
+    const res = await fetch(`/api/bank-accounts/${row.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ comment: next || null }),
+    });
+    if (!res.ok) {
+      toast.error("Не удалось сохранить комментарий");
+      return;
+    }
     mutate();
   }
 
@@ -231,19 +255,20 @@ export function BankAccountsClient() {
               <SortableHead field="status" sortBy={sort.field} sortDir={sort.dir} onSort={handleSort}>
                 Статус
               </SortableHead>
+              <TableHead className="w-72">Комментарий</TableHead>
               <TableHead className={stickyActionsHead} />
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-neutral-500 py-8">
+                <TableCell colSpan={10} className="text-center text-neutral-500 py-8">
                   Загрузка...
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-neutral-500 py-8">
+                <TableCell colSpan={10} className="text-center text-neutral-500 py-8">
                   Нет счетов
                 </TableCell>
               </TableRow>
@@ -261,6 +286,31 @@ export function BankAccountsClient() {
                   <TableCell className="text-right tabular-nums"><MoneyWithCurrency amount={r.chargeSum} currency={r.currency} /></TableCell>
                   <TableCell>
                     <StatusBadge dict={ENTITY_STATUSES} value={r.status} />
+                  </TableCell>
+                  <TableCell className="max-w-72">
+                    {commentEditId === r.id ? (
+                      <input
+                        autoFocus
+                        value={commentDraft}
+                        onChange={(e) => setCommentDraft(e.target.value)}
+                        onBlur={() => commitCommentEdit(r)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") commitCommentEdit(r);
+                          if (e.key === "Escape") setCommentEditId(null);
+                        }}
+                        placeholder="Подключение к роботу, почта, за какие годы есть операции"
+                        className="h-6 w-full rounded border border-blue-300 bg-blue-50 px-1 text-xs focus:outline-none"
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => startCommentEdit(r)}
+                        title={r.comment ?? "Добавить комментарий"}
+                        className="block w-full truncate text-left text-xs text-neutral-600 hover:text-blue-700 hover:underline"
+                      >
+                        {r.comment ?? "—"}
+                      </button>
+                    )}
                   </TableCell>
                   <TableCell className={cn(stickyActionsCell)}>
                     <div className={stickyActionsInner}>
@@ -353,6 +403,7 @@ function BankAccountEditDialog({
 }) {
   const [name, setName] = React.useState(row?.name ?? "");
   const [details, setDetails] = React.useState(row?.details ?? "");
+  const [comment, setComment] = React.useState(row?.comment ?? "");
   const [currency, setCurrency] = React.useState(row?.currency ?? "RUB");
   const [currencyOptions, setCurrencyOptions] = React.useState<string[]>([...DEFAULT_CURRENCIES]);
   const [isDefault, setIsDefault] = React.useState(row?.isDefault ?? false);
@@ -361,6 +412,7 @@ function BankAccountEditDialog({
   React.useEffect(() => {
     setName(row?.name ?? "");
     setDetails(row?.details ?? "");
+    setComment(row?.comment ?? "");
     setCurrency(row?.currency ?? "RUB");
     setIsDefault(row?.isDefault ?? false);
   }, [row]);
@@ -401,6 +453,7 @@ function BankAccountEditDialog({
       body: JSON.stringify({
         name: name.trim(),
         details: details.trim() || null,
+        comment: comment.trim() || null,
         currency,
         isDefault,
       }),
@@ -440,6 +493,15 @@ function BankAccountEditDialog({
               value={details}
               onChange={(e) => setDetails(e.target.value)}
               placeholder="р/с 40802810…, БИК 04…"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="comment">Комментарий</Label>
+            <Input
+              id="comment"
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              placeholder="Подключение к роботу, почта выписок, за какие годы есть операции"
             />
           </div>
           <div className="space-y-2">
