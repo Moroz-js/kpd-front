@@ -185,8 +185,6 @@ export function BankTransactionsClient({
     ) as Record<Tab, number>;
   }, [filtered]);
 
-  const needsReviewCount = operations.filter((o) => o.status === "needs_review").length;
-
   const orderedIds = React.useMemo(() => rows.map((r) => r.id), [rows]);
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const anchorRef = React.useRef<number | null>(null);
@@ -253,16 +251,7 @@ export function BankTransactionsClient({
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
-      <PageHeader
-        title="Банковские транзакции"
-        actions={
-          needsReviewCount > 0 ? (
-            <span className="text-sm text-amber-700">
-              Требуют разбора: {needsReviewCount}
-            </span>
-          ) : undefined
-        }
-      />
+      <PageHeader title="Банковские транзакции" />
 
       <div className="mb-4 border-b border-neutral-200">
         <nav className="flex gap-0">
