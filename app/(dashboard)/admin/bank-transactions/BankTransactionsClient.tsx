@@ -437,7 +437,8 @@ export function BankTransactionsClient({
               Сумма
             </SortableHead>
             {activeTab === "all" && <TableHead className={cn(compactHead, "w-24")}>Ветка</TableHead>}
-            {activeTab === "all" && <TableHead className={cn(compactHead, "w-28")}>Период</TableHead>}
+            {activeTab === "all" && <TableHead className={cn(compactHead, "w-24")}>Месяц</TableHead>}
+            {activeTab === "all" && <TableHead className={cn(compactHead, "w-16")}>Год</TableHead>}
             {activeTab === "incoming" && (
               <TableHead className={cn(compactHead, "w-24")}>Плат. поручение</TableHead>
             )}
@@ -454,9 +455,7 @@ export function BankTransactionsClient({
             {activeTab !== "incoming" && (
               <TableHead className={cn(compactHead, "w-32")}>Вид работ</TableHead>
             )}
-            {activeTab !== "all" && (
-              <TableHead className={cn(compactHead, "w-40")}>Описание работы</TableHead>
-            )}
+            <TableHead className={cn(compactHead, "w-40")}>Описание работы</TableHead>
             <SortableHead
               field="status"
               sortBy={sort.field}
@@ -566,9 +565,10 @@ export function BankTransactionsClient({
                     </TableCell>
                   )}
                   {activeTab === "all" && (
-                    <TableCell className={compactCell}>
-                      {monthFullLabel(r.month)} {r.year}
-                    </TableCell>
+                    <TableCell className={compactCell}>{monthFullLabel(r.month)}</TableCell>
+                  )}
+                  {activeTab === "all" && (
+                    <TableCell className={cn(compactCell, "tabular-nums")}>{r.year}</TableCell>
                   )}
                   {activeTab === "incoming" && (
                     <TableCell className={compactCell}>{r.paymentOrder ?? "—"}</TableCell>
@@ -599,11 +599,9 @@ export function BankTransactionsClient({
                       {r.workTypeName ?? "—"}
                     </TableCell>
                   )}
-                  {activeTab !== "all" && (
-                    <TableCell className={cn(compactCell, "truncate")}>
-                      {r.workDescription ?? "—"}
-                    </TableCell>
-                  )}
+                  <TableCell className={cn(compactCell, "truncate")}>
+                    {r.workDescription ?? "—"}
+                  </TableCell>
                   <TableCell className={compactCell}>
                     <StatusBadge dict={BANK_OPERATION_STATUSES} value={r.status} />
                   </TableCell>

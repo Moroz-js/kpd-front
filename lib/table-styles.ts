@@ -24,10 +24,10 @@ export const compactCell = "text-xs leading-snug py-2 px-2.5";
 export const compactCellClip = "overflow-hidden max-w-0";
 
 export const stickyActionsHead =
-  "sticky right-0 z-20 bg-neutral-100 border-l border-neutral-200 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.08)] min-w-[96px]";
+  "sticky right-0 z-20 bg-neutral-100 border-l border-neutral-200 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.08)] w-24";
 
 export const stickyActionsCell =
-  "sticky right-0 z-10 border-l border-neutral-200 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.08)] bg-white";
+  "sticky right-0 z-10 border-l border-neutral-200 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.08)] bg-white w-24";
 
 /** Обёртка для кнопок внутри ячейки действий — прижимает их вправо. */
 export const stickyActionsInner =

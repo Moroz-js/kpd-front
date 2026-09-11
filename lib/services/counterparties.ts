@@ -147,6 +147,7 @@ export type CounterpartyOption = {
 
 export async function listCounterpartyOptions(): Promise<CounterpartyOption[]> {
   const rows = await prisma.counterparty.findMany({
+    where: { status: "active" },
     orderBy: { name: "asc" },
     select: {
       id: true,

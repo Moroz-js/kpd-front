@@ -276,13 +276,13 @@ export function CounterpartiesClient({
             <TableHead className={cn(compactHead, "w-28")}>Банк</TableHead>
             <TableHead className={cn(compactHead, "w-32")}>Номер счёта</TableHead>
             <TableHead className={cn(compactHead, "w-28")}>Номер карты</TableHead>
-            <TableHead className={cn(compactHead, "w-40")}>Имена в выписке</TableHead>
+            <TableHead className={cn(compactHead, "w-32")}>Имена в выписке</TableHead>
             <SortableHead
               field="operationCount"
               sortBy={sort.field}
               sortDir={sort.dir}
               onSort={handleSort}
-              className={cn(compactHead, "w-20 text-right")}
+              className={cn(compactHead, "w-24 text-right")}
             >
               Операций
             </SortableHead>
@@ -316,6 +316,15 @@ export function CounterpartiesClient({
                       >
                         {r.name}
                       </Link>
+                    ) : r.clientId || r.bankAccountId ? (
+                      <button
+                        type="button"
+                        onClick={() => setEditing(r)}
+                        className="block w-full truncate text-left text-blue-700 hover:underline"
+                        title="Открыть карточку контрагента"
+                      >
+                        {r.name}
+                      </button>
                     ) : (
                       <span className="block truncate" title={r.name}>
                         {r.name}
