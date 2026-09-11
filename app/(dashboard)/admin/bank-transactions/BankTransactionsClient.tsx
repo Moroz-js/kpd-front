@@ -14,7 +14,7 @@
 import * as React from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { ArrowRight, Pencil } from "lucide-react";
+import { Pencil } from "lucide-react";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { FilterResetButton } from "@/components/ui-custom/FilterResetButton";
@@ -94,6 +94,17 @@ function selectTab(rows: BankOperation[], tab: Tab): BankOperation[] {
     default:
       return collapseTransferPairs(rows);
   }
+}
+
+/** Счёт получателя и источник зависят от направления операции. */
+function recipientAccount(row: BankOperation): string {
+  if (row.kind === "incoming") return row.bankAccountName;
+  return row.pairedAccountName ?? row.raw.account ?? counterpartyLabel(row) ?? "—";
+}
+
+function transferSource(row: BankOperation): string {
+  if (row.kind === "outgoing") return row.bankAccountName;
+  return row.transferSource ?? row.raw.account ?? counterpartyLabel(row) ?? "—";
 }
 
 export function BankTransactionsClient({
@@ -248,6 +259,8 @@ export function BankTransactionsClient({
   const hasActiveFilters =
     fAccount.length + fProject.length + fCounterparty.length + fStatus.length +
       fMonth.length + fYear.length + fChargeMatch.length > 0;
+  const tableColumnCount =
+    14 + (activeTab === "incoming" ? 1 : activeTab === "outgoing" || activeTab === "internal" ? 2 : 0);
 
   function resetFilters() {
     setFAccount([]);
@@ -396,37 +409,15 @@ export function BankTransactionsClient({
               />
             </TableHead>
             <SortableHead
-              field="date"
-              sortBy={sort.field}
-              sortDir={sort.dir}
-              onSort={(field, dir) => setSort({ field: field as SortField, dir })}
-              className={cn(compactHead, "w-24")}
-            >
-              Дата
-            </SortableHead>
-            <SortableHead
               field="bankAccountName"
               sortBy={sort.field}
               sortDir={sort.dir}
               onSort={(field, dir) => setSort({ field: field as SortField, dir })}
-              className={cn(compactHead, activeTab === "internal" ? "w-64" : "w-40")}
+              className={cn(compactHead, "w-48")}
             >
-              {activeTab === "internal" ? "Со счёта → на счёт" : "Счёт"}
+              Банковский счёт получатель
             </SortableHead>
-            {activeTab === "incoming" && (
-              <TableHead className={cn(compactHead, "w-40")}>Источник перевода</TableHead>
-            )}
-            {activeTab !== "internal" && (
-              <SortableHead
-                field="counterpartyName"
-                sortBy={sort.field}
-                sortDir={sort.dir}
-                onSort={(field, dir) => setSort({ field: field as SortField, dir })}
-                className={cn(compactHead, "w-44")}
-              >
-                Контрагент
-              </SortableHead>
-            )}
+            <TableHead className={cn(compactHead, "w-40")}>Источник перевода</TableHead>
             <SortableHead
               field="amount"
               sortBy={sort.field}
@@ -436,9 +427,30 @@ export function BankTransactionsClient({
             >
               Сумма
             </SortableHead>
-            {activeTab === "all" && <TableHead className={cn(compactHead, "w-24")}>Ветка</TableHead>}
-            {activeTab === "all" && <TableHead className={cn(compactHead, "w-24")}>Месяц</TableHead>}
-            {activeTab === "all" && <TableHead className={cn(compactHead, "w-16")}>Год</TableHead>}
+            <SortableHead
+              field="date"
+              sortBy={sort.field}
+              sortDir={sort.dir}
+              onSort={(field, dir) => setSort({ field: field as SortField, dir })}
+              className={cn(compactHead, "w-24")}
+            >
+              Дата перевода
+            </SortableHead>
+            <TableHead className={cn(compactHead, "w-24")}>Месяц</TableHead>
+            <TableHead className={cn(compactHead, "w-16")}>Год</TableHead>
+            <TableHead className={cn(compactHead, "w-40")}>Начисления</TableHead>
+            <TableHead className={cn(compactHead, "w-44")}>Проект</TableHead>
+            <SortableHead
+              field="counterpartyName"
+              sortBy={sort.field}
+              sortDir={sort.dir}
+              onSort={(field, dir) => setSort({ field: field as SortField, dir })}
+              className={cn(compactHead, "w-44")}
+            >
+              Контрагент
+            </SortableHead>
+            <TableHead className={cn(compactHead, "w-32")}>Тип транзакции</TableHead>
+            <TableHead className={cn(compactHead, "w-40")}>Описание работы</TableHead>
             {activeTab === "incoming" && (
               <TableHead className={cn(compactHead, "w-24")}>Плат. поручение</TableHead>
             )}
@@ -448,14 +460,9 @@ export function BankTransactionsClient({
             {activeTab === "internal" && (
               <TableHead className={cn(compactHead, "w-48")}>Основание</TableHead>
             )}
-            {(activeTab === "all" || activeTab === "incoming") && (
-              <TableHead className={cn(compactHead, "w-40")}>Начисления</TableHead>
-            )}
-            <TableHead className={cn(compactHead, "w-44")}>Проект</TableHead>
-            {activeTab !== "incoming" && (
+            {(activeTab === "outgoing" || activeTab === "internal") && (
               <TableHead className={cn(compactHead, "w-32")}>Вид работ</TableHead>
             )}
-            <TableHead className={cn(compactHead, "w-40")}>Описание работы</TableHead>
             <SortableHead
               field="status"
               sortBy={sort.field}
@@ -471,13 +478,13 @@ export function BankTransactionsClient({
         <TableBody>
           {isLoading ? (
             <TableRow>
-              <TableCell colSpan={14} className="py-8 text-center text-neutral-500">
+              <TableCell colSpan={tableColumnCount} className="py-8 text-center text-neutral-500">
                 Загрузка...
               </TableCell>
             </TableRow>
           ) : rows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={14} className="py-8 text-center text-neutral-500">
+              <TableCell colSpan={tableColumnCount} className="py-8 text-center text-neutral-500">
                 Операций нет
               </TableCell>
             </TableRow>
@@ -506,70 +513,58 @@ export function BankTransactionsClient({
                       onSelect={handleRowSelect}
                     />
                   </TableCell>
-                  <TableCell className={cn(compactCell, "tabular-nums")}>
-                    {formatDate(r.date)}
+                  <TableCell className={cn(compactCell, "truncate")}>
+                    {recipientAccount(r)}
                   </TableCell>
                   <TableCell className={cn(compactCell, "truncate")}>
-                    {activeTab === "internal" ? (
-                      <span className="flex items-center gap-1">
-                        <span className="truncate">{r.bankAccountName}</span>
-                        <ArrowRight className="h-3 w-3 shrink-0 text-neutral-400" />
-                        <span className="truncate">
-                          {r.pairedAccountName ?? counterpartyLabel(r) ?? "—"}
-                        </span>
-                      </span>
-                    ) : (
-                      r.bankAccountName
-                    )}
+                    {transferSource(r)}
                   </TableCell>
-                  {activeTab === "incoming" && (
-                    <TableCell className={cn(compactCell, "truncate")}>
-                      {r.transferSource ?? "—"}
-                    </TableCell>
-                  )}
-                  {activeTab !== "internal" && (
-                    <TableCell className={cn(compactCell, "truncate")}>
-                      {counterpartyLabel(r) ? (
-                        <span>
-                          {counterpartyLabel(r)}
-                          {r.counterpartyType && (
-                            <span className="ml-1 text-[10px] text-neutral-400">
-                              {BANK_COUNTERPARTY_TYPES[
-                                r.counterpartyType as keyof typeof BANK_COUNTERPARTY_TYPES
-                              ]}
-                            </span>
-                          )}
-                          {/* Написание из выписки есть, а в справочнике не сопоставлено. */}
-                          {!r.counterpartyId && (
-                            <span className="ml-1 text-[10px] text-amber-700">не в справочнике</span>
-                          )}
-                        </span>
-                      ) : (
-                        <span className="text-amber-700">не опознан</span>
-                      )}
-                    </TableCell>
-                  )}
                   <TableCell className={cn(compactCell, "text-right tabular-nums font-semibold")}>
                     {formatMoney(r.amount)}
                     <span className="ml-1 text-[10px] font-normal text-neutral-400">
                       {r.currency}
                     </span>
                   </TableCell>
-                  {activeTab === "all" && (
-                    <TableCell className={compactCell}>
-                      {r.isInternalTransfer ? (
-                        <StatusBadge tone="blue" label="Перевод" />
-                      ) : (
-                        BANK_OPERATION_KINDS[r.kind as keyof typeof BANK_OPERATION_KINDS]
-                      )}
-                    </TableCell>
-                  )}
-                  {activeTab === "all" && (
-                    <TableCell className={compactCell}>{monthFullLabel(r.month)}</TableCell>
-                  )}
-                  {activeTab === "all" && (
-                    <TableCell className={cn(compactCell, "tabular-nums")}>{r.year}</TableCell>
-                  )}
+                  <TableCell className={cn(compactCell, "tabular-nums")}>
+                    {formatDate(r.date)}
+                  </TableCell>
+                  <TableCell className={compactCell}>{monthFullLabel(r.month)}</TableCell>
+                  <TableCell className={cn(compactCell, "tabular-nums")}>{r.year}</TableCell>
+                  <TableCell className={compactCell}>
+                    <ChargeCell operation={r} />
+                  </TableCell>
+                  <TableCell className={cn(compactCell, "truncate")}>
+                    {r.projectName ?? <span className="text-neutral-400">—</span>}
+                  </TableCell>
+                  <TableCell className={cn(compactCell, "truncate")}>
+                    {counterpartyLabel(r) ? (
+                      <span>
+                        {counterpartyLabel(r)}
+                        {r.counterpartyType && (
+                          <span className="ml-1 text-[10px] text-neutral-400">
+                            {BANK_COUNTERPARTY_TYPES[
+                              r.counterpartyType as keyof typeof BANK_COUNTERPARTY_TYPES
+                            ]}
+                          </span>
+                        )}
+                        {!r.counterpartyId && (
+                          <span className="ml-1 text-[10px] text-amber-700">не в справочнике</span>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="text-amber-700">не опознан</span>
+                    )}
+                  </TableCell>
+                  <TableCell className={compactCell}>
+                    {r.isInternalTransfer ? (
+                      <StatusBadge tone="blue" label="Внутренний перевод" />
+                    ) : (
+                      BANK_OPERATION_KINDS[r.kind as keyof typeof BANK_OPERATION_KINDS]
+                    )}
+                  </TableCell>
+                  <TableCell className={cn(compactCell, "truncate")}>
+                    {r.workDescription ?? "—"}
+                  </TableCell>
                   {activeTab === "incoming" && (
                     <TableCell className={compactCell}>{r.paymentOrder ?? "—"}</TableCell>
                   )}
@@ -586,22 +581,11 @@ export function BankTransactionsClient({
                       )}
                     </TableCell>
                   )}
-                  {(activeTab === "all" || activeTab === "incoming") && (
-                    <TableCell className={compactCell}>
-                      <ChargeCell operation={r} />
-                    </TableCell>
-                  )}
-                  <TableCell className={cn(compactCell, "truncate")}>
-                    {r.projectName ?? <span className="text-neutral-400">—</span>}
-                  </TableCell>
-                  {activeTab !== "incoming" && (
+                  {(activeTab === "outgoing" || activeTab === "internal") && (
                     <TableCell className={cn(compactCell, "truncate")}>
                       {r.workTypeName ?? "—"}
                     </TableCell>
                   )}
-                  <TableCell className={cn(compactCell, "truncate")}>
-                    {r.workDescription ?? "—"}
-                  </TableCell>
                   <TableCell className={compactCell}>
                     <StatusBadge dict={BANK_OPERATION_STATUSES} value={r.status} />
                   </TableCell>
