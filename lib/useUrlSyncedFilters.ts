@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 
 type ArrayFilter = {
   stateKey: string;
@@ -32,6 +32,10 @@ type StringFilter = {
 
 export type UrlSyncedFilter = ArrayFilter | BooleanFilter | StringFilter;
 
+/** Пауза перед записью фильтров в URL: быстрый ввод в поиске не должен
+ *  дёргать адресную строку на каждый символ. */
+const URL_WRITE_DELAY_MS = 300;
+
 /**
  * Синхронизирует фильтры таблицы с URL, не затрагивая сортировку, группировку
  * и остальные параметры страницы. Наличие любого параметра фильтра в URL
@@ -39,22 +43,12 @@ export type UrlSyncedFilter = ArrayFilter | BooleanFilter | StringFilter;
  */
 export function useUrlSyncedFilters(filters: UrlSyncedFilter[]) {
   const pathname = usePathname();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const search = searchParams.toString();
   const filtersRef = React.useRef(filters);
   const initialSyncRef = React.useRef(true);
-  // Храним последнюю query-строку, которую мы САМИ записали в URL через
-  // syncUrl(). Эффект восстановления ниже реагирует на любое изменение
-  // search (включая то, что вызвано нашей же router.replace), поэтому без
-  // этой метки он не может отличить «URL поменялся снаружи (первая загрузка,
-  // назад/вперёд в браузере, ручная правка адреса)» от «URL просто отразил
-  // текущее состояние фильтров, которое мы и так знаем». Во втором случае
-  // ничего восстанавливать не нужно — иначе фильтр, отсутствующий в URL
-  // только потому, что он сейчас пустой (например, год сняли явно), будет
-  // насильно возвращён к дефолту при каждом собственном обновлении URL.
-  const lastSyncedSearchRef = React.useRef<string | null>(null);
-  const hasUrlFilters = filters.some((filter) => searchParams.has(filter.param));
+  // Ссылку читаем из window, а не из useSearchParams: у статически
+  // отрендеренной страницы параметры доезжают только после гидратации, и
+  // фильтры из присланной ссылки успели бы потеряться.
+  const hadUrlFiltersRef = React.useRef<boolean | null>(null);
   const stateSignature = JSON.stringify(
     filters.map((filter) => [filter.param, filter.value])
   );
@@ -63,40 +57,61 @@ export function useUrlSyncedFilters(filters: UrlSyncedFilter[]) {
     filtersRef.current = filters;
   }, [filters]);
 
-  React.useEffect(() => {
-    // Этот же search мы только что сами записали в URL — не «восстанавливаем»
-    // из него состояние, оно и так актуально (см. комментарий у ref выше).
-    if (lastSyncedSearchRef.current !== null && search === lastSyncedSearchRef.current) {
-      return;
+  // Открыли ссылку с фильтрами — значит источник истины URL, а не localStorage.
+  const openedWithUrlFilters = React.useCallback(() => {
+    if (hadUrlFiltersRef.current === null) {
+      const params = new URLSearchParams(window.location.search);
+      hadUrlFiltersRef.current = filtersRef.current.some((filter) =>
+        params.has(filter.param)
+      );
     }
-    if (hasUrlFilters) {
-      for (const filter of filtersRef.current) {
-        if (filter.kind === "array") {
-          filter.setValue(
-            searchParams.has(filter.param)
-              ? searchParams.getAll(filter.param).filter(Boolean)
-              : [...filter.defaultValue]
-          );
-        } else if (filter.kind === "boolean") {
-          filter.setValue(
-            searchParams.has(filter.param)
-              ? searchParams.get(filter.param) === "1"
-              : filter.defaultValue
-          );
-        } else {
-          filter.setValue(
-            searchParams.has(filter.param)
-              ? searchParams.get(filter.param) ?? filter.defaultValue
-              : filter.defaultValue
-          );
-        }
+    return hadUrlFiltersRef.current;
+  }, []);
+
+  const applyFromUrl = React.useCallback((params: URLSearchParams) => {
+    for (const filter of filtersRef.current) {
+      if (filter.kind === "array") {
+        filter.setValue(
+          params.has(filter.param)
+            ? params.getAll(filter.param).filter(Boolean)
+            : [...filter.defaultValue]
+        );
+      } else if (filter.kind === "boolean") {
+        filter.setValue(
+          params.has(filter.param)
+            ? params.get(filter.param) === "1"
+            : filter.defaultValue
+        );
+      } else {
+        filter.setValue(
+          params.has(filter.param)
+            ? params.get(filter.param) ?? filter.defaultValue
+            : filter.defaultValue
+        );
       }
     }
-  }, [hasUrlFilters, search, searchParams]);
+  }, []);
+
+  // URL читаем только при открытии страницы и при кнопках «назад/вперёд».
+  // Следить за каждым изменением search нельзя: свою же запись мы делаем с
+  // задержкой, и промежуточное значение параметра затирало бы уже набранный
+  // в поиске текст, откидывая курсор на символ назад.
+  React.useEffect(() => {
+    if (openedWithUrlFilters()) {
+      applyFromUrl(new URLSearchParams(window.location.search));
+    }
+  }, [applyFromUrl, openedWithUrlFilters]);
+
+  React.useEffect(() => {
+    const onPopState = () => applyFromUrl(new URLSearchParams(window.location.search));
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [applyFromUrl]);
 
   React.useEffect(() => {
     const syncUrl = () => {
-      const next = new URLSearchParams(search);
+      const currentSearch = window.location.search.replace(/^\?/, "");
+      const next = new URLSearchParams(currentSearch);
       for (const filter of filtersRef.current) {
         next.delete(filter.param);
         if (filter.kind === "array") {
@@ -109,15 +124,15 @@ export function useUrlSyncedFilters(filters: UrlSyncedFilter[]) {
       }
 
       const nextSearch = next.toString();
-      // Запоминаем строку как «свою» ДО навигации: даже если replace ещё не
-      // применился, последующий рендер с новым search должен узнать в нём
-      // собственную запись и не откатывать фильтры к дефолтам.
-      lastSyncedSearchRef.current = nextSearch;
-      if (nextSearch !== search) {
-        router.replace(nextSearch ? `${pathname}?${nextSearch}` : pathname, {
-          scroll: false,
-        });
-      }
+      if (nextSearch === currentSearch) return;
+      // History API вместо router.replace: фильтры нигде не читаются на
+      // сервере, а навигация роутером перезапрашивала бы RSC на каждый символ
+      // и подставляла общий loading сегмента вместо таблицы.
+      window.history.replaceState(
+        null,
+        "",
+        nextSearch ? `${pathname}?${nextSearch}` : pathname
+      );
     };
 
     if (initialSyncRef.current) {
@@ -135,27 +150,25 @@ export function useUrlSyncedFilters(filters: UrlSyncedFilter[]) {
       return () => window.cancelAnimationFrame(frame);
     }
 
-    syncUrl();
-  }, [pathname, router, search, stateSignature]);
+    const timer = window.setTimeout(syncUrl, URL_WRITE_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [pathname, stateSignature]);
 
-  const restorePersisted = React.useCallback(
-    (stored: object) => {
-      if (hasUrlFilters) return;
+  const restorePersisted = React.useCallback((stored: object) => {
+    if (openedWithUrlFilters()) return;
 
-      const values = stored as Record<string, unknown>;
-      for (const filter of filtersRef.current) {
-        const value = values[filter.stateKey];
-        if (filter.kind === "array" && Array.isArray(value)) {
-          filter.setValue(value.filter((item): item is string => typeof item === "string"));
-        } else if (filter.kind === "boolean" && typeof value === "boolean") {
-          filter.setValue(value);
-        } else if (filter.kind === "string" && typeof value === "string") {
-          filter.setValue(value);
-        }
+    const values = stored as Record<string, unknown>;
+    for (const filter of filtersRef.current) {
+      const value = values[filter.stateKey];
+      if (filter.kind === "array" && Array.isArray(value)) {
+        filter.setValue(value.filter((item): item is string => typeof item === "string"));
+      } else if (filter.kind === "boolean" && typeof value === "boolean") {
+        filter.setValue(value);
+      } else if (filter.kind === "string" && typeof value === "string") {
+        filter.setValue(value);
       }
-    },
-    [hasUrlFilters]
-  );
+    }
+  }, [openedWithUrlFilters]);
 
   return { restorePersisted };
 }
