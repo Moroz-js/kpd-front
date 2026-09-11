@@ -18,7 +18,6 @@ import { Pencil } from "lucide-react";
 import { PageHeader } from "@/components/ui-custom/PageHeader";
 import { MultiSelectFilter } from "@/components/ui-custom/MultiSelectFilter";
 import { FilterResetButton } from "@/components/ui-custom/FilterResetButton";
-import { MoreFilters } from "@/components/ui-custom/MoreFilters";
 import { SortableHead } from "@/components/ui-custom/SortableHead";
 import { StatusBadge } from "@/components/ui-custom/StatusBadge";
 import { BulkActions } from "@/components/ui-custom/BulkActions";
@@ -142,7 +141,6 @@ export function BankTransactionsClient({
   const [fStatus, setFStatus] = React.useState<string[]>([]);
   const [fMonth, setFMonth] = React.useState<string[]>([]);
   const [fYear, setFYear] = React.useState<string[]>([]);
-  const [fChargeMatch, setFChargeMatch] = React.useState<string[]>([]);
   const [sort, setSort] = React.useState<{ field: SortField; dir: SortDir }>({
     field: "date",
     dir: "desc",
@@ -159,12 +157,11 @@ export function BankTransactionsClient({
     { stateKey: "fStatus", param: "status", kind: "array", value: fStatus, defaultValue: [], setValue: setFStatus },
     { stateKey: "fMonth", param: "month", kind: "array", value: fMonth, defaultValue: [], setValue: setFMonth },
     { stateKey: "fYear", param: "year", kind: "array", value: fYear, defaultValue: [], setValue: setFYear },
-    { stateKey: "fChargeMatch", param: "charge", kind: "array", value: fChargeMatch, defaultValue: [], setValue: setFChargeMatch },
   ]);
 
   usePersistedInterfaceState(
     "bank-transactions",
-    { activeTab, fAccount, fProject, fCounterparty, fStatus, fMonth, fYear, fChargeMatch, sort },
+    { activeTab, fAccount, fProject, fCounterparty, fStatus, fMonth, fYear, sort },
     (stored) => {
       if (stored.activeTab !== undefined) setActiveTab(stored.activeTab);
       urlFilters.restorePersisted(stored);
@@ -196,10 +193,9 @@ export function BankTransactionsClient({
       if (fStatus.length && !fStatus.includes(o.status)) return false;
       if (fMonth.length && !fMonth.includes(String(o.month))) return false;
       if (fYear.length && !fYear.includes(String(o.year))) return false;
-      if (fChargeMatch.length && !fChargeMatch.includes(o.chargeMatch ?? "not_linked")) return false;
       return true;
     });
-  }, [operations, fAccount, fProject, fCounterparty, fStatus, fMonth, fYear, fChargeMatch]);
+  }, [operations, fAccount, fProject, fCounterparty, fStatus, fMonth, fYear]);
 
   const rows = React.useMemo(() => {
     const list = selectTab(filtered, activeTab);
@@ -258,7 +254,7 @@ export function BankTransactionsClient({
 
   const hasActiveFilters =
     fAccount.length + fProject.length + fCounterparty.length + fStatus.length +
-      fMonth.length + fYear.length + fChargeMatch.length > 0;
+      fMonth.length + fYear.length > 0;
   const tableColumnCount =
     14 + (activeTab === "incoming" ? 1 : activeTab === "outgoing" || activeTab === "internal" ? 2 : 0);
 
@@ -269,7 +265,6 @@ export function BankTransactionsClient({
     setFStatus([]);
     setFMonth([]);
     setFYear([]);
-    setFChargeMatch([]);
   }
 
   async function bulkPatch(patch: Record<string, unknown>, successText: string) {
@@ -355,18 +350,7 @@ export function BankTransactionsClient({
             onChange={setFStatus}
           />
           <MultiSelectFilter label="Месяц" options={MONTHS} value={fMonth} onChange={setFMonth} />
-          <MoreFilters activeCount={fYear.length + fChargeMatch.length}>
-            <MultiSelectFilter label="Год" options={yearOptions} value={fYear} onChange={setFYear} />
-            <MultiSelectFilter
-              label="Начисление"
-              options={Object.entries(BANK_CHARGE_MATCH_STATES).map(([value, { label }]) => ({
-                value,
-                label,
-              }))}
-              value={fChargeMatch}
-              onChange={setFChargeMatch}
-            />
-          </MoreFilters>
+          <MultiSelectFilter label="Год" options={yearOptions} value={fYear} onChange={setFYear} />
         </div>
       </div>
 
@@ -449,7 +433,7 @@ export function BankTransactionsClient({
             >
               Контрагент
             </SortableHead>
-            <TableHead className={cn(compactHead, "w-32")}>Тип транзакции</TableHead>
+            <TableHead className={cn(compactHead, "w-44")}>Тип транзакции</TableHead>
             <TableHead className={cn(compactHead, "w-40")}>Описание работы</TableHead>
             {activeTab === "incoming" && (
               <TableHead className={cn(compactHead, "w-24")}>Плат. поручение</TableHead>
@@ -555,7 +539,7 @@ export function BankTransactionsClient({
                       <span className="text-amber-700">не опознан</span>
                     )}
                   </TableCell>
-                  <TableCell className={compactCell}>
+                  <TableCell className={cn(compactCell, "overflow-hidden")}>
                     {r.isInternalTransfer ? (
                       <StatusBadge tone="blue" label="Внутренний перевод" />
                     ) : (

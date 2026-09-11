@@ -18,6 +18,7 @@
     "backfill:project-numbers": "node scripts/backfill-project-numbers.mjs",
     "migrate:other-expenses": "node scripts/migrate-other-expenses.mjs",
     "migrate:counterparties": "ts-node --project scripts/tsconfig.json scripts/migrate-counterparties.ts",
+    "seed:bank-operations:neon": "node scripts/seed-bank-operations-neon.mjs",
     "snapshot:check": "node scripts/snapshot-worker.mjs --check",
     "snapshot:run": "node scripts/snapshot-worker.mjs --manual"
   },
