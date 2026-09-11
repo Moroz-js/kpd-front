@@ -40,6 +40,18 @@ function deserialize<T>(value: string): T {
   }) as T;
 }
 
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = React.useState(value);
+
+  React.useEffect(() => {
+    if (value === debounced) return;
+    const timer = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(timer);
+  }, [value, debounced, delayMs]);
+
+  return debounced;
+}
+
 function useStorageKey(key: string): string {
   const userId = React.useContext(PersistedInterfaceStateContext);
   if (!userId) {
@@ -61,7 +73,9 @@ export function usePersistedInterfaceState<T extends object>(
 ) {
   const storageKey = useStorageKey(key);
   const restoreRef = React.useRef(restore);
-  const serializedState = serialize(state);
+  // Пауза перед записью: иначе каждый символ в поиске идёт в localStorage
+  // отдельной синхронной сериализацией всего набора фильтров.
+  const serializedState = useDebouncedValue(serialize(state), 300);
   const skipNextSaveRef = React.useRef(true);
 
   React.useEffect(() => {
@@ -123,7 +137,11 @@ export function usePersistedScroll(
   } = {}
 ) {
   const { enabled = true, signature: signatureValue = "" } = options;
-  const signature = serialize(signatureValue);
+  // В сигнатуру входит и текст поиска, поэтому без паузы каждый набранный
+  // символ перевешивал бы слушатели и уводил таблицу к сохранённой позиции
+  // (для нового набора фильтров это чаще всего ноль) — визуально это выглядит
+  // как рывок всего экрана на каждое нажатие клавиши.
+  const signature = useDebouncedValue(serialize(signatureValue), 300);
   const storageKey = useStorageKey(`scroll:${key}`);
 
   React.useEffect(() => {
