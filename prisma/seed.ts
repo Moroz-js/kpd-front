@@ -1358,6 +1358,347 @@ async function backfillSeedEntityNumbers() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Банковские операции («Робот») — мок для страницы «Банковские транзакции»
+// ─────────────────────────────────────────────────────────────────────────────
+
+type OpSpec = {
+  /** Ключ для связывания пары внутреннего перевода. */
+  key?: string;
+  /** Ключ операции, с которой эта составляет пару (списание ↔ поступление). */
+  pairKey?: string;
+  account: string;
+  transferSource?: string;
+  amount: number;
+  date: Date;
+  kind: "incoming" | "outgoing";
+  internal?: boolean;
+  counterparty?: string;
+  counterpartyType?: "client" | "executor" | "service" | "bank" | "own_account";
+  project?: string;
+  workType?: string;
+  workDescription?: string;
+  paymentOrder?: string;
+  paymentPurpose?: string;
+  basis?: string;
+  status: "new" | "needs_review" | "recognized" | "confirmed";
+  chargeMatch?: "not_linked" | "suggested" | "confirmed" | "no_charge";
+  comment?: string;
+  raw: {
+    docNumber?: string;
+    operationType?: string;
+    counterparty?: string;
+    inn?: string;
+    account?: string;
+    bik?: string;
+    purpose?: string;
+    category?: string;
+  };
+  trace?: { counterparty?: string; project?: string; workType?: string };
+  /** Начисления: ищутся по фрагменту назначения платежа начисления. */
+  charges?: { purpose: string; amount?: number; link: "suggested" | "confirmed"; reason?: string }[];
+};
+
+async function seedBankOperations() {
+  const accounts = await prisma.bankAccount.findMany();
+  const projects = await prisma.project.findMany();
+  const workTypes = await prisma.workType.findMany();
+  const charges = await prisma.charge.findMany({ orderBy: { chargeNumber: "asc" } });
+  if (!accounts.length) return;
+
+  await prisma.bankOperationCharge.deleteMany();
+  await prisma.bankOperation.updateMany({ data: { pairedOperationId: null } });
+  await prisma.bankOperation.deleteMany();
+
+  const acc = (name: string) => accounts.find((a) => a.name === name) ?? accounts[0];
+  const proj = (shortName: string) => projects.find((p) => p.shortName === shortName);
+  const wt = (name: string) => workTypes.find((w) => w.name === name);
+  const charge = (purpose: string) => charges.find((c) => c.paymentPurpose?.includes(purpose));
+
+  const OPS: OpSpec[] = [
+    // ── Списания: разобрано автоматически ──────────────────────────────────
+    {
+      account: "Операционный счёт", amount: 4_990, date: md(2026, 8, 7), kind: "outgoing",
+      counterparty: "ТБАНК", counterpartyType: "bank",
+      project: "База знаний", workType: "Транзит платежа",
+      paymentPurpose: "Плата за обслуживание счёта", status: "confirmed", chargeMatch: "no_charge",
+      raw: { docNumber: "4471", operationType: "Дебет", counterparty: "АО «ТБанк»", inn: "7710140679", account: "30101810145250000974", bik: "044525974", purpose: "Плата за обслуживание счета по тарифу", category: "Услуги банка" },
+      trace: { counterparty: "опознан по ИНН 7710140679", project: "проект из карточки контрагента", workType: "вид работ из карточки контрагента" },
+    },
+    {
+      account: "Операционный счёт", amount: 2_090, date: md(2026, 8, 7), kind: "outgoing",
+      counterparty: "ТБАНК", counterpartyType: "bank",
+      project: "Внутренний портал", workType: "Транзит платежа",
+      paymentPurpose: "Плата за использованный лимит овердрафта", status: "recognized", chargeMatch: "no_charge",
+      raw: { docNumber: "4472", operationType: "Дебет", counterparty: "АО «ТБанк»", inn: "7710140679", account: "30101810145250000974", bik: "044525974", purpose: "Плата за использованный лимит овердрафта", category: "Услуги банка" },
+      trace: { counterparty: "опознан по ИНН 7710140679", project: "по правилу: в назначении есть ОВЕРДРАФТ", workType: "вид работ из карточки контрагента" },
+    },
+    {
+      account: "Операционный счёт", amount: 11_825, date: md(2026, 7, 29), kind: "outgoing",
+      counterparty: "Бухгалтерия БИС", counterpartyType: "service",
+      project: "База знаний", workType: "Поддержка сайта",
+      workDescription: "Бухгалтерское обслуживание, июль",
+      paymentPurpose: "Бухгалтерские услуги за июль 2026", status: "confirmed",  chargeMatch: "no_charge",
+      raw: { docNumber: "4390", operationType: "Дебет", counterparty: "ООО «БИСАУТСОРСИНГ ГРУПП»", inn: "7723910815", account: "40702810400000123456", bik: "044525225", purpose: "Оплата бухгалтерских услуг за июль 2026 по договору 14/22", category: "Услуги" },
+      trace: { counterparty: "опознан по ИНН 7723910815", project: "проект из карточки контрагента", workType: "вид работ из карточки контрагента" },
+    },
+    {
+      account: "ИП Иванов — Тинькофф", amount: 87_400, date: md(2026, 7, 24), kind: "outgoing",
+      counterparty: "Смирнов Пётр", counterpartyType: "executor",
+      project: "Контент", workType: "Лонгрид",
+      workDescription: "Лонгрид про импортозамещение",
+      paymentPurpose: "Оплата по договору ГПХ 14/2026", status: "recognized",
+      raw: { docNumber: "1180", operationType: "Дебет", counterparty: "СМИРНОВ ПЕТР ИВАНОВИЧ", inn: "504712345678", account: "40817810099910004321", bik: "044525974", purpose: "Оплата по договору ГПХ 14/2026 за июль", category: "Переводы физлицам" },
+      trace: { counterparty: "опознан по имени в выписке", project: "проект из карточки контрагента", workType: "по правилу: назначение содержит ГПХ" },
+    },
+    {
+      account: "ИП Иванов — Тинькофф", amount: 30_500, date: md(2026, 7, 28), kind: "outgoing",
+      counterparty: "Лойм Александр", counterpartyType: "executor",
+      project: "SMM Q3", workType: "SMM-ведение",
+      paymentPurpose: "Перевод средств", status: "recognized",
+      raw: { docNumber: "1194", operationType: "Дебет", counterparty: "ЛОЙМ АЛЕКСАНДР", account: "40817810400001234000", bik: "044525974", purpose: "Перевод средств", category: "Переводы физлицам" },
+      trace: { counterparty: "привязан вручную", project: "проект из карточки контрагента", workType: "вид работ из карточки контрагента" },
+    },
+
+    // ── Списания: требуют разбора ──────────────────────────────────────────
+    {
+      account: "ИП Иванов — Тинькофф", amount: 11_094, date: md(2026, 8, 5), kind: "outgoing",
+      paymentPurpose: "Оплата подписки ZOOM", status: "needs_review", chargeMatch: "no_charge",
+      raw: { docNumber: "1220", operationType: "Дебет", purpose: "ZOOM.US 888-799-9666 CA USD 119.00", category: "Прочие расходы" },
+    },
+    {
+      account: "Операционный счёт", amount: 64_300, date: md(2026, 8, 3), kind: "outgoing",
+      counterparty: "Иванова Мария", counterpartyType: "executor",
+      project: "Ребрендинг",
+      workDescription: "Гайдлайн, второй этап",
+      paymentPurpose: "Оплата по счёту 88 от 30.07.2026", status: "needs_review",
+      raw: { docNumber: "4455", operationType: "Дебет", counterparty: "ИВАНОВА МАРИЯ СЕРГЕЕВНА", inn: "771812345678", account: "40802810800000998877", bik: "044525225", purpose: "Оплата по счету 88 от 30.07.2026", category: "Переводы физлицам" },
+      trace: { counterparty: "опознан по ИНН 771812345678", project: "проект из карточки контрагента" },
+    },
+    {
+      account: "Расчётный счёт 4DEV", amount: 250_000, date: md(2026, 7, 31), kind: "outgoing",
+      paymentPurpose: "Перевод собственных средств", status: "needs_review",
+      comment: "Похоже на внутренний перевод — проверить ветку",
+      raw: { docNumber: "778", operationType: "Дебет", counterparty: "ООО КПД", inn: "7743159160", account: "40702810810000012051", bik: "044525974", purpose: "ПЕРЕВОД СОБСТВЕННЫХ СРЕДСТВ", category: "Переводы" },
+    },
+
+    // ── Поступления ────────────────────────────────────────────────────────
+    {
+      account: "Операционный счёт", amount: 700_000, date: md(2026, 3, 8), kind: "incoming",
+      transferSource: "ПАО «Газпром нефть»",
+      counterparty: "Газпром нефть", counterpartyType: "client",
+      project: "PR-кампания Q4", paymentOrder: "ПП 415",
+      status: "confirmed", chargeMatch: "confirmed",
+      raw: { docNumber: "415", operationType: "Кредит", counterparty: "ПАО «ГАЗПРОМ НЕФТЬ»", inn: "7736050003", account: "40702810100000554433", bik: "044525225", purpose: "Оплата по счёту за PR-кампанию Q4, старт 2026", category: "Поступления" },
+      trace: { counterparty: "опознан по ИНН 7736050003", project: "проект из начисления" },
+      charges: [{ purpose: "PR-кампания Q4 — старт 2026", link: "confirmed" }],
+    },
+    {
+      account: "Операционный счёт", amount: 600_000, date: md(2026, 7, 14), kind: "incoming",
+      transferSource: "ООО «Базис»",
+      counterparty: "Базис", counterpartyType: "client",
+      paymentOrder: "ПП 802", status: "recognized", chargeMatch: "suggested",
+      raw: { docNumber: "802", operationType: "Кредит", counterparty: "ООО «БАЗИС»", inn: "9714078640", account: "40702810900000112233", bik: "044525593", purpose: "Оплата по счёту № 80726/01 за контент-план", category: "Поступления" },
+      trace: { counterparty: "опознан по ИНН 9714078640" },
+      charges: [{ purpose: "Контент-план Q2 2026", link: "suggested", reason: "сумма совпадает точно" }],
+    },
+    {
+      account: "Операционный счёт", amount: 400_000, date: md(2026, 7, 20), kind: "incoming",
+      transferSource: "ПАО «ГМК Норильский никель»",
+      counterparty: "Норникель", counterpartyType: "client",
+      paymentOrder: "ПП 811", status: "needs_review", chargeMatch: "suggested",
+      raw: { docNumber: "811", operationType: "Кредит", counterparty: "ПАО «ГМК НОРИЛЬСКИЙ НИКЕЛЬ»", inn: "8401005730", account: "40702810300000778899", bik: "044525225", purpose: "Оплата за SMM Q2 2026", category: "Поступления" },
+      trace: { counterparty: "опознан по ИНН 8401005730" },
+      charges: [{ purpose: "SMM Q2 2026", link: "suggested", reason: "сумма совпадает точно, тот же клиент" }],
+    },
+    {
+      account: "Операционный счёт", amount: 1_200_000, date: md(2026, 7, 10), kind: "incoming",
+      transferSource: "ООО «КПД»",
+      counterparty: "КПД", counterpartyType: "client",
+      project: "Внутренний портал", paymentOrder: "ПП 795",
+      status: "confirmed", chargeMatch: "confirmed",
+      comment: "Одно пополнение закрывает два начисления",
+      raw: { docNumber: "795", operationType: "Кредит", counterparty: "ООО «КПД»", inn: "7743159160", account: "40702810810000012051", bik: "044525974", purpose: "Оплата по счетам 11 и 12 от 01.07.2026", category: "Поступления" },
+      trace: { counterparty: "опознан по ИНН 7743159160", project: "проект из начисления" },
+      charges: [
+        { purpose: "PR-поддержка Q2 2026", amount: 750_000, link: "confirmed" },
+        { purpose: "Внутренний портал — разработка", amount: 450_000, link: "confirmed" },
+      ],
+    },
+    {
+      account: "Операционный счёт", amount: 120_000, date: md(2026, 7, 17), kind: "incoming",
+      transferSource: "ООО «КПД»",
+      counterparty: "КПД", counterpartyType: "client",
+      project: "База знаний", paymentOrder: "ПП 799",
+      status: "confirmed", chargeMatch: "confirmed",
+      comment: "Частичная оплата: начисление 200 000, остаток 80 000",
+      raw: { docNumber: "799", operationType: "Кредит", counterparty: "ООО «КПД»", inn: "7743159160", account: "40702810810000012051", bik: "044525974", purpose: "Частичная оплата по счёту за поддержку БЗ", category: "Поступления" },
+      trace: { counterparty: "опознан по ИНН 7743159160", project: "проект из начисления" },
+      charges: [{ purpose: "БЗ — поддержка Q3 2026", amount: 120_000, link: "confirmed" }],
+    },
+    {
+      account: "ИП Петров — Альфа", amount: 12_000, date: md(2026, 7, 7), kind: "incoming",
+      transferSource: "ООО «ИНК»",
+      counterparty: "ИНК", counterpartyType: "client",
+      paymentOrder: "ПП 118", status: "needs_review", chargeMatch: "not_linked",
+      raw: { docNumber: "118", operationType: "Кредит", counterparty: "ООО «ИНК»", inn: "3808114237", account: "40702810700000445566", bik: "044525593", purpose: "Возврат ошибочного платежа", category: "Поступления" },
+    },
+    {
+      account: "Операционный счёт", amount: 3_450, date: md(2026, 8, 4), kind: "incoming",
+      transferSource: "АО «ТБанк»",
+      counterparty: "ТБАНК", counterpartyType: "bank",
+      project: "База знаний", status: "recognized", chargeMatch: "no_charge",
+      raw: { docNumber: "4460", operationType: "Кредит", counterparty: "АО «ТБанк»", inn: "7710140679", account: "30101810145250000974", bik: "044525974", purpose: "Начисление процентов на остаток", category: "Проценты" },
+      trace: { counterparty: "опознан по ИНН 7710140679", project: "проект из карточки контрагента" },
+    },
+
+    // ── Внутренние переводы: найденные пары ────────────────────────────────
+    {
+      key: "t1-out", account: "Операционный счёт", amount: 2_000, date: md(2026, 8, 5), kind: "outgoing",
+      internal: true, counterparty: "ИП Иванов — Тинькофф", counterpartyType: "own_account",
+      basis: "Перевод собственных средств", status: "confirmed",
+      raw: { docNumber: "4468", operationType: "Дебет", counterparty: "ИП Иванов — Тинькофф", inn: "7743159160", account: "40802810400006370955", bik: "044525974", purpose: "ПЕРЕВОД СОБСТВЕННЫХ СРЕДСТВ", category: "Переводы" },
+      trace: { counterparty: "совпал с нашим счётом в справочнике" },
+    },
+    {
+      pairKey: "t1-out", account: "ИП Иванов — Тинькофф", amount: 2_000, date: md(2026, 8, 5), kind: "incoming",
+      internal: true, transferSource: "Операционный счёт",
+      counterparty: "Операционный счёт", counterpartyType: "own_account",
+      basis: "Перевод собственных средств", status: "confirmed",
+      raw: { docNumber: "1216", operationType: "Кредит", counterparty: "Операционный счёт", inn: "7743159160", account: "40702810810000012051", bik: "044525974", purpose: "ПЕРЕВОД СОБСТВЕННЫХ СРЕДСТВ", category: "Переводы" },
+      trace: { counterparty: "совпал с нашим счётом в справочнике" },
+    },
+    {
+      key: "t2-out", account: "Операционный счёт", amount: 250_000, date: md(2026, 7, 22), kind: "outgoing",
+      internal: true, counterparty: "ИП Петров — Альфа", counterpartyType: "own_account",
+      basis: "Перевод между своими счетами", status: "confirmed",
+      raw: { docNumber: "4302", operationType: "Дебет", counterparty: "ИП Петров — Альфа", inn: "7743159160", account: "40802810820000348993", bik: "044525593", purpose: "ПЕРЕВОД МЕЖДУ СВОИМИ СЧЕТАМИ", category: "Переводы" },
+      trace: { counterparty: "совпал с нашим счётом в справочнике" },
+    },
+    {
+      pairKey: "t2-out", account: "ИП Петров — Альфа", amount: 250_000, date: md(2026, 7, 22), kind: "incoming",
+      internal: true, transferSource: "Операционный счёт",
+      counterparty: "Операционный счёт", counterpartyType: "own_account",
+      basis: "Перевод между своими счетами", status: "confirmed",
+      raw: { docNumber: "124", operationType: "Кредит", counterparty: "Операционный счёт", inn: "7743159160", account: "40702810810000012051", bik: "044525974", purpose: "ПЕРЕВОД МЕЖДУ СВОИМИ СЧЕТАМИ", category: "Переводы" },
+      trace: { counterparty: "совпал с нашим счётом в справочнике" },
+    },
+    {
+      key: "t3-out", account: "Расчётный счёт 4DEV", amount: 162_200, date: md(2026, 7, 16), kind: "outgoing",
+      internal: true, counterparty: "Операционный счёт", counterpartyType: "own_account",
+      basis: "Погашение основного долга", status: "recognized",
+      raw: { docNumber: "760", operationType: "Дебет", counterparty: "Операционный счёт", inn: "7743159160", account: "40702810810000012051", bik: "044525974", purpose: "ПОГАШЕНИЕ ОСНОВНОГО ДОЛГА", category: "Кредиты" },
+      trace: { counterparty: "совпал с нашим счётом в справочнике" },
+    },
+    {
+      pairKey: "t3-out", account: "Операционный счёт", amount: 162_200, date: md(2026, 7, 16), kind: "incoming",
+      internal: true, transferSource: "Расчётный счёт 4DEV",
+      counterparty: "Расчётный счёт 4DEV", counterpartyType: "own_account",
+      basis: "Погашение основного долга", status: "recognized",
+      raw: { docNumber: "4288", operationType: "Кредит", counterparty: "Расчётный счёт 4DEV", inn: "7743159160", account: "40702810210000183205", bik: "044525974", purpose: "ПОГАШЕНИЕ ОСНОВНОГО ДОЛГА", category: "Кредиты" },
+      trace: { counterparty: "совпал с нашим счётом в справочнике" },
+    },
+
+    // ── Внутренний перевод без пары ────────────────────────────────────────
+    {
+      account: "Операционный счёт", amount: 75_000, date: md(2026, 8, 6), kind: "outgoing",
+      internal: true, counterparty: "Старый счёт Сбер", counterpartyType: "own_account",
+      basis: "Перевод собственных средств", status: "needs_review",
+      comment: "Пара не найдена: поступления на втором счёте нет",
+      raw: { docNumber: "4470", operationType: "Дебет", counterparty: "Старый счёт Сбер", inn: "7743159160", account: "40702810600000001111", bik: "044525225", purpose: "ПЕРЕВОД СОБСТВЕННЫХ СРЕДСТВ", category: "Переводы" },
+      trace: { counterparty: "совпал с нашим счётом в справочнике" },
+    },
+
+    // ── Зарплатный перевод и налоги ────────────────────────────────────────
+    {
+      account: "Операционный счёт", amount: 940_000, date: md(2026, 8, 5), kind: "outgoing",
+      internal: true, counterparty: "ИП Иванов — Тинькофф", counterpartyType: "own_account",
+      basis: "Заработная плата за июль", status: "recognized",
+      raw: { docNumber: "4465", operationType: "Дебет", counterparty: "ИП Иванов — Тинькофф", inn: "7743159160", account: "40802810400006370955", bik: "044525974", purpose: "ЗАРАБОТНАЯ ПЛАТА ЗА ИЮЛЬ 2026", category: "Зарплата" },
+      trace: { counterparty: "по правилу: в назначении есть ЗАРАБОТНАЯ ПЛАТА" },
+    },
+    {
+      account: "Операционный счёт", amount: 318_400, date: md(2026, 7, 28), kind: "outgoing",
+      counterparty: "Казначейство России (ФНС)", counterpartyType: "service",
+      project: "База знаний", workType: "Транзит платежа",
+      paymentPurpose: "Единый налоговый платёж", status: "confirmed", chargeMatch: "no_charge",
+      raw: { docNumber: "4380", operationType: "Дебет", counterparty: "Казначейство России (ФНС России)", inn: "7727406020", account: "40102810445370000059", bik: "017003983", purpose: "ЕДИНЫЙ НАЛОГОВЫЙ ПЛАТЕЖ", category: "Налоги" },
+      trace: { counterparty: "опознан по ИНН 7727406020", project: "проект из карточки контрагента", workType: "вид работ из карточки контрагента" },
+    },
+  ];
+
+  const created = new Map<string, string>();
+
+  for (const op of OPS) {
+    const account = acc(op.account);
+    const project = op.project ? proj(op.project) : undefined;
+    const workType = op.workType ? wt(op.workType) : undefined;
+
+    const row = await prisma.bankOperation.create({
+      data: {
+        bankAccountId: account.id,
+        transferSource: op.transferSource ?? null,
+        amount: op.amount,
+        date: op.date,
+        month: op.date.getMonth() + 1,
+        year: op.date.getFullYear(),
+        kind: op.kind,
+        isInternalTransfer: !!op.internal,
+        pairedOperationId: op.pairKey ? (created.get(op.pairKey) ?? null) : null,
+        counterpartyName: op.counterparty ?? null,
+        counterpartyType: op.counterpartyType ?? null,
+        projectId: project?.id ?? null,
+        workTypeId: workType?.id ?? null,
+        workDescription: op.workDescription ?? null,
+        paymentOrder: op.paymentOrder ?? null,
+        paymentPurpose: op.paymentPurpose ?? null,
+        basis: op.basis ?? null,
+        status: op.status,
+        chargeMatch: op.chargeMatch ?? null,
+        comment: op.comment ?? null,
+        confirmedAt: op.status === "confirmed" ? op.date : null,
+        confirmedByName: op.status === "confirmed" ? "Смирнова Анна" : null,
+        rawDocNumber: op.raw.docNumber ?? null,
+        rawDate: `${String(op.date.getDate()).padStart(2, "0")}.${String(op.date.getMonth() + 1).padStart(2, "0")}.${op.date.getFullYear()}`,
+        rawAmount: op.amount.toFixed(2).replace(".", ","),
+        rawCurrency: account.currency,
+        rawOperationType: op.raw.operationType ?? null,
+        rawCounterparty: op.raw.counterparty ?? null,
+        rawInn: op.raw.inn ?? null,
+        rawAccount: op.raw.account ?? null,
+        rawBik: op.raw.bik ?? null,
+        rawPurpose: op.raw.purpose ?? null,
+        rawCategory: op.raw.category ?? null,
+        traceCounterparty: op.trace?.counterparty ?? null,
+        traceProject: op.trace?.project ?? null,
+        traceWorkType: op.trace?.workType ?? null,
+      },
+    });
+
+    if (op.key) created.set(op.key, row.id);
+    if (op.pairKey) {
+      const pairId = created.get(op.pairKey);
+      if (pairId) {
+        await prisma.bankOperation.update({ where: { id: pairId }, data: { pairedOperationId: row.id } });
+      }
+    }
+
+    for (const link of op.charges ?? []) {
+      const target = charge(link.purpose);
+      if (!target) continue;
+      await prisma.bankOperationCharge.create({
+        data: {
+          bankOperationId: row.id,
+          chargeId: target.id,
+          amount: link.amount ?? null,
+          link: link.link,
+          reason: link.reason ?? null,
+        },
+      });
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  main
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1376,17 +1717,19 @@ async function main() {
   await seedWorksAndPayments();
   await seedOtherExpenses();
   await seedCharges();
+  await seedBankOperations();
   await seedSpendingPlanLines();
   await seedVacations();
   await backfillResponsibleExecutors();
   await backfillSeedEntityNumbers();
 
-  const [works, payments, expenses, charges, plan] = await Promise.all([
+  const [works, payments, expenses, charges, plan, operations] = await Promise.all([
     prisma.work.count(),
     prisma.payment.count(),
     prisma.otherExpense.count(),
     prisma.charge.count(),
     prisma.spendingPlanLine.count(),
+    prisma.bankOperation.count(),
   ]);
 
   console.log("\n[seed] ──────────────────────────────────");
@@ -1395,6 +1738,7 @@ async function main() {
   console.log(`[seed]  Прочие траты: ${expenses}`);
   console.log(`[seed]  Начисления:   ${charges}`);
   console.log(`[seed]  Строк плана:  ${plan}`);
+  console.log(`[seed]  Банк. операции: ${operations}`);
   console.log("[seed] ──────────────────────────────────");
   console.log(`[seed]  admin@kpd.local / ${SEED_PASSWORD}`);
   console.log(`[seed]  PM (исполнитель+isResponsible): manager.ivanov@, manager.petrov@, manager.sokolova@ / ${SEED_PASSWORD}`);

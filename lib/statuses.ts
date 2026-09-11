@@ -79,6 +79,93 @@ export const CHARGE_STATUSES = {
 } as const;
 export type ChargeStatus = keyof typeof CHARGE_STATUSES;
 
+// ─── BANK OPERATION STATUSES ──────────────────────────────────
+export const BANK_OPERATION_STATUSES = {
+  new:          { label: "Новая",            tone: "gray"   as BadgeTone },
+  confirmed:    { label: "Подтверждена",     tone: "green"  as BadgeTone },
+  recognized:   { label: "Распознана",       tone: "blue"   as BadgeTone },
+  needs_review: { label: "Требует разбора",  tone: "yellow" as BadgeTone },
+} as const;
+export type BankOperationStatus = keyof typeof BANK_OPERATION_STATUSES;
+
+/** Ветка операции. Внутренний перевод — отдельный признак, не значение kind. */
+export const BANK_OPERATION_KINDS = {
+  incoming: "Поступление",
+  outgoing: "Списание",
+} as const;
+export type BankOperationKind = keyof typeof BANK_OPERATION_KINDS;
+
+/** Тип контрагента в операции. Наш собственный счёт — тоже контрагент (внутренний перевод). */
+export const BANK_COUNTERPARTY_TYPES = {
+  bank: "Банк",
+  executor: "Исполнитель",
+  client: "Клиент",
+  own_account: "Наш счёт",
+  service: "Сервис",
+} as const;
+export type BankCounterpartyType = keyof typeof BANK_COUNTERPARTY_TYPES;
+
+/**
+ * Вкладки справочника контрагентов. Значения совпадают с типом контрагента в
+ * операции: вкладка выводится из ссылки карточки (клиент / счёт / исполнитель) и
+ * типа исполнителя, отдельным полем не хранится.
+ */
+export const COUNTERPARTY_KINDS = BANK_COUNTERPARTY_TYPES;
+export type CounterpartyKind = BankCounterpartyType;
+
+/** Юридический статус получателя: разные статусы одного человека — разные контрагенты. */
+export const COUNTERPARTY_LEGAL_TYPES = {
+  foreign_company: "Иностранное юрлицо",
+  entrepreneur: "ИП",
+  self_employed: "Самозанятый",
+  individual: "Физлицо",
+  company: "Юрлицо",
+} as const;
+export type CounterpartyLegalType = keyof typeof COUNTERPARTY_LEGAL_TYPES;
+
+/** Способ оплаты реквизита — «куда перевести». */
+export const COUNTERPARTY_PAYMENT_METHODS = {
+  bank_transfer: "Банковский перевод",
+  crypto: "Криптокошелёк",
+  card: "Перевод на карту",
+  service: "Через сервис",
+} as const;
+export type CounterpartyPaymentMethod = keyof typeof COUNTERPARTY_PAYMENT_METHODS;
+
+/** Откуда взялось написание контрагента в выписке. */
+export const COUNTERPARTY_ALIAS_SOURCES = {
+  manual: "Введено вручную",
+  robot: "Добавлено роботом",
+  sheets: "Из Google Sheets",
+} as const;
+export type CounterpartyAliasSource = keyof typeof COUNTERPARTY_ALIAS_SOURCES;
+
+/** Что подставляет правило разбора. */
+export const RULE_TARGETS = {
+  work_type: "Вид работ",
+  counterparty: "Контрагент",
+  project: "Проект",
+} as const;
+export type RuleTarget = keyof typeof RULE_TARGETS;
+
+/** По какому полю выписки срабатывает правило. */
+export const RULE_MATCH_FIELDS = {
+  inn: "ИНН плательщика",
+  purpose_contains: "Назначение содержит",
+  name: "Написание в выписке",
+  account: "Номер счёта",
+} as const;
+export type RuleMatchField = keyof typeof RULE_MATCH_FIELDS;
+
+/** Состояние привязки пополнения к начислениям. Связь ставит только человек. */
+export const BANK_CHARGE_MATCH_STATES = {
+  no_charge:  { label: "Без начисления",     tone: "slate"  as BadgeTone },
+  not_linked: { label: "Не привязано",       tone: "gray"   as BadgeTone },
+  confirmed:  { label: "Подтверждено",       tone: "green"  as BadgeTone },
+  suggested:  { label: "Предложено",         tone: "yellow" as BadgeTone },
+} as const;
+export type BankChargeMatchState = keyof typeof BANK_CHARGE_MATCH_STATES;
+
 // ─── EXECUTOR TYPES ───────────────────────────────────────────
 export const EXECUTOR_TYPES = {
   bank: "Банки",

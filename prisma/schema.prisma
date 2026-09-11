@@ -29,6 +29,7 @@ model User {
   vacationApprovals        VacationEntry[]       @relation("VacationApprovedBy")
   activityLogs             ActivityLog[]
   cashflowCellComments     CashflowCellComment[]
+  recognitionRulesCreated  RecognitionRule[]     @relation("RecognitionRuleCreatedBy")
 
   @@map("users")
 }
@@ -91,6 +92,7 @@ model Executor {
   spendingPlanLines            SpendingPlanLine[]
   vacationEntries              VacationEntry[]
   tasks                        Task[]
+  counterparties               Counterparty[]
 
   @@index([status])
   @@index([type])
@@ -108,7 +110,8 @@ model Client {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  projects Project[]
+  projects       Project[]
+  counterparties Counterparty[]
 
   @@map("clients")
 }
@@ -138,6 +141,8 @@ model Project {
   orders              Order[]
   spendingPlanLines   SpendingPlanLine[]
   verificationResults ProjectVerificationResult[]
+  bankOperations      BankOperation[]
+  recognitionRules    RecognitionRule[]
 
   @@unique([clientId, shortName])
   @@index([responsibleUserId])
@@ -171,6 +176,7 @@ model BankAccount {
   id        String   @id @default(cuid())
   name      String   @unique
   details   String?
+  comment   String? // заметка бухгалтера: подключение к роботу, почта выписок, за какие годы есть операции
   currency  String   @default("RUB") // код валюты: RUB | USD | EUR | GEL | ...
   isDefault Boolean  @default(false) // единственный active с true (см. TDNB-23)
   status    String   @default("active") // active | archived
@@ -183,6 +189,7 @@ model BankAccount {
   bankOperations        BankOperation[]
   defaultForExecutors   Executor[]                        @relation("ExecutorDefaultBankAccount")
   reconciliationResults BankAccountReconciliationResult[]
+  counterparties        Counterparty[]
 
   @@map("bank_accounts")
 }
@@ -209,6 +216,8 @@ model WorkType {
   executorWorkTypes ExecutorWorkType[]
   projectWorkTypes  ProjectWorkType[]
   spendingPlanLines SpendingPlanLine[]
+  bankOperations    BankOperation[]
+  recognitionRules  RecognitionRule[]
 
   @@map("work_types")
 }
@@ -405,27 +414,225 @@ model Charge {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
+  operationLinks BankOperationCharge[]
+
   @@index([bankAccountId])
   @@index([orderId])
   @@index([status])
   @@map("charges")
 }
 
-// ─────────────────── БАНКОВСКИЕ ОПЕРАЦИИ (заглушка — заполняется через «Робот») ───────────────────
+// ─────────────────── БАНКОВСКИЕ ОПЕРАЦИИ («Робот») ───────────────────
+//
+// Строка = одна операция из банковской выписки. Поля делятся на три группы:
+//   raw*   — как пришло из банка, не меняется (левая часть карточки операции);
+//   разбор — что определила система или поправил бухгалтер (правая часть);
+//   trace* — чем именно проставлено значение разбора («опознан по ИНН» и т.п.).
+//
+// Ветка операции: kind = incoming | outgoing. Внутренний перевод — отдельный
+// признак isInternalTransfer, а не значение kind: пара «списание + поступление»
+// связывается через pairedOperationId и показывается одной строкой.
 
 model BankOperation {
-  id            String      @id @default(cuid())
-  bankAccountId String
-  bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id])
-  amount        Float
-  date          DateTime
-  kind          String // incoming | outgoing
-  comment       String?
-  createdAt     DateTime    @default(now())
+  id             String      @id @default(cuid())
+  bankAccountId  String
+  bankAccount    BankAccount @relation(fields: [bankAccountId], references: [id])
+  transferSource String? // источник перевода: счёт-плательщик или банк, как в выписке
+  amount         Float
+  date           DateTime
+  month          Int
+  year           Int
+  kind           String // incoming | outgoing
+
+  isInternalTransfer Boolean        @default(false)
+  pairedOperationId  String?        @unique
+  pairedOperation    BankOperation? @relation("TransferPair", fields: [pairedOperationId], references: [id])
+  pairedWith         BankOperation? @relation("TransferPair")
+
+  // Написание из выписки остаётся в counterpartyName, распознанный контрагент — ссылкой.
+  counterpartyName     String?
+  counterpartyType     String? // client | executor | service | bank | own_account — берётся из карточки контрагента
+  counterpartyId       String?
+  counterparty         Counterparty?    @relation(fields: [counterpartyId], references: [id])
+  counterpartyRuleId   String? // правило, которым распознан контрагент
+  counterpartyRule     RecognitionRule? @relation("BankOperationCounterpartyRule", fields: [counterpartyRuleId], references: [id])
+  projectId        String?
+  project          Project?  @relation(fields: [projectId], references: [id])
+  workTypeId       String?
+  workType         WorkType? @relation(fields: [workTypeId], references: [id])
+  workDescription  String? // описание работы
+  paymentOrder     String? // платёжное поручение — только поступления
+  paymentPurpose   String? // назначение платежа — только списания
+  basis            String? // основание — только внутренние переводы
+
+  status      String  @default("new") // new | needs_review | recognized | confirmed
+  chargeMatch String? // not_linked | suggested | confirmed | no_charge
+  comment     String?
+
+  confirmedAt     DateTime?
+  confirmedByName String?
+
+  // Сырые поля выписки
+  rawDocNumber     String?
+  rawDate          String?
+  rawAmount        String?
+  rawCurrency      String?
+  rawOperationType String?
+  rawCounterparty  String?
+  rawInn           String?
+  rawAccount       String?
+  rawBik           String?
+  rawPurpose       String?
+  rawCategory      String?
+
+  // Трассировка разбора
+  traceCounterparty String?
+  traceProject      String?
+  traceWorkType     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  charges BankOperationCharge[]
 
   @@index([bankAccountId])
+  @@index([counterpartyId])
   @@index([date])
+  @@index([kind])
+  @@index([status])
   @@map("bank_operations")
+}
+
+// Пополнение может закрывать несколько начислений, начисление — закрываться
+// несколькими пополнениями. Поэтому связь отдельной таблицей, а не полем.
+model BankOperationCharge {
+  bankOperationId String
+  bankOperation   BankOperation @relation(fields: [bankOperationId], references: [id], onDelete: Cascade)
+  chargeId        String
+  charge          Charge        @relation(fields: [chargeId], references: [id])
+  amount          Float? // сколько из пополнения отнесено на это начисление
+  link            String        @default("confirmed") // suggested | confirmed
+  reason          String? // почему предложено: «сумма совпадает точно»
+
+  @@id([bankOperationId, chargeId])
+  @@index([chargeId])
+  @@map("bank_operation_charges")
+}
+
+// ─────────────────── КОНТРАГЕНТЫ ───────────────────
+//
+// Строка = юридический получатель: конкретное физлицо, конкретное ИП, конкретная
+// компания. Один человек может быть двумя контрагентами (физлицо и ИП) — оба
+// ссылаются на одну карточку исполнителя: юридический статус меняет отношения
+// (свой договор, налоги, ставка), а два счёта одного ИП — это просто «куда
+// перевести», поэтому реквизиты лежат списком внутри карточки.
+//
+// Ровно одна из ссылок executorId | clientId | bankAccountId заполнена — свои
+// счета выступают контрагентами во внутренних переводах. Вкладка интерфейса
+// (клиент / исполнитель / сервис / банк / наш счёт) не хранится, а выводится из
+// этой ссылки и типа исполнителя, иначе значения разъезжаются.
+
+model Counterparty {
+  id        String  @id @default(cuid())
+  name      String  @unique
+  legalType String? // физлицо | ИП | самозанятый | юрлицо (COUNTERPARTY_LEGAL_TYPES)
+  status    String  @default("active") // active | archived
+  comment   String?
+
+  executorId    String?
+  executor      Executor?    @relation(fields: [executorId], references: [id])
+  clientId      String?
+  client        Client?      @relation(fields: [clientId], references: [id])
+  bankAccountId String?
+  bankAccount   BankAccount? @relation(fields: [bankAccountId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  requisites     CounterpartyRequisite[]
+  aliases        CounterpartyAlias[]
+  bankOperations BankOperation[]
+  rules          RecognitionRule[]
+
+  @@index([status])
+  @@index([executorId])
+  @@index([clientId])
+  @@index([bankAccountId])
+  @@map("counterparties")
+}
+
+// «Куда перевести»: у одного ИП может быть несколько расчётных счетов, у физлица —
+// несколько карт. Способ оплаты у каждого реквизита свой.
+model CounterpartyRequisite {
+  id             String       @id @default(cuid())
+  counterpartyId String
+  counterparty   Counterparty @relation(fields: [counterpartyId], references: [id], onDelete: Cascade)
+  paymentMethod  String // bank_transfer | card | crypto | service (COUNTERPARTY_PAYMENT_METHODS)
+  taxId          String? // ИНН / ИИК / IBAN
+  bic            String?
+  bankName       String?
+  accountNumber  String?
+  cardNumber     String?
+  status         String       @default("active") // active | archived
+  comment        String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([counterpartyId])
+  @@index([taxId])
+  @@index([accountNumber])
+  @@map("counterparty_requisites")
+}
+
+// Написания контрагента в выписке. ИНН и номера счетов здесь не дублируются —
+// они лежат в реквизитах и работают признаком распознавания сами по себе.
+model CounterpartyAlias {
+  id             String       @id @default(cuid())
+  counterpartyId String
+  counterparty   Counterparty @relation(fields: [counterpartyId], references: [id], onDelete: Cascade)
+  value          String // как приходит из банка: «ЛОЙМ АЛЕКСАНДР»
+  normalized     String       @unique // одно написание не может висеть на двух контрагентах
+  source         String       @default("manual") // manual | robot | sheets
+  createdAt      DateTime     @default(now())
+
+  @@index([counterpartyId])
+  @@map("counterparty_aliases")
+}
+
+// Одна таблица правил разбора вместо отдельных механизмов на контрагента, проект
+// и вид работ. Блок «запомнить выбор» в карточке операции пишет строку сюда,
+// трассировка операции ссылается на правило. Применение правил — этап «робот».
+model RecognitionRule {
+  id              String @id @default(cuid())
+  target          String // counterparty | project | work_type (RULE_TARGETS)
+  matchField      String // name | inn | account | purpose_contains (RULE_MATCH_FIELDS)
+  matchValue      String
+  normalizedValue String // upper-case без кавычек и двойных пробелов — по нему сравниваем
+
+  counterpartyId String?
+  counterparty   Counterparty? @relation(fields: [counterpartyId], references: [id])
+  projectId      String?
+  project        Project?      @relation(fields: [projectId], references: [id])
+  workTypeId     String?
+  workType       WorkType?     @relation(fields: [workTypeId], references: [id])
+
+  priority   Int       @default(100) // меньше — раньше применяется
+  isActive   Boolean   @default(true)
+  hitCount   Int       @default(0)
+  lastUsedAt DateTime?
+  source     String    @default("manual") // manual | imported
+  comment    String?
+
+  createdById String?
+  createdBy   User?    @relation("RecognitionRuleCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  recognizedOperations BankOperation[] @relation("BankOperationCounterpartyRule")
+
+  @@unique([target, matchField, normalizedValue])
+  @@index([isActive])
+  @@map("recognition_rules")
 }
 
 // ─────────────────── ПЛАН РАСХОДОВ ───────────────────

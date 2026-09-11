@@ -15,6 +15,7 @@ export type BankAccountListRow = {
   id: string;
   name: string; // A
   details: string | null;
+  comment: string | null;
   currency: string; // код валюты (RUB | USD | EUR | GEL | ...)
   status: string; // B
   isDefault: boolean;
@@ -87,6 +88,7 @@ export async function listBankAccounts(): Promise<BankAccountListRow[]> {
     id: a.id,
     name: a.name,
     details: a.details,
+    comment: a.comment,
     currency: a.currency,
     status: a.status,
     isDefault: a.isDefault,
@@ -103,8 +105,10 @@ export async function listBankAccounts(): Promise<BankAccountListRow[]> {
 export type CreateBankAccountInput = {
   name: string;
   details?: string;
+  comment?: string | null;
   currency?: string;
   isDefault?: boolean;
+  status?: string;
 };
 
 export async function createBankAccount(
@@ -122,9 +126,10 @@ export async function createBankAccount(
       data: {
         name: input.name.trim(),
         details: input.details?.trim() || null,
+        comment: input.comment?.trim() || null,
         currency: (input.currency ?? "RUB").trim().toUpperCase(),
         isDefault: !!input.isDefault,
-        status: "active",
+        status: input.status ?? "active",
       },
     });
   });
@@ -143,6 +148,7 @@ export async function createBankAccount(
 export type UpdateBankAccountInput = {
   name?: string;
   details?: string | null;
+  comment?: string | null;
   currency?: string;
   isDefault?: boolean;
 };
@@ -171,6 +177,7 @@ export async function updateBankAccount(
       data: {
         ...(patch.name !== undefined && { name: patch.name.trim() }),
         ...(patch.details !== undefined && { details: patch.details?.trim() || null }),
+        ...(patch.comment !== undefined && { comment: patch.comment?.trim() || null }),
         ...(patch.currency !== undefined && { currency: patch.currency.trim().toUpperCase() }),
         ...(patch.isDefault !== undefined && { isDefault: patch.isDefault }),
       },
